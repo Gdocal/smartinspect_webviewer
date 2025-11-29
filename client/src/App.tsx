@@ -27,7 +27,6 @@ export function App() {
         showStreamPanel,
         setShowDetailPanel,
         setShowWatchPanel,
-        setShowStreamPanel,
         isStreamsMode,
         selectedStreamEntryId,
         setSelectedStreamEntryId
@@ -211,7 +210,7 @@ export function App() {
                     {!isStreamsMode && <FilterBar />}
 
                     {/* Content area - either StreamsView or LogGrid */}
-                    <div className="flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-hidden">
                         {isStreamsMode ? (
                             <StreamsView
                                 onSelectEntry={handleStreamEntrySelect}

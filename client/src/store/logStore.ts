@@ -505,7 +505,8 @@ export function matchesHighlightRule(entry: LogEntry, rule: HighlightRule): bool
                     return false;
                 }
             case 'in':
-                return Array.isArray(condition.value) && condition.value.includes(fieldValue);
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return Array.isArray(condition.value) && (condition.value as any[]).includes(fieldValue);
             default:
                 return false;
         }

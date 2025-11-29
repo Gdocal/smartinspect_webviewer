@@ -1,16 +1,80 @@
 /**
  * WatchPanel - Table-based watch values display with filtering
+ * Features flash animation when values change
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
 import { format } from 'date-fns';
+
+// Track which watches recently changed
+interface FlashState {
+    [name: string]: {
+        timestamp: string;
+        flashUntil: number;
+    };
+}
 
 export function WatchPanel() {
     const { watches, clearWatches, setShowWatchPanel } = useLogStore();
     const [filterText, setFilterText] = useState('');
     const [sortBy, setSortBy] = useState<'name' | 'value' | 'timestamp'>('name');
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+    // Track flashing state for each watch
+    const [flashingWatches, setFlashingWatches] = useState<Set<string>>(new Set());
+    const prevTimestampsRef = useRef<FlashState>({});
+    const flashDuration = 500; // ms
+
+    // Detect changes and trigger flash
+    useEffect(() => {
+        const now = Date.now();
+        const newFlashing = new Set<string>();
+        const prevTimestamps = prevTimestampsRef.current;
+
+        Object.entries(watches).forEach(([name, watch]) => {
+            const prev = prevTimestamps[name];
+            // Flash if timestamp changed (new value received)
+            if (!prev || prev.timestamp !== watch.timestamp) {
+                newFlashing.add(name);
+                prevTimestamps[name] = {
+                    timestamp: watch.timestamp,
+                    flashUntil: now + flashDuration
+                };
+            } else if (prev.flashUntil > now) {
+                // Keep flashing if within duration
+                newFlashing.add(name);
+            }
+        });
+
+        // Clean up old entries
+        Object.keys(prevTimestamps).forEach(name => {
+            if (!(name in watches)) {
+                delete prevTimestamps[name];
+            }
+        });
+
+        if (newFlashing.size > 0 || flashingWatches.size > 0) {
+            setFlashingWatches(newFlashing);
+        }
+
+        // Schedule cleanup of flash state
+        if (newFlashing.size > 0) {
+            const timer = setTimeout(() => {
+                setFlashingWatches(prev => {
+                    const next = new Set<string>();
+                    prev.forEach(name => {
+                        const entry = prevTimestampsRef.current[name];
+                        if (entry && entry.flashUntil > Date.now()) {
+                            next.add(name);
+                        }
+                    });
+                    return next;
+                });
+            }, flashDuration);
+            return () => clearTimeout(timer);
+        }
+    }, [watches]);
 
     const watchEntries = useMemo(() => {
         let entries = Object.entries(watches).map(([name, watch]) => ({
@@ -71,6 +135,25 @@ export function WatchPanel() {
 
     return (
         <div className="h-full flex flex-col bg-white">
+            {/* Flash animation styles */}
+            <style>{`
+                @keyframes watch-flash {
+                    0% { background-color: rgba(59, 130, 246, 0.3); }
+                    100% { background-color: transparent; }
+                }
+                .watch-flash {
+                    animation: watch-flash 0.5s ease-out;
+                }
+                @keyframes value-flash {
+                    0% { background-color: rgba(34, 197, 94, 0.4); }
+                    50% { background-color: rgba(34, 197, 94, 0.2); }
+                    100% { background-color: rgb(241, 245, 249); }
+                }
+                .value-flash {
+                    animation: value-flash 0.5s ease-out;
+                }
+            `}</style>
+
             {/* Header */}
             <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
                 <span className="font-semibold text-sm text-slate-700 flex items-center gap-2">
@@ -152,24 +235,30 @@ export function WatchPanel() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {watchEntries.map((watch) => (
-                                <tr
-                                    key={watch.name}
-                                    className="hover:bg-blue-50/50 transition-colors"
-                                >
-                                    <td className="px-3 py-2">
-                                        <span className="font-mono text-blue-600 font-medium">{watch.name}</span>
-                                    </td>
-                                    <td className="px-3 py-2">
-                                        <span className="font-mono text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">
-                                            {watch.value}
-                                        </span>
-                                    </td>
-                                    <td className="px-3 py-2 text-slate-400 tabular-nums">
-                                        {format(new Date(watch.timestamp), 'HH:mm:ss.SSS')}
-                                    </td>
-                                </tr>
-                            ))}
+                            {watchEntries.map((watch) => {
+                                const isFlashing = flashingWatches.has(watch.name);
+                                return (
+                                    <tr
+                                        key={watch.name}
+                                        className={`hover:bg-blue-50/50 transition-colors ${isFlashing ? 'watch-flash' : ''}`}
+                                    >
+                                        <td className="px-3 py-2">
+                                            <span className="font-mono text-blue-600 font-medium">{watch.name}</span>
+                                        </td>
+                                        <td className="px-3 py-2">
+                                            <span
+                                                className={`font-mono text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded ${isFlashing ? 'value-flash' : ''}`}
+                                                key={watch.timestamp} // Force re-render to restart animation
+                                            >
+                                                {watch.value}
+                                            </span>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-400 tabular-nums">
+                                            {format(new Date(watch.timestamp), 'HH:mm:ss.SSS')}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

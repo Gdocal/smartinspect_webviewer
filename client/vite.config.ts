@@ -8,11 +8,14 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:3000',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       },
       '/ws': {
         target: 'ws://localhost:3000',
-        ws: true
+        ws: true,
+        changeOrigin: true,
+        secure: false
       }
     }
   }

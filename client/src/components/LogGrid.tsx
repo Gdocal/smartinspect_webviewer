@@ -13,11 +13,14 @@ import {
     SideBarDef,
     ColumnState,
     GetRowIdParams,
-    ICellRendererParams
+    ICellRendererParams,
+    ModuleRegistry,
+    AllCommunityModule
 } from 'ag-grid-community';
-import { LicenseManager } from 'ag-grid-enterprise';
-import 'ag-grid-community/styles/ag-grid.css';
-import 'ag-grid-community/styles/ag-theme-balham.css';
+import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
+
+// Register AG Grid modules (required for v34+)
+ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
 import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule } from '../store/logStore';
 import { format } from 'date-fns';
@@ -43,7 +46,7 @@ const EntryTypeIcons: Record<number, { icon: string; color: string; title: strin
     [LogEntryType.Assert]: { icon: '!', color: '#ef4444', title: 'Assert' },
     [LogEntryType.Text]: { icon: '☰', color: '#3b82f6', title: 'Text' },
     [LogEntryType.Object]: { icon: '{}', color: '#3b82f6', title: 'Object' },
-    [LogEntryType.Source]: { icon: '<>', color: '#8b5cf6', title: 'Source' },
+    [LogEntryType.Source]: { icon: '❮❯', color: '#8b5cf6', title: 'Source' },
     [LogEntryType.Binary]: { icon: '01', color: '#6b7280', title: 'Binary' },
     [LogEntryType.System]: { icon: '⚙', color: '#6b7280', title: 'System' },
     [LogEntryType.VariableValue]: { icon: '=', color: '#3b82f6', title: 'Variable' },
@@ -161,7 +164,7 @@ const getRowId = (params: GetRowIdParams<LogEntry>) => String(params.data.id);
 export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProps) {
     const gridRef = useRef<AgGridReact>(null);
     const gridApiRef = useRef<GridApi | null>(null);
-    const { entries, autoScroll, setSelectedEntryId, filter, globalHighlightRules, views, activeViewId, entriesVersion } = useLogStore();
+    const { entries, autoScroll, paused, setSelectedEntryId, filter, globalHighlightRules, views, activeViewId, entriesVersion } = useLogStore();
 
     // Get active view's highlight rules combined with global (if enabled)
     const activeHighlightRules = useMemo(() => {
@@ -175,7 +178,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         return viewRules;
     }, [views, activeViewId, globalHighlightRules]);
     const lastEntryCountRef = useRef(0);
-    const filterTimeoutRef = useRef<number | null>(null);
+    const lastEntriesVersionRef = useRef(0);
 
     // OPTIMIZED: Debounced filter computation
     const filteredEntries = useMemo(() => {
@@ -260,7 +263,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             sortable: false,
             filter: false,
             resizable: false,
-            suppressMenu: true,
+            suppressHeaderMenuButton: true,
             pinned: 'left'
         },
         {
@@ -395,7 +398,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     }), []);
 
     // Row styling based on user-defined highlight rules (no auto-styling)
-    const getRowStyle = useCallback((params: RowClassParams<LogEntry>) => {
+    const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string | number> | undefined => {
         const entry = params.data;
         if (!entry) return undefined;
 
@@ -403,12 +406,12 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         const sortedRules = [...activeHighlightRules].sort((a, b) => b.priority - a.priority);
         for (const rule of sortedRules) {
             if (matchesHighlightRule(entry, rule)) {
-                return {
-                    backgroundColor: rule.style.backgroundColor,
-                    color: rule.style.textColor,
-                    fontWeight: rule.style.fontWeight,
-                    fontStyle: rule.style.fontStyle
-                };
+                const style: Record<string, string | number> = {};
+                if (rule.style.backgroundColor) style.backgroundColor = rule.style.backgroundColor;
+                if (rule.style.textColor) style.color = rule.style.textColor;
+                if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
+                if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle;
+                return style;
             }
         }
 
@@ -435,27 +438,41 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     }, [onColumnStateChange]);
 
     // Handle row selection
-    const onRowClicked = useCallback((event: { data: LogEntry }) => {
+    const onRowClicked = useCallback((event: { data?: LogEntry }) => {
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
     // Auto-scroll to bottom when new entries arrive
     useEffect(() => {
-        if (autoScroll && gridApiRef.current && filteredEntries.length > lastEntryCountRef.current) {
-            // Use setTimeout to ensure grid has rendered the new rows
-            setTimeout(() => {
-                if (gridApiRef.current) {
-                    gridApiRef.current.ensureIndexVisible(filteredEntries.length - 1, 'bottom');
-                }
-            }, 50);
+        // Don't auto-scroll when paused
+        if (paused) return;
+
+        if (autoScroll && gridApiRef.current && filteredEntries.length > 0) {
+            // Check if we have new entries (count increased OR entriesVersion changed with same count)
+            const hasNewEntries = filteredEntries.length > lastEntryCountRef.current ||
+                                  entriesVersion > lastEntriesVersionRef.current;
+
+            if (hasNewEntries) {
+                // Use setTimeout to ensure grid has rendered the new rows
+                setTimeout(() => {
+                    if (gridApiRef.current) {
+                        const rowCount = gridApiRef.current.getDisplayedRowCount();
+                        if (rowCount > 0) {
+                            gridApiRef.current.ensureIndexVisible(rowCount - 1, 'bottom');
+                        }
+                    }
+                }, 100);
+            }
         }
         lastEntryCountRef.current = filteredEntries.length;
-    }, [filteredEntries.length, autoScroll]);
+        lastEntriesVersionRef.current = entriesVersion;
+    }, [filteredEntries.length, autoScroll, paused, entriesVersion]);
 
     return (
         <div className="ag-theme-balham h-full w-full" style={{ fontSize: '13px' }}>
             <AgGridReact
                 ref={gridRef}
+                theme="legacy"
                 rowData={filteredEntries}
                 columnDefs={columnDefs}
                 defaultColDef={defaultColDef}
@@ -468,10 +485,9 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 onColumnVisible={onColumnStateChanged}
                 // PERFORMANCE OPTIMIZATIONS
                 animateRows={false}
-                suppressRowClickSelection={false}
-                rowSelection="single"
+                rowSelection={{ mode: 'singleRow', enableClickSelection: true }}
                 sideBar={sideBar}
-                enableRangeSelection={true}
+                cellSelection={true}
                 suppressCellFocus={true}
                 // Increased row buffer for smoother scrolling
                 rowBuffer={50}
@@ -482,7 +498,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 debounceVerticalScrollbar={true}
                 // Reduce DOM operations
                 suppressAnimationFrame={false}
-                suppressPropertyNamesCheck={true}
                 // Async transactions for bulk updates
                 asyncTransactionWaitMillis={50}
                 tooltipShowDelay={500}

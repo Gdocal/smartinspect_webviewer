@@ -3,46 +3,7 @@
  */
 
 import { useMemo } from 'react';
-import { useLogStore, LogEntry, LogEntryType, Level, getLevelName } from '../store/logStore';
-import { format } from 'date-fns';
-
-// Entry type names
-const EntryTypeNames: Record<number, string> = {
-    [LogEntryType.Separator]: 'Separator',
-    [LogEntryType.EnterMethod]: 'Enter Method',
-    [LogEntryType.LeaveMethod]: 'Leave Method',
-    [LogEntryType.ResetCallstack]: 'Reset Callstack',
-    [LogEntryType.Message]: 'Message',
-    [LogEntryType.Warning]: 'Warning',
-    [LogEntryType.Error]: 'Error',
-    [LogEntryType.InternalError]: 'Internal Error',
-    [LogEntryType.Comment]: 'Comment',
-    [LogEntryType.VariableValue]: 'Variable',
-    [LogEntryType.Checkpoint]: 'Checkpoint',
-    [LogEntryType.Debug]: 'Debug',
-    [LogEntryType.Verbose]: 'Verbose',
-    [LogEntryType.Fatal]: 'Fatal',
-    [LogEntryType.Conditional]: 'Conditional',
-    [LogEntryType.Assert]: 'Assert',
-    [LogEntryType.Text]: 'Text',
-    [LogEntryType.Binary]: 'Binary',
-    [LogEntryType.Graphic]: 'Graphic',
-    [LogEntryType.Source]: 'Source',
-    [LogEntryType.Object]: 'Object',
-    [LogEntryType.WebContent]: 'Web Content',
-    [LogEntryType.System]: 'System',
-    [LogEntryType.MemoryStatistic]: 'Memory Stats',
-    [LogEntryType.DatabaseResult]: 'Database Result',
-    [LogEntryType.DatabaseStructure]: 'Database Structure'
-};
-
-function formatTimestamp(date: string): string {
-    try {
-        return format(new Date(date), 'yyyy-MM-dd HH:mm:ss.SSS');
-    } catch {
-        return date || '';
-    }
-}
+import { useLogStore, LogEntryType } from '../store/logStore';
 
 function decodeData(data: string | undefined, encoding: string | undefined): string {
     if (!data) return '';
@@ -114,15 +75,6 @@ function DataViewer({ data, encoding, entryType }: { data?: string; encoding?: s
     );
 }
 
-function InfoRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
-    return (
-        <div className="flex border-b border-slate-100 py-1.5">
-            <span className="w-28 flex-shrink-0 text-xs font-medium text-slate-500">{label}</span>
-            <span className={`text-xs text-slate-800 ${mono ? 'font-mono' : ''}`}>{value || '-'}</span>
-        </div>
-    );
-}
-
 export function DetailPanel() {
     const { selectedEntryId, entries, setShowDetailPanel } = useLogStore();
 
@@ -163,9 +115,6 @@ export function DetailPanel() {
         );
     }
 
-    const entryTypeName = EntryTypeNames[selectedEntry.logEntryType ?? LogEntryType.Message] || 'Unknown';
-    const levelName = getLevelName(selectedEntry.level ?? Level.Message);
-
     return (
         <div className="h-full flex flex-col bg-white">
             {/* Header */}
@@ -190,47 +139,15 @@ export function DetailPanel() {
 
             {/* Content */}
             <div className="flex-1 overflow-auto p-4">
-                {/* Title */}
-                <div className="mb-4">
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Title</div>
-                    <div className="text-sm text-slate-800 font-medium">{selectedEntry.title || '-'}</div>
-                </div>
-
-                {/* Metadata grid */}
-                <div className="mb-4">
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Metadata</div>
-                    <div className="bg-slate-50 rounded-lg p-3">
-                        <InfoRow label="Timestamp" value={formatTimestamp(selectedEntry.timestamp)} mono />
-                        <InfoRow label="Type" value={entryTypeName} />
-                        <InfoRow label="Level" value={
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                selectedEntry.level === Level.Error || selectedEntry.level === Level.Fatal
-                                    ? 'bg-red-100 text-red-700'
-                                    : selectedEntry.level === Level.Warning
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-blue-100 text-blue-700'
-                            }`}>
-                                {levelName}
-                            </span>
-                        } />
-                        <InfoRow label="Session" value={selectedEntry.sessionName} />
-                        <InfoRow label="Application" value={selectedEntry.appName} />
-                        <InfoRow label="Hostname" value={selectedEntry.hostName} />
-                        <InfoRow label="Process ID" value={selectedEntry.processId} mono />
-                        <InfoRow label="Thread ID" value={selectedEntry.threadId} mono />
-                    </div>
-                </div>
-
-                {/* Data section */}
-                {selectedEntry.data && (
-                    <div>
-                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Data</div>
-                        <DataViewer
-                            data={selectedEntry.data}
-                            encoding={selectedEntry.dataEncoding}
-                            entryType={selectedEntry.logEntryType}
-                        />
-                    </div>
+                {/* Show data if available, otherwise show title */}
+                {selectedEntry.data ? (
+                    <DataViewer
+                        data={selectedEntry.data}
+                        encoding={selectedEntry.dataEncoding}
+                        entryType={selectedEntry.logEntryType}
+                    />
+                ) : (
+                    <div className="text-sm text-slate-800">{selectedEntry.title || '-'}</div>
                 )}
 
                 {/* Context (for EnterMethod/LeaveMethod) */}

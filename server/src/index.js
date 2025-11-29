@@ -343,8 +343,8 @@ async function start() {
         // Start TCP server for log sources
         await tcpServer.start();
 
-        // Start HTTP server for web UI
-        httpServer.listen(config.httpPort, () => {
+        // Start HTTP server for web UI (bind to 0.0.0.0 for WSL/Docker access)
+        httpServer.listen(config.httpPort, '0.0.0.0', () => {
             console.log(`[Server] HTTP server listening on port ${config.httpPort}`);
             console.log('');
             console.log('SmartInspect Web Viewer started!');

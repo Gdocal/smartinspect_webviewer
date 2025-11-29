@@ -2,7 +2,7 @@
  * Layout Hook - Persists layout settings to localStorage
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { ColumnState } from 'ag-grid-community';
 
 export interface LayoutSettings {

@@ -8,22 +8,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "ag-grid-community": "^34.3.1",
+    "ag-grid-enterprise": "^34.3.1",
+    "ag-grid-react": "^34.3.1",
+    "date-fns": "^3.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "ag-grid-react": "^31.0.3",
-    "ag-grid-community": "^31.0.3",
-    "ag-grid-enterprise": "^31.0.3",
-    "zustand": "^4.4.7",
-    "date-fns": "^3.2.0"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
     "@vitejs/plugin-react": "^4.2.1",
-    "typescript": "^5.3.3",
-    "vite": "^5.0.11",
-    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.17",
     "postcss": "^8.4.33",
-    "autoprefixer": "^10.4.17"
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11"
   }
 }

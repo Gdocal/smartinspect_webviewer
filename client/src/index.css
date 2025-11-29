@@ -2,11 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* AG Grid customizations */
-.ag-theme-alpine {
+/* AG Grid customizations for balham theme */
+.ag-theme-balham {
     --ag-header-height: 32px;
     --ag-row-height: 28px;
     --ag-font-size: 13px;
+    --ag-list-item-height: 24px;
 }
 
 /* Ensure proper height */
