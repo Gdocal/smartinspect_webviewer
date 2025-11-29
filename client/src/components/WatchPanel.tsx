@@ -135,22 +135,14 @@ export function WatchPanel() {
 
     return (
         <div className="h-full flex flex-col bg-white">
-            {/* Flash animation styles */}
+            {/* Flash animation styles - only value cell flashes */}
             <style>{`
-                @keyframes watch-flash {
-                    0% { background-color: rgba(59, 130, 246, 0.3); }
-                    100% { background-color: transparent; }
-                }
-                .watch-flash {
-                    animation: watch-flash 0.5s ease-out;
-                }
                 @keyframes value-flash {
-                    0% { background-color: rgba(34, 197, 94, 0.4); }
-                    50% { background-color: rgba(34, 197, 94, 0.2); }
+                    0% { background-color: rgba(34, 197, 94, 0.5); }
                     100% { background-color: rgb(241, 245, 249); }
                 }
                 .value-flash {
-                    animation: value-flash 0.5s ease-out;
+                    animation: value-flash 0.4s ease-out;
                 }
             `}</style>
 
@@ -240,7 +232,7 @@ export function WatchPanel() {
                                 return (
                                     <tr
                                         key={watch.name}
-                                        className={`hover:bg-blue-50/50 transition-colors ${isFlashing ? 'watch-flash' : ''}`}
+                                        className="hover:bg-blue-50/50"
                                     >
                                         <td className="px-3 py-2">
                                             <span className="font-mono text-blue-600 font-medium">{watch.name}</span>
