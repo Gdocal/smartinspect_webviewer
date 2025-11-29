@@ -650,7 +650,7 @@ export function ViewTabs() {
                                 ? 'bg-white border-t border-l border-r border-slate-200 -mb-px'
                                 : 'hover:bg-slate-200'
                         }`}
-                        title="Double-click to edit"
+                        title={view.name}
                     >
                         <span className={`text-sm ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800' : 'text-slate-600'}`}>
                             {view.name}
@@ -666,15 +666,26 @@ export function ViewTabs() {
                             </span>
                         )}
                         {view.id !== 'all' && (
-                            <button
-                                onClick={(e) => handleDeleteView(e, view.id)}
-                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all"
-                                title="Delete view"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
+                            <>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleEditView(view); }}
+                                    className="text-slate-400 hover:text-blue-500 transition-colors"
+                                    title="Edit view settings"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={(e) => handleDeleteView(e, view.id)}
+                                    className="text-slate-400 hover:text-red-500 transition-colors"
+                                    title="Close tab"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </>
                         )}
                     </div>
                 ))}

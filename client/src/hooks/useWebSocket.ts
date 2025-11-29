@@ -30,6 +30,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<number | null>(null);
+    const reconnectCountdownRef = useRef<number | null>(null);
     const mountedRef = useRef(true);
     const connectedOnceRef = useRef(false);
 
@@ -182,16 +183,25 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         }
     }, [scheduleFlush]);
 
+    const clearReconnectTimers = useCallback(() => {
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+        if (reconnectCountdownRef.current) {
+            clearInterval(reconnectCountdownRef.current);
+            reconnectCountdownRef.current = null;
+        }
+        storeRef.current.setReconnectIn(null);
+    }, []);
+
     const disconnect = useCallback(() => {
         if (rafIdRef.current) {
             cancelAnimationFrame(rafIdRef.current);
             rafIdRef.current = null;
         }
 
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-        }
+        clearReconnectTimers();
 
         if (wsRef.current) {
             wsRef.current.close();
@@ -200,7 +210,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
         storeRef.current.setConnected(false);
         storeRef.current.setConnecting(false);
-    }, []);
+    }, [clearReconnectTimers]);
 
     const connect = useCallback(() => {
         // Don't connect if already connected or connecting
@@ -208,6 +218,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             wsRef.current?.readyState === WebSocket.CONNECTING) {
             return;
         }
+
+        clearReconnectTimers();
 
         const store = storeRef.current;
         store.setConnecting(true);
@@ -220,6 +232,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         if (token) {
             url += `?token=${encodeURIComponent(token)}`;
         }
+
+        // Store the server URL (just host:port for display)
+        store.setServerUrl(host);
 
         console.log('[WS] Connecting to:', url);
         const ws = new WebSocket(url);
@@ -258,8 +273,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             store.setConnecting(false);
             wsRef.current = null;
 
-            // Auto-reconnect
+            // Auto-reconnect with countdown
             if (autoReconnect && event.code !== 4001) {
+                const reconnectSeconds = Math.ceil(reconnectDelay / 1000);
+                let countdown = reconnectSeconds;
+                store.setReconnectIn(countdown);
+
+                // Update countdown every second
+                reconnectCountdownRef.current = window.setInterval(() => {
+                    countdown--;
+                    if (countdown > 0) {
+                        storeRef.current.setReconnectIn(countdown);
+                    } else {
+                        if (reconnectCountdownRef.current) {
+                            clearInterval(reconnectCountdownRef.current);
+                            reconnectCountdownRef.current = null;
+                        }
+                    }
+                }, 1000);
+
+                // Actually reconnect after delay
                 reconnectTimeoutRef.current = window.setTimeout(() => {
                     if (mountedRef.current) {
                         console.log('[WS] Reconnecting...');
@@ -284,7 +317,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 console.error('[WS] Failed to parse message:', err);
             }
         };
-    }, [token, autoReconnect, reconnectDelay, handleMessage]);
+    }, [token, autoReconnect, reconnectDelay, handleMessage, clearReconnectTimers]);
 
     const send = useCallback((message: object) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {

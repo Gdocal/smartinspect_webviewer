@@ -8,7 +8,6 @@ export interface AppSettings {
     serverUrl: string;           // WebSocket server URL (auto-detect or custom)
     authToken: string | null;    // Optional auth token
     maxDisplayEntries: number;   // Max entries to load in client
-    serverMaxEntries: number;    // Server buffer size
 }
 
 const STORAGE_KEY = 'smartinspect-settings';
@@ -24,7 +23,6 @@ const defaultSettings: AppSettings = {
     serverUrl: '',  // Empty means auto-detect
     authToken: null,
     maxDisplayEntries: 10000,
-    serverMaxEntries: 100000,
 };
 
 function loadSettings(): AppSettings {

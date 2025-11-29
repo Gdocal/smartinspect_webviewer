@@ -55,9 +55,17 @@ function formatNumber(num: number): string {
     return num.toLocaleString();
 }
 
+const BUFFER_SIZE_OPTIONS = [
+    { value: 10000, label: '10K' },
+    { value: 50000, label: '50K' },
+    { value: 100000, label: '100K' },
+    { value: 500000, label: '500K' },
+];
+
 export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
     const [stats, setStats] = useState<ServerStats | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [changingBuffer, setChangingBuffer] = useState(false);
 
     const fetchStats = useCallback(async () => {
         try {
@@ -91,6 +99,27 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
             fetchStats();
         } catch (e) {
             alert('Failed to clear watches');
+        }
+    };
+
+    const handleBufferSizeChange = async (newSize: number) => {
+        setChangingBuffer(true);
+        try {
+            const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
+            const res = await fetch(`${baseUrl}/api/server/config`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maxEntries: newSize }),
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            fetchStats();
+        } catch (e) {
+            alert(`Failed to change buffer size: ${e instanceof Error ? e.message : 'Unknown error'}`);
+        } finally {
+            setChangingBuffer(false);
         }
     };
 
@@ -218,10 +247,17 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                                     </div>
                                 </div>
                                 <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Buffer Size</div>
-                                    <div className="text-lg font-semibold text-slate-700">
-                                        {(stats.logs.maxEntries / 1000).toFixed(0)}K
-                                    </div>
+                                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Buffer Size</div>
+                                    <select
+                                        value={stats.logs.maxEntries}
+                                        onChange={(e) => handleBufferSizeChange(parseInt(e.target.value))}
+                                        disabled={changingBuffer}
+                                        className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50"
+                                    >
+                                        {BUFFER_SIZE_OPTIONS.map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                         </>

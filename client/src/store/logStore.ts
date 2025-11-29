@@ -136,6 +136,8 @@ interface LogState {
     connected: boolean;
     connecting: boolean;
     error: string | null;
+    reconnectIn: number | null; // Seconds until reconnect attempt
+    serverUrl: string | null; // Current server URL being connected to
 
     // Log entries (limited buffer for performance)
     entries: LogEntry[];
@@ -184,6 +186,8 @@ interface LogState {
     setConnected: (connected: boolean) => void;
     setConnecting: (connecting: boolean) => void;
     setError: (error: string | null) => void;
+    setReconnectIn: (seconds: number | null) => void;
+    setServerUrl: (url: string | null) => void;
     addEntries: (entries: LogEntry[]) => void;
     addEntriesBatch: (entries: LogEntry[]) => void; // Optimized batch add
     setEntries: (entries: LogEntry[]) => void;
@@ -263,6 +267,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     connected: false,
     connecting: false,
     error: null,
+    reconnectIn: null,
+    serverUrl: null,
     entries: [],
     maxDisplayEntries: INITIAL_CAPACITY,
     lastEntryId: 0,
@@ -293,9 +299,11 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
 
     // Actions
-    setConnected: (connected) => set({ connected }),
+    setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined }),
     setConnecting: (connecting) => set({ connecting }),
     setError: (error) => set({ error }),
+    setReconnectIn: (reconnectIn) => set({ reconnectIn }),
+    setServerUrl: (serverUrl) => set({ serverUrl }),
 
     // Legacy single-update method (kept for compatibility)
     addEntries: (newEntries) => set((state) => {
@@ -385,9 +393,20 @@ export const useLogStore = create<LogState>((set, get) => ({
         views: [...state.views, { ...view, id: generateId() }]
     })),
 
-    updateView: (id, updates) => set((state) => ({
-        views: state.views.map(v => v.id === id ? { ...v, ...updates } : v)
-    })),
+    updateView: (id, updates) => set((state) => {
+        const newViews = state.views.map(v => v.id === id ? { ...v, ...updates } : v);
+
+        // If updating the active view and filter is included, sync to current filter state
+        if (state.activeViewId === id && updates.filter) {
+            const updatedView = newViews.find(v => v.id === id);
+            return {
+                views: newViews,
+                filter: updatedView ? { ...updatedView.filter } : state.filter
+            };
+        }
+
+        return { views: newViews };
+    }),
 
     deleteView: (id) => set((state) => ({
         views: state.views.filter(v => v.id !== id),

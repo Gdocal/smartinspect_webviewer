@@ -293,7 +293,9 @@ export function App() {
             </main>
 
             {/* Status bar */}
-            <StatusBar onServerInfoClick={() => setShowServerInfo(true)} />
+            <StatusBar
+                onServerInfoClick={() => setShowServerInfo(true)}
+            />
 
             {/* Highlight rules modal */}
             {showHighlightRules && (

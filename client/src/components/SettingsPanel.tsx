@@ -4,7 +4,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
-import { getEffectiveServerUrl } from '../hooks/useSettings';
 
 interface SettingsPanelProps {
     isOpen: boolean;
@@ -20,27 +19,17 @@ const MAX_ENTRIES_OPTIONS = [
     { value: 100000, label: '100,000 (All)' },
 ];
 
-const SERVER_BUFFER_OPTIONS = [
-    { value: 10000, label: '10,000' },
-    { value: 50000, label: '50,000' },
-    { value: 100000, label: '100,000' },
-    { value: 500000, label: '500,000' },
-];
-
 export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
 
     // Local form state
     const [formState, setFormState] = useState<AppSettings>(settings);
     const [showToken, setShowToken] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [serverConfigError, setServerConfigError] = useState<string | null>(null);
 
     // Reset form when modal opens
     useEffect(() => {
         if (isOpen) {
             setFormState(settings);
-            setServerConfigError(null);
         }
     }, [isOpen, settings]);
 
@@ -55,42 +44,19 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    const handleSave = async () => {
-        setSaving(true);
-        setServerConfigError(null);
+    const handleSave = () => {
+        // Check if server URL changed
+        const urlChanged = formState.serverUrl !== settings.serverUrl;
 
-        try {
-            // Check if server URL changed
-            const urlChanged = formState.serverUrl !== settings.serverUrl;
+        // Save client settings
+        updateSettings(formState);
 
-            // Update server buffer size if changed
-            if (formState.serverMaxEntries !== settings.serverMaxEntries) {
-                const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-                const res = await fetch(`${baseUrl}/api/server/config`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ maxEntries: formState.serverMaxEntries }),
-                });
-                if (!res.ok) {
-                    const data = await res.json();
-                    throw new Error(data.error || `HTTP ${res.status}`);
-                }
-            }
-
-            // Save client settings
-            updateSettings(formState);
-
-            // Notify about URL change
-            if (urlChanged && onServerUrlChange) {
-                onServerUrlChange();
-            }
-
-            onClose();
-        } catch (e) {
-            setServerConfigError(e instanceof Error ? e.message : 'Failed to save settings');
-        } finally {
-            setSaving(false);
+        // Notify about URL change
+        if (urlChanged && onServerUrlChange) {
+            onServerUrlChange();
         }
+
+        onClose();
     };
 
     const handleReset = () => {
@@ -111,7 +77,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        Settings
+                        Client Settings
                     </h2>
                     <button
                         onClick={onClose}
@@ -125,12 +91,6 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
 
                 {/* Content */}
                 <div className="p-4 space-y-5 overflow-y-auto max-h-[calc(90vh-130px)]">
-                    {serverConfigError && (
-                        <div className="text-red-500 text-sm bg-red-50 p-3 rounded border border-red-200">
-                            {serverConfigError}
-                        </div>
-                    )}
-
                     {/* Connection Section */}
                     <div>
                         <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
@@ -185,18 +145,18 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
                         </div>
                     </div>
 
-                    {/* Data Loading Section */}
+                    {/* Display Section */}
                     <div>
                         <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
                             </svg>
-                            Data Loading
+                            Display
                         </h3>
                         <div className="space-y-3">
                             <div>
                                 <label className="block text-xs text-slate-500 mb-1">
-                                    Max entries to load in browser
+                                    Max entries to display in browser
                                 </label>
                                 <select
                                     value={formState.maxDisplayEntries}
@@ -208,24 +168,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
                                     ))}
                                 </select>
                                 <p className="text-xs text-slate-400 mt-1">
-                                    Limits memory usage in browser. Older entries are dropped.
-                                </p>
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">
-                                    Server buffer size
-                                </label>
-                                <select
-                                    value={formState.serverMaxEntries}
-                                    onChange={(e) => setFormState(prev => ({ ...prev, serverMaxEntries: parseInt(e.target.value) }))}
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
-                                >
-                                    {SERVER_BUFFER_OPTIONS.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-slate-400 mt-1">
-                                    Maximum logs stored on server. Oldest entries are dropped when full.
+                                    Limits memory usage in browser. Older entries are dropped when limit is reached.
                                 </p>
                             </div>
                         </div>
@@ -249,10 +192,9 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
                         </button>
                         <button
                             onClick={handleSave}
-                            disabled={saving}
-                            className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
+                            className="px-4 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
                         >
-                            {saving ? 'Saving...' : 'Save'}
+                            Save
                         </button>
                     </div>
                 </div>
