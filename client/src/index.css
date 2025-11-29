@@ -56,3 +56,56 @@ html, body, #root {
     opacity: 1;
 }
 
+/* JSON Viewer styles for react-json-view-lite */
+.json-viewer-wrapper {
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.json-viewer-wrapper .json-view-container {
+    background: transparent !important;
+}
+
+.json-viewer-wrapper .json-view-label {
+    color: #93c5fd !important; /* blue-300 */
+}
+
+.json-viewer-wrapper .json-view-string {
+    color: #86efac !important; /* green-300 */
+}
+
+.json-viewer-wrapper .json-view-number {
+    color: #fdba74 !important; /* orange-300 */
+}
+
+.json-viewer-wrapper .json-view-boolean {
+    color: #c4b5fd !important; /* violet-300 */
+}
+
+.json-viewer-wrapper .json-view-null,
+.json-viewer-wrapper .json-view-undefined {
+    color: #94a3b8 !important; /* slate-400 */
+}
+
+.json-viewer-wrapper .json-view-punctuation {
+    color: #e2e8f0 !important; /* slate-200 */
+}
+
+.json-viewer-wrapper .json-view-expand,
+.json-viewer-wrapper .json-view-collapse {
+    cursor: pointer;
+    color: #94a3b8 !important;
+    margin-right: 4px;
+    user-select: none;
+}
+
+.json-viewer-wrapper .json-view-expand:hover,
+.json-viewer-wrapper .json-view-collapse:hover {
+    color: #e2e8f0 !important;
+}
+
+.json-viewer-wrapper .json-view-collapsed {
+    color: #64748b !important; /* slate-500 */
+    font-style: italic;
+}
+

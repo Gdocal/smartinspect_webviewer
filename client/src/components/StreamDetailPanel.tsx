@@ -2,45 +2,58 @@
  * StreamDetailPanel - Shows detailed information about a selected stream entry
  */
 
+import { useMemo } from 'react';
 import { StreamEntry, useLogStore } from '../store/logStore';
-import { format } from 'date-fns';
+import { JsonView, darkStyles } from 'react-json-view-lite';
+import 'react-json-view-lite/dist/index.css';
 
-function formatTimestamp(date: string): string {
-    try {
-        return format(new Date(date), 'yyyy-MM-dd HH:mm:ss.SSS');
-    } catch {
-        return date || '';
-    }
-}
-
-function InfoRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
-    return (
-        <div className="flex border-b border-slate-100 py-1.5">
-            <span className="w-28 flex-shrink-0 text-xs font-medium text-slate-500">{label}</span>
-            <span className={`text-xs text-slate-800 ${mono ? 'font-mono' : ''}`}>{value || '-'}</span>
-        </div>
-    );
-}
+// Custom dark theme matching our UI
+const jsonStyles = {
+    ...darkStyles,
+    container: 'json-view-container',
+    basicChildStyle: 'json-view-child',
+    label: 'json-view-label',
+    nullValue: 'json-view-null',
+    undefinedValue: 'json-view-undefined',
+    stringValue: 'json-view-string',
+    booleanValue: 'json-view-boolean',
+    numberValue: 'json-view-number',
+    otherValue: 'json-view-other',
+    punctuation: 'json-view-punctuation',
+    expandIcon: 'json-view-expand',
+    collapseIcon: 'json-view-collapse',
+    collapsedContent: 'json-view-collapsed',
+};
 
 function DataViewer({ data }: { data: string }) {
     // Try to parse as JSON
-    const trimmed = data.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        try {
-            const parsed = JSON.parse(trimmed);
-            return (
-                <pre className="text-xs font-mono bg-slate-900 text-green-400 p-3 rounded overflow-auto max-h-64">
-                    {JSON.stringify(parsed, null, 2)}
-                </pre>
-            );
-        } catch {
-            // Not valid JSON
+    const parsed = useMemo(() => {
+        const trimmed = data.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+                return JSON.parse(trimmed);
+            } catch {
+                return null;
+            }
         }
+        return null;
+    }, [data]);
+
+    if (parsed !== null) {
+        return (
+            <div className="text-xs font-mono bg-slate-900 p-3 rounded overflow-auto json-viewer-wrapper">
+                <JsonView
+                    data={parsed}
+                    style={jsonStyles}
+                    shouldExpandNode={(level) => level < 2}
+                />
+            </div>
+        );
     }
 
     // Default text view
     return (
-        <pre className="text-xs font-mono bg-slate-50 text-slate-700 p-3 rounded overflow-auto max-h-64 whitespace-pre-wrap">
+        <pre className="text-xs font-mono bg-slate-50 text-slate-700 p-3 rounded overflow-auto whitespace-pre-wrap">
             {data}
         </pre>
     );
