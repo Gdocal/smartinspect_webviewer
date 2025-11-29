@@ -35,3 +35,8 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
     background: #a1a1a1;
 }
+
+/* Hide scrollbar for tab container */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}

@@ -225,8 +225,8 @@ interface ViewEditorProps {
 }
 
 function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
-    const { sessions, appNames, hostNames, globalHighlightRules } = useLogStore();
-    const [name, setName] = useState(view?.name || 'New View');
+    const { sessions, appNames, hostNames, globalHighlightRules, views } = useLogStore();
+    const [name, setName] = useState(view?.name || generateViewName(views));
     const [filterSessions, setFilterSessions] = useState<string[]>(view?.filter.sessions || []);
     const [filterLevels, setFilterLevels] = useState<number[]>(view?.filter.levels || []);
     const [titlePattern, setTitlePattern] = useState(view?.filter.titlePattern || '');
@@ -583,10 +583,68 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     );
 }
 
+// Generate unique view name
+function generateViewName(views: View[]): string {
+    const existingNumbers = views
+        .map(v => {
+            const match = v.name.match(/^View (\d+)$/);
+            return match ? parseInt(match[1], 10) : 0;
+        })
+        .filter(n => n > 0);
+
+    let num = 1;
+    while (existingNumbers.includes(num)) {
+        num++;
+    }
+    return `View ${num}`;
+}
+
 export function ViewTabs() {
     const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId } = useLogStore();
     const [showEditor, setShowEditor] = useState(false);
     const [editingView, setEditingView] = useState<View | undefined>(undefined);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    // Check scroll state
+    const updateScrollState = useCallback(() => {
+        const container = scrollContainerRef.current;
+        if (container) {
+            setCanScrollLeft(container.scrollLeft > 0);
+            setCanScrollRight(container.scrollLeft < container.scrollWidth - container.clientWidth - 1);
+        }
+    }, []);
+
+    // Update scroll state on mount and when views change
+    useEffect(() => {
+        updateScrollState();
+        window.addEventListener('resize', updateScrollState);
+        return () => window.removeEventListener('resize', updateScrollState);
+    }, [views, updateScrollState]);
+
+    // Handle wheel scroll on tab bar
+    const handleWheel = useCallback((e: React.WheelEvent) => {
+        const container = scrollContainerRef.current;
+        if (container) {
+            e.preventDefault();
+            container.scrollLeft += e.deltaY;
+            updateScrollState();
+        }
+    }, [updateScrollState]);
+
+    // Scroll left/right buttons
+    const scrollTabs = useCallback((direction: 'left' | 'right') => {
+        const container = scrollContainerRef.current;
+        if (container) {
+            const scrollAmount = 150;
+            container.scrollBy({
+                left: direction === 'left' ? -scrollAmount : scrollAmount,
+                behavior: 'smooth'
+            });
+            setTimeout(updateScrollState, 300);
+        }
+    }, [updateScrollState]);
 
     // Watch for external editingViewId changes (e.g., from FilterBar button)
     useEffect(() => {
@@ -640,73 +698,107 @@ export function ViewTabs() {
 
     return (
         <>
-            <div className="bg-slate-100 border-b border-slate-200 px-2 py-1 flex items-center gap-1 overflow-x-auto">
-                {/* Streams tab - pinned first, different styling */}
+            <div className="bg-slate-100 border-b border-slate-200 flex items-center relative">
+                {/* Left scroll indicator */}
+                {canScrollLeft && (
+                    <button
+                        onClick={() => scrollTabs('left')}
+                        className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-100 via-slate-100 to-transparent flex items-center"
+                        title="Scroll left"
+                    >
+                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                )}
+
+                {/* Scrollable tabs container */}
                 <div
-                    onClick={handleStreamsClick}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
-                        isStreamsMode
-                            ? 'bg-gradient-to-b from-purple-500 to-purple-600 text-white border-t border-l border-r border-purple-400 -mb-px shadow-sm'
-                            : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
-                    }`}
+                    ref={scrollContainerRef}
+                    onWheel={handleWheel}
+                    onScroll={updateScrollState}
+                    className="flex items-center gap-1 px-2 py-1 overflow-x-auto scrollbar-hide"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                 >
-                    <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span className={`text-sm font-medium ${isStreamsMode ? 'text-white' : 'text-purple-700'}`}>
-                        Streams
-                    </span>
+                    {/* Streams tab - pinned first, different styling */}
+                    <div
+                        onClick={handleStreamsClick}
+                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
+                            isStreamsMode
+                                ? 'bg-gradient-to-b from-purple-500 to-purple-600 text-white border-t border-l border-r border-purple-400 -mb-px shadow-sm'
+                                : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                        }`}
+                    >
+                        <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span className={`text-sm font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700'}`}>
+                            Streams
+                        </span>
+                    </div>
+
+                    {/* Separator */}
+                    <div className="w-px h-5 bg-slate-300 mx-1 flex-shrink-0" />
+
+                    {/* Regular view tabs */}
+                    {views.map(view => (
+                        <div
+                            key={view.id}
+                            onClick={() => handleViewClick(view.id)}
+                            onDoubleClick={() => handleEditView(view)}
+                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
+                                !isStreamsMode && activeViewId === view.id
+                                    ? 'bg-white border-t border-l border-r border-slate-200 -mb-px'
+                                    : 'hover:bg-slate-200'
+                            }`}
+                            title={view.name}
+                        >
+                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800' : 'text-slate-600'}`}>
+                                {view.name}
+                            </span>
+                            {view.filter.sessions.length > 0 && (
+                                <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+                                    {view.filter.sessions.length}
+                                </span>
+                            )}
+                            {view.id !== 'all' && (
+                                <button
+                                    onClick={(e) => handleDeleteView(e, view.id)}
+                                    className="text-slate-400 hover:text-red-500 transition-colors"
+                                    title="Close tab"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    ))}
+
+                    {/* Add View Button */}
+                    <button
+                        onClick={handleAddView}
+                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                        title="Create new view"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                    </button>
                 </div>
 
-                {/* Separator */}
-                <div className="w-px h-5 bg-slate-300 mx-1" />
-
-                {/* Regular view tabs */}
-                {views.map(view => (
-                    <div
-                        key={view.id}
-                        onClick={() => handleViewClick(view.id)}
-                        onDoubleClick={() => handleEditView(view)}
-                        className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
-                            !isStreamsMode && activeViewId === view.id
-                                ? 'bg-white border-t border-l border-r border-slate-200 -mb-px'
-                                : 'hover:bg-slate-200'
-                        }`}
-                        title={view.name}
+                {/* Right scroll indicator */}
+                {canScrollRight && (
+                    <button
+                        onClick={() => scrollTabs('right')}
+                        className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-100 via-slate-100 to-transparent flex items-center"
+                        title="Scroll right"
                     >
-                        <span className={`text-sm ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800' : 'text-slate-600'}`}>
-                            {view.name}
-                        </span>
-                        {view.filter.sessions.length > 0 && (
-                            <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
-                                {view.filter.sessions.length}
-                            </span>
-                        )}
-                        {view.id !== 'all' && (
-                            <button
-                                onClick={(e) => handleDeleteView(e, view.id)}
-                                className="text-slate-400 hover:text-red-500 transition-colors"
-                                title="Close tab"
-                            >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        )}
-                    </div>
-                ))}
-
-                {/* Add View Button */}
-                <button
-                    onClick={handleAddView}
-                    className="flex items-center gap-1 px-2 py-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
-                    title="Create new view"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span className="text-xs font-medium">New View</span>
-                </button>
+                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                )}
             </div>
 
             {showEditor && (
