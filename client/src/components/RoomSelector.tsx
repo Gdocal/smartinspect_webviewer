@@ -4,6 +4,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
+import { getSettings } from '../hooks/useSettings';
 
 export function RoomSelector() {
     const [isOpen, setIsOpen] = useState(false);
@@ -14,8 +15,12 @@ export function RoomSelector() {
     const currentRoom = useLogStore(state => state.currentRoom);
     const availableRooms = useLogStore(state => state.availableRooms);
     const roomSwitching = useLogStore(state => state.roomSwitching);
+    const connected = useLogStore(state => state.connected);
     const switchRoom = useLogStore(state => state.switchRoom);
     const setAvailableRooms = useLogStore(state => state.setAvailableRooms);
+
+    // Button is disabled when not connected or during room switch
+    const isDisabled = !connected || roomSwitching;
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -30,11 +35,31 @@ export function RoomSelector() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Fetch available rooms from server
+    // Close dropdown when disconnected
     useEffect(() => {
+        if (!connected) {
+            setIsOpen(false);
+            setShowNewRoomInput(false);
+            setNewRoomName('');
+        }
+    }, [connected]);
+
+    // Fetch available rooms from server - only when connected
+    useEffect(() => {
+        if (!connected) return;
+
         async function fetchRooms() {
             try {
-                const response = await fetch('/api/rooms');
+                const settings = getSettings();
+                const headers: Record<string, string> = {};
+                if (settings.authToken) {
+                    headers['Authorization'] = `Bearer ${settings.authToken}`;
+                }
+                const response = await fetch('/api/rooms', { headers });
+                if (!response.ok) {
+                    console.error('[RoomSelector] Failed to fetch rooms:', response.status);
+                    return;
+                }
                 const data = await response.json();
                 if (data.rooms && Array.isArray(data.rooms)) {
                     setAvailableRooms(data.rooms);
@@ -44,10 +69,10 @@ export function RoomSelector() {
             }
         }
         fetchRooms();
-        // Refresh every 30 seconds
+        // Refresh every 30 seconds while connected
         const interval = setInterval(fetchRooms, 30000);
         return () => clearInterval(interval);
-    }, [setAvailableRooms]);
+    }, [connected, setAvailableRooms]);
 
     const handleRoomSelect = (room: string) => {
         if (room !== currentRoom) {
@@ -81,15 +106,16 @@ export function RoomSelector() {
         <div className="relative" ref={dropdownRef}>
             {/* Room button */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
-                disabled={roomSwitching}
+                onClick={() => !isDisabled && setIsOpen(!isOpen)}
+                disabled={isDisabled}
                 className={`
                     flex items-center gap-1.5 px-2 py-0.5 rounded
-                    text-slate-300 hover:text-slate-100 hover:bg-slate-700/50
-                    transition-colors text-xs
-                    ${roomSwitching ? 'opacity-50 cursor-wait' : ''}
+                    text-slate-300 transition-colors text-xs
+                    ${isDisabled
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:text-slate-100 hover:bg-slate-700/50'}
                 `}
-                title="Switch Room"
+                title={!connected ? "Connect first" : "Switch Room"}
             >
                 {/* Room icon */}
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,13 +123,12 @@ export function RoomSelector() {
                         d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
                 <span className="font-medium">{currentRoom}</span>
-                {roomSwitching && (
+                {roomSwitching ? (
                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                )}
-                {!roomSwitching && (
+                ) : (
                     <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>

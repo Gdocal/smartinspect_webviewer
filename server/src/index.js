@@ -84,8 +84,17 @@ app.get('/api/status', (req, res) => {
 
 /**
  * GET /api/rooms - List all rooms
+ * Requires auth token if SI_AUTH_TOKEN is set
  */
 app.get('/api/rooms', (req, res) => {
+    // Check auth if token is configured
+    if (config.authToken) {
+        const token = req.query.token || req.headers.authorization?.replace('Bearer ', '');
+        if (token !== config.authToken) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+    }
+
     res.json({
         rooms: roomManager.listRooms(),
         details: roomManager.getRoomsInfo()

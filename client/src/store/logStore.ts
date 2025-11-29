@@ -203,6 +203,7 @@ interface LogState {
     error: string | null;
     reconnectIn: number | null; // Seconds until reconnect attempt
     serverUrl: string | null; // Current server URL being connected to
+    authRequired: boolean; // True when server requires authentication (close code 4001)
 
     // Room isolation (multi-project support)
     currentRoom: string; // Active room ID
@@ -265,6 +266,7 @@ interface LogState {
     setError: (error: string | null) => void;
     setReconnectIn: (seconds: number | null) => void;
     setServerUrl: (url: string | null) => void;
+    setAuthRequired: (required: boolean) => void;
 
     // Room actions
     setCurrentRoom: (room: string) => void;
@@ -296,11 +298,13 @@ interface LogState {
     updateView: (id: string, updates: Partial<View>) => void;
     deleteView: (id: string) => void;
     setActiveView: (id: string | null) => void;
+    setViews: (views: View[]) => void; // Replace all views (for server sync)
 
     // Highlight rule actions
     addHighlightRule: (rule: Omit<HighlightRule, 'id'>) => void;
     updateHighlightRule: (id: string, updates: Partial<HighlightRule>) => void;
     deleteHighlightRule: (id: string) => void;
+    setGlobalHighlightRules: (rules: HighlightRule[]) => void; // Replace all rules (for server sync)
 
     // Stream actions
     addStreamEntry: (channel: string, entry: Omit<StreamEntry, 'id'>) => void;
@@ -359,6 +363,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     error: null,
     reconnectIn: null,
     serverUrl: null,
+    authRequired: false,
 
     // Room state
     currentRoom: 'default',
@@ -399,12 +404,13 @@ export const useLogStore = create<LogState>((set, get) => ({
     editingViewId: null,
 
     // Actions
-    setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined }),
+    setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined }),
     setConnecting: (connecting) => set({ connecting }),
     setLoadingInitialData: (loadingInitialData) => set({ loadingInitialData }),
     setError: (error) => set({ error }),
     setReconnectIn: (reconnectIn) => set({ reconnectIn }),
     setServerUrl: (serverUrl) => set({ serverUrl }),
+    setAuthRequired: (authRequired) => set({ authRequired }),
 
     // Room actions
     setCurrentRoom: (currentRoom) => set({ currentRoom }),
@@ -572,6 +578,8 @@ export const useLogStore = create<LogState>((set, get) => ({
         return { activeViewId: id };
     }),
 
+    setViews: (views) => set({ views }),
+
     // Highlight rule actions
     addHighlightRule: (rule) => set((state) => ({
         globalHighlightRules: [...state.globalHighlightRules, { ...rule, id: generateId() }]
@@ -586,6 +594,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     deleteHighlightRule: (id) => set((state) => ({
         globalHighlightRules: state.globalHighlightRules.filter(r => r.id !== id)
     })),
+
+    setGlobalHighlightRules: (globalHighlightRules) => set({ globalHighlightRules }),
 
     // Stream actions
     addStreamEntry: (channel, entry) => set((state) => {

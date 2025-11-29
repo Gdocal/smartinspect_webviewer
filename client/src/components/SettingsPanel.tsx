@@ -4,6 +4,8 @@
 
 import { useState, useEffect } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
+import { useLogStore } from '../store/logStore';
+import { reconnect } from '../services/earlyWebSocket';
 
 interface SettingsPanelProps {
     isOpen: boolean;
@@ -24,6 +26,7 @@ const MAX_ENTRIES_OPTIONS = [
 
 export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayout, onImportLayout, onResetLayout }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
+    const setCurrentUser = useLogStore(state => state.setCurrentUser);
 
     // Local form state
     const [formState, setFormState] = useState<AppSettings>(settings);
@@ -50,13 +53,25 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
     const handleSave = () => {
         // Check if server URL changed
         const urlChanged = formState.serverUrl !== settings.serverUrl;
+        // Check if username changed
+        const usernameChanged = formState.username !== settings.username;
+        // Check if auth token changed
+        const authTokenChanged = formState.authToken !== settings.authToken;
 
         // Save client settings
         updateSettings(formState);
 
-        // Notify about URL change
-        if (urlChanged && onServerUrlChange) {
-            onServerUrlChange();
+        // Update logStore currentUser if username changed
+        if (usernameChanged) {
+            setCurrentUser(formState.username || 'default');
+        }
+
+        // Reconnect if URL, auth token, or username changed
+        if (urlChanged || authTokenChanged || usernameChanged) {
+            // Small delay to let settings save to localStorage first
+            setTimeout(() => {
+                reconnect();
+            }, 100);
         }
 
         onClose();
@@ -144,6 +159,21 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                         )}
                                     </button>
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-slate-500 mb-1">
+                                    Username (for per-user settings)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formState.username}
+                                    onChange={(e) => setFormState(prev => ({ ...prev, username: e.target.value || 'default' }))}
+                                    placeholder="default"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                />
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Settings like filters and views are saved per user per room.
+                                </p>
                             </div>
                         </div>
                     </div>

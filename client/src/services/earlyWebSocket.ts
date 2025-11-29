@@ -6,6 +6,7 @@
  */
 
 import { useLogStore, LogEntry, WatchValue } from '../store/logStore';
+import { getSettings } from '../hooks/useSettings';
 
 let initialized = false;
 let ws: WebSocket | null = null;
@@ -39,10 +40,27 @@ function connect(): void {
 
     console.log('[Early WS] Connecting...');
 
-    // Build WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const url = `${protocol}//${host}/ws`;
+    // Build WebSocket URL with auth token and user if configured
+    const settings = getSettings();
+    // Use custom server URL from settings, or fall back to current host
+    const host = settings.serverUrl || window.location.host;
+    const protocol = host.startsWith('localhost') || host.match(/^[\d.]+:/)
+        ? 'ws:'
+        : (window.location.protocol === 'https:' ? 'wss:' : 'ws:');
+    let url = `${protocol}//${host}/ws`;
+
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (settings.authToken) {
+        params.set('token', settings.authToken);
+    }
+    if (settings.username && settings.username !== 'default') {
+        params.set('user', settings.username);
+    }
+    const queryString = params.toString();
+    if (queryString) {
+        url += `?${queryString}`;
+    }
 
     store.setServerUrl(host);
 
@@ -78,8 +96,15 @@ function connect(): void {
             store.setConnecting(false);
             ws = null;
 
-            // Auto-reconnect unless intentionally closed (code 4001)
-            if (event.code !== 4001) {
+            // Check for auth failure (close code 4001)
+            if (event.code === 4001) {
+                store.setAuthRequired(true);
+                store.setError('Authentication required');
+                return; // Don't auto-reconnect
+            }
+
+            // Auto-reconnect unless intentionally closed
+            if (event.code !== 1000) {
                 const reconnectSeconds = Math.ceil(RECONNECT_DELAY / 1000);
                 let countdown = reconnectSeconds;
                 store.setReconnectIn(countdown);
@@ -196,4 +221,27 @@ export function getWebSocket(): WebSocket | null {
 
 export function isInitialized(): boolean {
     return initialized;
+}
+
+// Force reconnect (used when auth token changes)
+export function reconnect(): void {
+    console.log('[Early WS] Reconnecting (forced)...');
+
+    // Clear any pending reconnect timers
+    clearReconnectTimers();
+
+    // Close existing connection if any
+    if (ws) {
+        ws.onclose = null; // Prevent auto-reconnect from onclose
+        ws.close(1000);
+        ws = null;
+    }
+
+    // Reset auth state
+    const store = useLogStore.getState();
+    store.setAuthRequired(false);
+    store.setError(null);
+
+    // Connect with new settings
+    connect();
 }
