@@ -201,19 +201,20 @@ export function App() {
                     {/* Filter bar - only show for logs mode, inside left content area */}
                     {!isStreamsMode && <FilterBar />}
 
-                    {/* Content area - either StreamsView or LogGrid */}
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                        {isStreamsMode ? (
+                    {/* Content area - both views mounted, visibility controlled by CSS to prevent remount animations */}
+                    <div className="flex-1 min-h-0 overflow-hidden relative">
+                        <div className={`absolute inset-0 ${isStreamsMode ? '' : 'invisible'}`}>
                             <StreamsView
                                 onSelectEntry={handleStreamEntrySelect}
                                 selectedEntryId={selectedStreamEntryId}
                             />
-                        ) : (
+                        </div>
+                        <div className={`absolute inset-0 ${isStreamsMode ? 'invisible' : ''}`}>
                             <LogGrid
                                 onColumnStateChange={handleColumnStateChange}
                                 initialColumnState={layout.columnState}
                             />
-                        )}
+                        </div>
                     </div>
 
                     {/* Stream Panel (if visible, only in logs mode) */}
