@@ -15,6 +15,7 @@ const { TcpLogServer } = require('./tcp-server');
 const { ConnectionManager } = require('./connection-manager');
 const { LogRingBuffer, WatchStore, MethodContextTracker } = require('./storage');
 const { PacketType, ControlCommandType, Level, LogEntryType } = require('./packet-parser');
+const { registerQueryRoutes } = require('./query-api');
 
 // Configuration from environment
 const config = {
@@ -28,6 +29,9 @@ const config = {
 const logBuffer = new LogRingBuffer(config.maxEntries);
 const watchStore = new WatchStore();
 const methodTracker = new MethodContextTracker();
+
+// Stream data store (high-frequency data)
+const streamStore = {};
 
 // Initialize Express app
 const app = express();
@@ -232,6 +236,10 @@ app.patch('/api/server/config', (req, res) => {
         tcpPort: config.tcpPort
     });
 });
+
+// ==================== Query API ====================
+// Register /api/logs/query and /api/streams/query endpoints
+registerQueryRoutes(app, logBuffer, streamStore);
 
 // Fallback to index.html for SPA routing
 app.get('*', (req, res) => {
@@ -445,4 +453,4 @@ process.on('SIGTERM', async () => {
 // Start the server
 start();
 
-module.exports = { app, httpServer, tcpServer, connectionManager, logBuffer, watchStore };
+module.exports = { app, httpServer, tcpServer, connectionManager, logBuffer, watchStore, streamStore };
