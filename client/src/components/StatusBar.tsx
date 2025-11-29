@@ -4,7 +4,11 @@
 
 import { useLogStore } from '../store/logStore';
 
-export function StatusBar() {
+interface StatusBarProps {
+    onServerInfoClick?: () => void;
+}
+
+export function StatusBar({ onServerInfoClick }: StatusBarProps) {
     const { connected, connecting, error, stats, entries, paused } = useLogStore();
 
     return (
@@ -40,6 +44,19 @@ export function StatusBar() {
             )}
 
             <div className="flex-1" />
+
+            {/* Server Info Button */}
+            {onServerInfoClick && (
+                <button
+                    onClick={onServerInfoClick}
+                    className="p-1 rounded hover:bg-slate-700 transition-colors text-slate-400 hover:text-slate-200"
+                    title="Server Information"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+                    </svg>
+                </button>
+            )}
 
             {/* Stats */}
             <div className="flex items-center gap-4">

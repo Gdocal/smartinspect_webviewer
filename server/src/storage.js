@@ -240,6 +240,41 @@ class LogRingBuffer {
     }
 
     /**
+     * Resize the buffer to a new maximum size
+     * If newMax is smaller than current size, oldest entries are dropped
+     */
+    resize(newMaxEntries) {
+        if (newMaxEntries === this.maxEntries) return;
+
+        // Get all current entries in order
+        const entries = this.getAll();
+
+        // Clear indexes
+        this.sessionIndex.clear();
+        this.levelIndex.clear();
+
+        // If shrinking, keep only the newest entries
+        const entriesToKeep = entries.length > newMaxEntries
+            ? entries.slice(entries.length - newMaxEntries)
+            : entries;
+
+        // Create new buffer
+        this.buffer = new Array(newMaxEntries);
+        this.maxEntries = newMaxEntries;
+        this.head = 0;
+        this.size = 0;
+
+        // Re-add entries
+        for (const entry of entriesToKeep) {
+            const index = this.head;
+            this.buffer[index] = entry;
+            this.head = (this.head + 1) % this.maxEntries;
+            this.size++;
+            this._addToIndexes(entry, index);
+        }
+    }
+
+    /**
      * Get current stats
      */
     getStats() {

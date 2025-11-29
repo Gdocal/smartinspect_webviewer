@@ -171,6 +171,68 @@ app.delete('/api/watches', (req, res) => {
     res.json({ success: true });
 });
 
+/**
+ * GET /api/server/stats - Server stats for monitoring
+ */
+app.get('/api/server/stats', (req, res) => {
+    const memUsage = process.memoryUsage();
+    const cpuUsage = process.cpuUsage();
+
+    res.json({
+        memory: {
+            heapUsed: memUsage.heapUsed,
+            heapTotal: memUsage.heapTotal,
+            rss: memUsage.rss,
+            external: memUsage.external
+        },
+        cpu: cpuUsage,
+        uptime: process.uptime(),
+        logs: {
+            count: logBuffer.size,
+            maxEntries: logBuffer.maxEntries
+        },
+        connections: {
+            viewers: connectionManager.getViewerCount(),
+            clients: tcpServer.getClientCount()
+        }
+    });
+});
+
+/**
+ * GET /api/server/config - Get server configuration
+ */
+app.get('/api/server/config', (req, res) => {
+    res.json({
+        maxEntries: logBuffer.maxEntries,
+        httpPort: config.httpPort,
+        tcpPort: config.tcpPort
+    });
+});
+
+/**
+ * PATCH /api/server/config - Update server configuration
+ */
+app.patch('/api/server/config', (req, res) => {
+    const { maxEntries } = req.body;
+
+    if (maxEntries !== undefined) {
+        const newMax = parseInt(maxEntries);
+        if (isNaN(newMax) || newMax < 1000 || newMax > 1000000) {
+            return res.status(400).json({
+                error: 'maxEntries must be between 1,000 and 1,000,000'
+            });
+        }
+        logBuffer.resize(newMax);
+        config.maxEntries = newMax;
+    }
+
+    res.json({
+        maxEntries: logBuffer.maxEntries,
+        httpPort: config.httpPort,
+        tcpPort: config.tcpPort
+    });
+});
+
 // Fallback to index.html for SPA routing
 app.get('*', (req, res) => {
     res.sendFile(path.join(clientBuildPath, 'index.html'));
