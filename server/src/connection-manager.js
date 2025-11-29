@@ -2,9 +2,15 @@
  * SmartInspect Web Viewer - Connection Manager
  * Manages web viewer clients (WebSocket connections)
  * Supports room-based isolation for multi-project viewing
+ *
+ * Security: Supports both URL-based and message-based authentication.
+ * Message-based auth (recommended) sends token after connection, avoiding URL logging.
  */
 
 const WebSocket = require('ws');
+
+// Timeout for authentication after connection (ms)
+const AUTH_TIMEOUT = 10000;
 
 /**
  * Manages WebSocket connections from web viewers
@@ -16,6 +22,7 @@ class ConnectionManager {
         this.roomManager = options.roomManager || null;
         this.wss = null;
         this.viewers = new Map();  // ws -> viewer info
+        this.pendingAuth = new Map();  // ws -> { timeout, room, user }
         this.viewerIdCounter = 0;
 
         // Callbacks
@@ -42,6 +49,9 @@ class ConnectionManager {
 
     /**
      * Handle new viewer connection
+     * Supports two authentication modes:
+     * 1. URL-based: token passed in query string (legacy, less secure for logging)
+     * 2. Message-based: token sent after connection via 'auth' message (recommended)
      */
     _handleConnection(ws, req) {
         // Extract token and room from query string
@@ -50,13 +60,101 @@ class ConnectionManager {
         const room = url.searchParams.get('room') || 'default';
         const user = url.searchParams.get('user') || 'default';
 
-        // Authenticate if token is required
-        if (this.authToken && token !== this.authToken) {
-            console.log('[WS] Viewer rejected - invalid token');
-            ws.close(4001, 'Invalid token');
-            return;
-        }
+        // Check if auth is required
+        if (this.authToken) {
+            // If token provided in URL, validate immediately (legacy mode)
+            if (token) {
+                if (token !== this.authToken) {
+                    console.log('[WS] Viewer rejected - invalid token in URL');
+                    ws.close(4001, 'Invalid token');
+                    return;
+                }
+                // Token valid, proceed with full connection
+                this._completeConnection(ws, req, room, user);
+            } else {
+                // No token in URL - wait for auth message (secure mode)
+                console.log('[WS] Viewer connected, waiting for auth message...');
 
+                // Set up timeout for authentication
+                const timeout = setTimeout(() => {
+                    if (this.pendingAuth.has(ws)) {
+                        console.log('[WS] Viewer rejected - auth timeout');
+                        ws.close(4001, 'Authentication timeout');
+                        this.pendingAuth.delete(ws);
+                    }
+                }, AUTH_TIMEOUT);
+
+                this.pendingAuth.set(ws, { timeout, room, user, address: req.socket.remoteAddress });
+
+                // Handle messages (looking for auth message)
+                ws.on('message', (message) => {
+                    this._handlePendingAuthMessage(ws, message);
+                });
+
+                // Handle early disconnect
+                ws.on('close', () => {
+                    const pending = this.pendingAuth.get(ws);
+                    if (pending) {
+                        clearTimeout(pending.timeout);
+                        this.pendingAuth.delete(ws);
+                        console.log('[WS] Pending viewer disconnected before auth');
+                    }
+                });
+
+                // Send auth required message to client
+                ws.send(JSON.stringify({ type: 'auth_required' }));
+            }
+        } else {
+            // No auth required, proceed immediately
+            this._completeConnection(ws, req, room, user);
+        }
+    }
+
+    /**
+     * Handle messages from pending (unauthenticated) connections
+     */
+    _handlePendingAuthMessage(ws, message) {
+        const pending = this.pendingAuth.get(ws);
+        if (!pending) return;
+
+        try {
+            const msg = JSON.parse(message.toString());
+
+            if (msg.type === 'auth') {
+                // Validate token
+                if (msg.token === this.authToken) {
+                    console.log('[WS] Viewer authenticated via message');
+                    clearTimeout(pending.timeout);
+                    this.pendingAuth.delete(ws);
+
+                    // Use room/user from auth message if provided, otherwise from URL
+                    const room = msg.room || pending.room;
+                    const user = msg.user || pending.user;
+
+                    // Remove the pending message handler and complete connection
+                    ws.removeAllListeners('message');
+                    ws.removeAllListeners('close');
+
+                    this._completeConnection(ws, { socket: { remoteAddress: pending.address } }, room, user);
+
+                    // Send auth success message
+                    ws.send(JSON.stringify({ type: 'auth_success' }));
+                } else {
+                    console.log('[WS] Viewer rejected - invalid token in message');
+                    clearTimeout(pending.timeout);
+                    this.pendingAuth.delete(ws);
+                    ws.close(4001, 'Invalid token');
+                }
+            }
+        } catch (err) {
+            console.error('[WS] Invalid message from pending viewer:', err.message);
+        }
+    }
+
+    /**
+     * Complete viewer connection after successful authentication
+     */
+    _completeConnection(ws, req, room, user, skipConnectedMessage = false) {
         const viewerId = ++this.viewerIdCounter;
         const viewerInfo = {
             id: viewerId,
@@ -98,6 +196,12 @@ class ConnectionManager {
         ws.on('error', (err) => {
             console.error(`[WS] Viewer ${viewerId} error:`, err.message);
         });
+
+        // Send connected message to client (tells client no auth was required)
+        // Skip if this was after auth_success (that already signals connection)
+        if (!skipConnectedMessage) {
+            ws.send(JSON.stringify({ type: 'connected' }));
+        }
 
         this.onViewerConnect(viewerInfo);
     }

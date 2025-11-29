@@ -6,6 +6,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useLayout } from './hooks/useLayout';
+import { useViewsSync } from './hooks/useViewsSync';
 import { useLogStore, StreamEntry } from './store/logStore';
 import { LogGrid } from './components/LogGrid';
 import { FilterBar } from './components/FilterBar';
@@ -55,6 +56,9 @@ export function App() {
 
     // Connect to WebSocket
     useWebSocket();
+
+    // Sync views and highlights with server
+    useViewsSync();
 
     const handleColumnStateChange = (state: ColumnState[]) => {
         saveLayout({ columnState: state });

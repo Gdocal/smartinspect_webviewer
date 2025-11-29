@@ -3,6 +3,9 @@
  *
  * This module initiates the WebSocket connection and initial data fetch
  * as early as possible (before AG Grid modules load) to minimize perceived latency.
+ *
+ * Security: Uses message-based authentication (sends token after connection)
+ * instead of URL query params to avoid token appearing in server logs.
  */
 
 import { useLogStore, LogEntry, WatchValue } from '../store/logStore';
@@ -12,6 +15,7 @@ let initialized = false;
 let ws: WebSocket | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let reconnectCountdown: ReturnType<typeof setInterval> | null = null;
+let pendingAuth = false;  // Track if we're waiting for auth response
 const RECONNECT_DELAY = 3000;
 
 function clearReconnectTimers(): void {
@@ -34,32 +38,24 @@ function connect(): void {
     }
 
     clearReconnectTimers();
+    pendingAuth = false;
     store.setReconnectIn(null);
     store.setConnecting(true);
     store.setError(null);
 
     console.log('[Early WS] Connecting...');
 
-    // Build WebSocket URL with auth token and user if configured
+    // Build WebSocket URL - NO sensitive data in URL for security
     const settings = getSettings();
     // Use custom server URL from settings, or fall back to current host
     const host = settings.serverUrl || window.location.host;
     const protocol = host.startsWith('localhost') || host.match(/^[\d.]+:/)
         ? 'ws:'
         : (window.location.protocol === 'https:' ? 'wss:' : 'ws:');
+    // Only pass non-sensitive user param in URL (no token)
     let url = `${protocol}//${host}/ws`;
-
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (settings.authToken) {
-        params.set('token', settings.authToken);
-    }
     if (settings.username && settings.username !== 'default') {
-        params.set('user', settings.username);
-    }
-    const queryString = params.toString();
-    if (queryString) {
-        url += `?${queryString}`;
+        url += `?user=${encodeURIComponent(settings.username)}`;
     }
 
     store.setServerUrl(host);
@@ -68,25 +64,9 @@ function connect(): void {
         ws = new WebSocket(url);
 
         ws.onopen = async () => {
-            console.log('[Early WS] Connected');
-            store.setConnected(true);
-            store.setConnecting(false);
-            store.setError(null);
-            store.setLoadingInitialData(true);
-
-            // Fetch existing logs from REST API
-            try {
-                const response = await fetch('/api/logs?limit=5000');
-                const data = await response.json();
-                if (data.entries && data.entries.length > 0) {
-                    console.log(`[Early WS] Loaded ${data.entries.length} existing entries`);
-                    store.addEntriesBatch(data.entries);
-                }
-            } catch (err) {
-                console.error('[Early WS] Failed to load existing logs:', err);
-            } finally {
-                store.setLoadingInitialData(false);
-            }
+            console.log('[Early WS] Connected, waiting for server...');
+            // Don't mark as fully connected yet - wait for auth flow
+            // The server will send either 'auth_required' or we're fully connected
         };
 
         ws.onclose = (event) => {
@@ -156,10 +136,94 @@ export function initializeWebSocket(): void {
     connect();
 }
 
+/**
+ * Send auth message to server (secure message-based authentication)
+ */
+function sendAuthMessage(): void {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+    const settings = getSettings();
+    const authMsg = {
+        type: 'auth',
+        token: settings.authToken || '',
+        user: settings.username || 'default'
+    };
+
+    console.log('[Early WS] Sending auth message...');
+    ws.send(JSON.stringify(authMsg));
+    pendingAuth = true;
+}
+
+/**
+ * Complete connection after successful auth (or when no auth required)
+ */
+async function completeConnection(): Promise<void> {
+    const store = useLogStore.getState();
+    console.log('[Early WS] Fully connected');
+    store.setConnected(true);
+    store.setConnecting(false);
+    store.setError(null);
+    store.setLoadingInitialData(true);
+
+    // Fetch existing logs from REST API
+    try {
+        const settings = getSettings();
+        const headers: Record<string, string> = {};
+        if (settings.authToken) {
+            headers['Authorization'] = `Bearer ${settings.authToken}`;
+        }
+        const response = await fetch('/api/logs?limit=5000', { headers });
+        const data = await response.json();
+        if (data.entries && data.entries.length > 0) {
+            console.log(`[Early WS] Loaded ${data.entries.length} existing entries`);
+            store.addEntriesBatch(data.entries);
+        }
+    } catch (err) {
+        console.error('[Early WS] Failed to load existing logs:', err);
+    } finally {
+        store.setLoadingInitialData(false);
+    }
+}
+
 function handleMessage(message: any, store: ReturnType<typeof useLogStore.getState>): void {
     switch (message.type) {
+        // Auth flow messages
+        case 'auth_required': {
+            // Server requires authentication - send auth message
+            console.log('[Early WS] Server requires auth');
+            const settings = getSettings();
+            if (settings.authToken) {
+                sendAuthMessage();
+            } else {
+                // No token configured - show auth required UI
+                store.setAuthRequired(true);
+                store.setConnecting(false);
+                store.setError('Authentication required');
+            }
+            break;
+        }
+        case 'auth_success': {
+            // Auth successful - complete connection
+            console.log('[Early WS] Auth successful');
+            pendingAuth = false;
+            store.setAuthRequired(false);
+            completeConnection();
+            break;
+        }
+        case 'connected': {
+            // Server says no auth required, connection complete
+            console.log('[Early WS] Connected (no auth required)');
+            completeConnection();
+            break;
+        }
+
+        // Data messages
         case 'entries':
         case 'entry': {
+            // If we receive data without auth flow, server doesn't require auth
+            if (!useLogStore.getState().connected && !pendingAuth) {
+                completeConnection();
+            }
             const entries: LogEntry[] = message.type === 'entry' ? [message.entry] : message.data;
             if (entries && entries.length > 0) {
                 store.addEntriesBatch(entries);
@@ -167,6 +231,9 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             break;
         }
         case 'watch': {
+            if (!useLogStore.getState().connected && !pendingAuth) {
+                completeConnection();
+            }
             const watch = message.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
             if (watch && watch.name) {
                 store.updateWatch(watch.name, {
@@ -179,6 +246,9 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             break;
         }
         case 'watches': {
+            if (!useLogStore.getState().connected && !pendingAuth) {
+                completeConnection();
+            }
             const watches = message.watches as Array<{ name: string; value: string; timestamp: string; watchType?: number; session?: string }>;
             if (watches) {
                 const watchMap: Record<string, WatchValue> = {};
