@@ -9,6 +9,9 @@ interface SettingsPanelProps {
     isOpen: boolean;
     onClose: () => void;
     onServerUrlChange?: () => void;  // Callback when server URL changes (to reconnect)
+    onExportLayout?: () => void;
+    onImportLayout?: () => void;
+    onResetLayout?: () => void;
 }
 
 const MAX_ENTRIES_OPTIONS = [
@@ -19,7 +22,7 @@ const MAX_ENTRIES_OPTIONS = [
     { value: 100000, label: '100,000 (All)' },
 ];
 
-export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayout, onImportLayout, onResetLayout }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
 
     // Local form state
@@ -172,6 +175,48 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange }: SettingsPa
                                 </p>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Layout Section */}
+                    <div>
+                        <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                            </svg>
+                            Layout
+                        </h3>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => { onExportLayout?.(); onClose(); }}
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                                Export
+                            </button>
+                            <button
+                                onClick={() => { onImportLayout?.(); onClose(); }}
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                Import
+                            </button>
+                            <button
+                                onClick={() => { onResetLayout?.(); onClose(); }}
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Reset
+                            </button>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-2">
+                            Export/import column widths, order, and panel sizes.
+                        </p>
                     </div>
                 </div>
 

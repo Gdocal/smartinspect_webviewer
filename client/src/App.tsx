@@ -109,111 +109,86 @@ export function App() {
 
     return (
         <div className="h-screen flex flex-col bg-gray-100">
-            {/* Header */}
-            <header className="bg-gradient-to-r from-slate-800 to-slate-700 text-white px-4 py-2.5 flex items-center gap-4 shadow-md">
+            {/* Header - Clean, minimal */}
+            <header className="bg-gradient-to-r from-slate-800 to-slate-700 text-white px-4 py-2 flex items-center shadow-md">
+                {/* Logo and title */}
                 <div className="flex items-center gap-2">
-                    <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                     </svg>
-                    <h1 className="text-lg font-semibold tracking-tight">SmartInspect</h1>
+                    <h1 className="text-base font-semibold tracking-tight">SmartInspect</h1>
                     <span className="text-xs text-slate-400 font-normal">Web Viewer</span>
                 </div>
 
                 <div className="flex-1" />
 
-                {/* Panel toggles */}
+                {/* Minimal icon buttons */}
                 <div className="flex items-center gap-1">
+                    {/* Detail panel toggle */}
                     <button
                         onClick={() => setShowDetailPanel(!showDetailPanel)}
-                        className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 ${
+                        className={`p-1.5 rounded transition-colors ${
                             showDetailPanel
-                                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                                ? 'bg-blue-500/20 text-blue-400'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-600'
                         }`}
-                        title="Toggle detail panel (below grid)"
+                        title="Toggle detail panel"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                         </svg>
-                        Details
                     </button>
+
+                    {/* Watch panel toggle */}
                     <button
                         onClick={() => setShowWatchPanel(!showWatchPanel)}
-                        className={`px-2.5 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 ${
+                        className={`p-1.5 rounded transition-colors ${
                             showWatchPanel
-                                ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                : 'bg-slate-600 text-slate-300 hover:bg-slate-500'
+                                ? 'bg-blue-500/20 text-blue-400'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-600'
                         }`}
-                        title="Toggle watch panel (right side)"
+                        title="Toggle watch panel"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                        Watches
+                    </button>
+
+                    <div className="w-px h-4 bg-slate-600 mx-1" />
+
+                    {/* Highlight rules */}
+                    <button
+                        onClick={() => setShowHighlightRules(true)}
+                        className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
+                        title="Highlight rules"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                        </svg>
+                    </button>
+
+                    {/* Settings */}
+                    <button
+                        onClick={() => setShowSettings(true)}
+                        className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
+                        title="Settings"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
                     </button>
                 </div>
 
-                <div className="w-px h-5 bg-slate-600" />
-
-                {/* Highlight rules */}
-                <button
-                    onClick={() => setShowHighlightRules(true)}
-                    className="px-2.5 py-1.5 text-xs font-medium bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors flex items-center gap-1.5"
-                    title="Configure highlight rules"
-                >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                    </svg>
-                    Highlight
-                </button>
-
-                {/* Settings */}
-                <button
-                    onClick={() => setShowSettings(true)}
-                    className="px-2.5 py-1.5 text-xs font-medium bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors flex items-center gap-1.5"
-                    title="Settings"
-                >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Settings
-                </button>
-
-                <div className="w-px h-5 bg-slate-600" />
-
-                {/* Layout controls */}
-                <div className="flex items-center gap-1">
-                    <button
-                        onClick={exportLayout}
-                        className="px-2.5 py-1.5 text-xs font-medium bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors"
-                        title="Export layout"
-                    >
-                        Export
-                    </button>
-                    <button
-                        onClick={handleImportClick}
-                        className="px-2.5 py-1.5 text-xs font-medium bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors"
-                        title="Import layout"
-                    >
-                        Import
-                    </button>
-                    <button
-                        onClick={resetLayout}
-                        className="px-2.5 py-1.5 text-xs font-medium bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors"
-                        title="Reset layout"
-                    >
-                        Reset
-                    </button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".json"
-                        onChange={handleFileChange}
-                        className="hidden"
-                    />
-                </div>
+                {/* Hidden file input for layout import */}
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleFileChange}
+                    className="hidden"
+                />
             </header>
 
             {/* View tabs */}
@@ -312,6 +287,9 @@ export function App() {
             <SettingsPanel
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
+                onExportLayout={exportLayout}
+                onImportLayout={handleImportClick}
+                onResetLayout={resetLayout}
             />
         </div>
     );
