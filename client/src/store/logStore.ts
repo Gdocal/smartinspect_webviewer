@@ -250,6 +250,7 @@ interface LogState {
     showWatchPanel: boolean;
     showStreamPanel: boolean;
     isStreamsMode: boolean; // True when Streams tab is active
+    editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
 
     // Actions
     setConnected: (connected: boolean) => void;
@@ -297,6 +298,9 @@ interface LogState {
     setShowDetailPanel: (show: boolean) => void;
     setShowWatchPanel: (show: boolean) => void;
     setShowStreamPanel: (show: boolean) => void;
+
+    // View editing
+    setEditingViewId: (id: string | null) => void;
 
     // Get selected entry
     getSelectedEntry: () => LogEntry | null;
@@ -372,6 +376,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     showWatchPanel: true,
     showStreamPanel: false,
     isStreamsMode: false,
+    editingViewId: null,
 
     // Actions
     setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined }),
@@ -570,6 +575,9 @@ export const useLogStore = create<LogState>((set, get) => ({
     setShowDetailPanel: (show) => set({ showDetailPanel: show }),
     setShowWatchPanel: (show) => set({ showWatchPanel: show }),
     setShowStreamPanel: (show) => set({ showStreamPanel: show }),
+
+    // View editing
+    setEditingViewId: (id) => set({ editingViewId: id }),
 
     // Get selected entry
     getSelectedEntry: () => {

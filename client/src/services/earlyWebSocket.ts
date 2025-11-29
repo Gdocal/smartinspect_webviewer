@@ -135,14 +135,14 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
     switch (message.type) {
         case 'entries':
         case 'entry': {
-            const entries: LogEntry[] = message.type === 'entry' ? [message.entry] : message.entries;
+            const entries: LogEntry[] = message.type === 'entry' ? [message.entry] : message.data;
             if (entries && entries.length > 0) {
                 store.addEntriesBatch(entries);
             }
             break;
         }
         case 'watch': {
-            const watch = message.watch as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
+            const watch = message.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
             if (watch && watch.name) {
                 store.updateWatch(watch.name, {
                     value: watch.value,

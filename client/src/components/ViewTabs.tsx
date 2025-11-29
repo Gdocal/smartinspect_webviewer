@@ -3,7 +3,7 @@
  * With searchable multi-select dropdown for sessions
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogStore, View, Filter, Level, HighlightRule } from '../store/logStore';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
 
@@ -584,19 +584,32 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 }
 
 export function ViewTabs() {
-    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode } = useLogStore();
+    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId } = useLogStore();
     const [showEditor, setShowEditor] = useState(false);
     const [editingView, setEditingView] = useState<View | undefined>(undefined);
+
+    // Watch for external editingViewId changes (e.g., from FilterBar button)
+    useEffect(() => {
+        if (editingViewId) {
+            const view = views.find(v => v.id === editingViewId);
+            if (view) {
+                setEditingView(view);
+                setShowEditor(true);
+            }
+            // Clear the editingViewId after handling
+            setEditingViewId(null);
+        }
+    }, [editingViewId, views, setEditingViewId]);
 
     const handleAddView = () => {
         setEditingView(undefined);
         setShowEditor(true);
     };
 
-    const handleEditView = (view: View) => {
+    const handleEditView = useCallback((view: View) => {
         setEditingView(view);
         setShowEditor(true);
-    };
+    }, []);
 
     const handleSaveView = (viewData: Omit<View, 'id'>) => {
         if (editingView) {
@@ -669,32 +682,16 @@ export function ViewTabs() {
                                 {view.filter.sessions.length}
                             </span>
                         )}
-                        {view.highlightRules.length > 0 && (
-                            <span className="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded" title="Has highlight rules">
-                                {view.highlightRules.length}
-                            </span>
-                        )}
                         {view.id !== 'all' && (
-                            <>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleEditView(view); }}
-                                    className="text-slate-400 hover:text-blue-500 transition-colors"
-                                    title="Edit view settings"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                </button>
-                                <button
-                                    onClick={(e) => handleDeleteView(e, view.id)}
-                                    className="text-slate-400 hover:text-red-500 transition-colors"
-                                    title="Close tab"
-                                >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </>
+                            <button
+                                onClick={(e) => handleDeleteView(e, view.id)}
+                                className="text-slate-400 hover:text-red-500 transition-colors"
+                                title="Close tab"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
                         )}
                     </div>
                 ))}
