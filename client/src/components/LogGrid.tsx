@@ -23,6 +23,7 @@ import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
 ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
 import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule } from '../store/logStore';
+import { TimestampFilter } from './TimestampFilter';
 import { format } from 'date-fns';
 
 // Set license key if available
@@ -274,7 +275,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             valueFormatter: (params) => formatTimestamp(params.value),
             tooltipValueGetter: (params) => formatFullTimestamp(params.value),
             sortable: true,
-            filter: 'agDateColumnFilter',
+            filter: TimestampFilter,
         },
         {
             headerName: 'Level',
@@ -284,6 +285,20 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             cellRenderer: LevelCellRenderer,
             sortable: true,
             filter: 'agSetColumnFilter',
+            filterParams: {
+                valueFormatter: (params: { value: number | null }) => {
+                    if (params.value === null || params.value === undefined) return '(Blank)';
+                    const names: Record<number, string> = {
+                        [Level.Debug]: 'Debug',
+                        [Level.Verbose]: 'Verbose',
+                        [Level.Message]: 'Info',
+                        [Level.Warning]: 'Warning',
+                        [Level.Error]: 'Error',
+                        [Level.Fatal]: 'Fatal',
+                    };
+                    return names[params.value] || String(params.value);
+                }
+            },
         },
         {
             headerName: 'Session',
@@ -485,7 +500,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 onColumnVisible={onColumnStateChanged}
                 // PERFORMANCE OPTIMIZATIONS
                 animateRows={false}
-                rowSelection={{ mode: 'singleRow', enableClickSelection: true }}
+                rowSelection={{ mode: 'singleRow', enableClickSelection: true, hideDisabledCheckboxes: true, checkboxes: false }}
                 sideBar={sideBar}
                 cellSelection={true}
                 suppressCellFocus={true}
