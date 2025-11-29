@@ -181,6 +181,9 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     const lastEntryCountRef = useRef(0);
     const lastEntriesVersionRef = useRef(0);
 
+    // Simple static overlay - connection status is shown in footer
+    const overlayNoRowsTemplate = '<span class="text-slate-400">No log entries</span>';
+
     // OPTIMIZED: Debounced filter computation
     const filteredEntries = useMemo(() => {
         // Check if any filter is active
@@ -251,6 +254,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             return true;
         });
     }, [entries, filter, entriesVersion]);
+
 
     // Column definitions with all columns
     const columnDefs = useMemo<ColDef<LogEntry>[]>(() => [
@@ -516,6 +520,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 // Async transactions for bulk updates
                 asyncTransactionWaitMillis={50}
                 tooltipShowDelay={500}
+                overlayNoRowsTemplate={overlayNoRowsTemplate}
                 statusBar={{
                     statusPanels: [
                         { statusPanel: 'agTotalRowCountComponent', align: 'left' },

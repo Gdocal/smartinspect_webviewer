@@ -62,16 +62,14 @@ interface HighlightRulesPanelProps {
 }
 
 export function HighlightRulesPanel({ onClose }: HighlightRulesPanelProps) {
-    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions } = useLogStore();
+    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames } = useLogStore();
     const [showEditor, setShowEditor] = useState(false);
     const [editingRule, setEditingRule] = useState<HighlightRule | undefined>(undefined);
 
-    // Get available values for dropdowns
+    // Get available values for dropdowns from store
     const availableSessions = Object.keys(sessions);
-    // For now, appNames and hostNames would need to be extracted from entries
-    // In a real implementation, you'd track these in the store
-    const availableAppNames: string[] = [];
-    const availableHostNames: string[] = [];
+    const availableAppNames = Object.keys(appNames);
+    const availableHostNames = Object.keys(hostNames);
 
     const handleAddRule = () => {
         setEditingRule(undefined);

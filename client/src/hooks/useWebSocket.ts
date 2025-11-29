@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useLogStore, LogEntry, WatchValue } from '../store/logStore';
+import { getWebSocket, isInitialized as isEarlyInitialized } from '../services/earlyWebSocket';
 
 interface UseWebSocketOptions {
     token?: string;
@@ -248,6 +249,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             store.setConnected(true);
             store.setConnecting(false);
             store.setError(null);
+            store.setLoadingInitialData(true);
 
             // Fetch existing logs from REST API
             try {
@@ -261,6 +263,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 }
             } catch (err) {
                 console.error('[WS] Failed to load existing logs:', err);
+            } finally {
+                store.setLoadingInitialData(false);
             }
         };
 
@@ -339,19 +343,33 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         return unsubscribe;
     }, [send]);
 
-    // Connect on mount - only once
+    // Sync with early WebSocket on mount
     useEffect(() => {
         mountedRef.current = true;
 
-        // Only connect if we haven't connected yet
-        if (!connectedOnceRef.current) {
-            connectedOnceRef.current = true;
-            connect();
+        // Check if early WebSocket is handling connection
+        if (isEarlyInitialized()) {
+            // The early WebSocket service handles everything - just sync the ref
+            const earlyWs = getWebSocket();
+            if (earlyWs) {
+                wsRef.current = earlyWs;
+                console.log('[WS] Using early WebSocket connection');
+            }
+            // Don't call connect() - early WebSocket handles reconnection
+        } else {
+            // Fallback: no early connection, connect normally
+            if (!connectedOnceRef.current) {
+                connectedOnceRef.current = true;
+                connect();
+            }
         }
 
         return () => {
             mountedRef.current = false;
-            disconnect();
+            // Don't disconnect - early WebSocket manages connection lifecycle
+            if (!isEarlyInitialized()) {
+                disconnect();
+            }
         };
     }, []); // Empty deps - only run on mount/unmount
 

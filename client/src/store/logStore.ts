@@ -199,6 +199,7 @@ interface LogState {
     // Connection
     connected: boolean;
     connecting: boolean;
+    loadingInitialData: boolean; // True while fetching initial log entries after connect
     error: string | null;
     reconnectIn: number | null; // Seconds until reconnect attempt
     serverUrl: string | null; // Current server URL being connected to
@@ -214,6 +215,10 @@ interface LogState {
 
     // Sessions (log sources)
     sessions: Record<string, number>;
+
+    // Application names and host names (for filtering)
+    appNames: Record<string, number>;
+    hostNames: Record<string, number>;
 
     // Stats
     stats: {
@@ -249,6 +254,7 @@ interface LogState {
     // Actions
     setConnected: (connected: boolean) => void;
     setConnecting: (connecting: boolean) => void;
+    setLoadingInitialData: (loading: boolean) => void;
     setError: (error: string | null) => void;
     setReconnectIn: (seconds: number | null) => void;
     setServerUrl: (url: string | null) => void;
@@ -262,6 +268,8 @@ interface LogState {
     clearWatches: () => void;
     setSessions: (sessions: Record<string, number>) => void;
     setStats: (stats: LogState['stats']) => void;
+    setAppNames: (appNames: Record<string, number>) => void;
+    setHostNames: (hostNames: Record<string, number>) => void;
     setFilter: (filter: Partial<Filter>) => void;
     setPaused: (paused: boolean) => void;
     setAutoScroll: (autoScroll: boolean) => void;
@@ -330,6 +338,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     // Initial state
     connected: false,
     connecting: false,
+    loadingInitialData: false,
     error: null,
     reconnectIn: null,
     serverUrl: null,
@@ -339,6 +348,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     entriesVersion: 0,
     watches: {},
     sessions: {},
+    appNames: {},
+    hostNames: {},
     stats: { size: 0, maxEntries: 100000, lastEntryId: 0 },
 
     // Views
@@ -365,6 +376,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     // Actions
     setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined }),
     setConnecting: (connecting) => set({ connecting }),
+    setLoadingInitialData: (loadingInitialData) => set({ loadingInitialData }),
     setError: (error) => set({ error }),
     setReconnectIn: (reconnectIn) => set({ reconnectIn }),
     setServerUrl: (serverUrl) => set({ serverUrl }),
@@ -408,10 +420,33 @@ export const useLogStore = create<LogState>((set, get) => ({
             result = state.entries.slice(-keepFromCurrent).concat(newEntries);
         }
 
+        // Extract unique appNames and hostNames from new entries
+        const newAppNames = { ...state.appNames };
+        const newHostNames = { ...state.hostNames };
+        let appNamesChanged = false;
+        let hostNamesChanged = false;
+
+        for (const entry of newEntries) {
+            if (entry.appName && !(entry.appName in newAppNames)) {
+                newAppNames[entry.appName] = 1;
+                appNamesChanged = true;
+            } else if (entry.appName) {
+                newAppNames[entry.appName]++;
+            }
+            if (entry.hostName && !(entry.hostName in newHostNames)) {
+                newHostNames[entry.hostName] = 1;
+                hostNamesChanged = true;
+            } else if (entry.hostName) {
+                newHostNames[entry.hostName]++;
+            }
+        }
+
         return {
             entries: result,
             lastEntryId: newEntries[newEntries.length - 1].id,
-            entriesVersion: state.entriesVersion + 1
+            entriesVersion: state.entriesVersion + 1,
+            ...(appNamesChanged ? { appNames: newAppNames } : {}),
+            ...(hostNamesChanged ? { hostNames: newHostNames } : {})
         };
     }),
 
@@ -441,6 +476,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     clearWatches: () => set({ watches: {} }),
     setSessions: (sessions) => set({ sessions }),
     setStats: (stats) => set({ stats }),
+    setAppNames: (appNames) => set({ appNames }),
+    setHostNames: (hostNames) => set({ hostNames }),
 
     setFilter: (filter) => set((state) => ({
         filter: { ...state.filter, ...filter }

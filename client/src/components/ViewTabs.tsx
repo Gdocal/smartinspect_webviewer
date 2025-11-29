@@ -225,7 +225,7 @@ interface ViewEditorProps {
 }
 
 function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
-    const { sessions, globalHighlightRules } = useLogStore();
+    const { sessions, appNames, hostNames, globalHighlightRules } = useLogStore();
     const [name, setName] = useState(view?.name || 'New View');
     const [filterSessions, setFilterSessions] = useState<string[]>(view?.filter.sessions || []);
     const [filterLevels, setFilterLevels] = useState<number[]>(view?.filter.levels || []);
@@ -302,6 +302,8 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     };
 
     const sessionNames = Object.keys(sessions);
+    const appNameList = Object.keys(appNames);
+    const hostNameList = Object.keys(hostNames);
     const levels = [
         { level: Level.Debug, name: 'Debug' },
         { level: Level.Verbose, name: 'Verbose' },
@@ -554,8 +556,8 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         setEditingHighlightRule(undefined);
                                     }}
                                     availableSessions={sessionNames}
-                                    availableAppNames={[]}
-                                    availableHostNames={[]}
+                                    availableAppNames={appNameList}
+                                    availableHostNames={hostNameList}
                                 />
                             )}
                         </>

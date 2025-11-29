@@ -20,7 +20,7 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
             return { text: 'Connecting...', dotClass: 'bg-amber-400 animate-pulse' };
         }
         if (reconnectIn !== null && reconnectIn > 0) {
-            return { text: `Reconnecting in ${reconnectIn}s`, dotClass: 'bg-amber-400' };
+            return { text: `Reconnecting in ${reconnectIn}s`, dotClass: 'bg-amber-400 animate-pulse' };
         }
         return { text: 'Disconnected', dotClass: 'bg-red-400' };
     };

@@ -5,6 +5,10 @@ import ReactDOM from 'react-dom/client'
 import 'ag-grid-community/styles/ag-grid.css'
 import 'ag-grid-community/styles/ag-theme-balham.css'
 
+// Start WebSocket connection early, before heavy AG Grid modules load
+import { initializeWebSocket } from './services/earlyWebSocket'
+initializeWebSocket()
+
 import App from './App'
 import './index.css'
 
