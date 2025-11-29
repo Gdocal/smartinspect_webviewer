@@ -40,3 +40,18 @@ html, body, #root {
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }
+
+/* AG Grid: Show filter button only on column header hover */
+.ag-theme-balham .ag-header-cell .ag-header-cell-filter-button {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.ag-theme-balham .ag-header-cell:hover .ag-header-cell-filter-button {
+    opacity: 1;
+}
+
+/* Always show filter button when filter is active */
+.ag-theme-balham .ag-header-cell.ag-header-cell-filtered .ag-header-cell-filter-button {
+    opacity: 1;
+}

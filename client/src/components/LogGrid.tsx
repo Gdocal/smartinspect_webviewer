@@ -257,6 +257,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
 
 
     // Column definitions with all columns
+    // Order: Icon (pinned), Title, Level, Session, Application, Host, Process, Thread, Data, Time
     const columnDefs = useMemo<ColDef<LogEntry>[]>(() => [
         {
             headerName: '',
@@ -272,14 +273,13 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             pinned: 'left'
         },
         {
-            headerName: 'Time',
-            field: 'timestamp',
-            width: 110,
-            minWidth: 90,
-            valueFormatter: (params) => formatTimestamp(params.value),
-            tooltipValueGetter: (params) => formatFullTimestamp(params.value),
+            headerName: 'Title',
+            field: 'title',
+            flex: 2,
+            minWidth: 200,
             sortable: true,
-            filter: TimestampFilter,
+            filter: 'agTextColumnFilter',
+            tooltipField: 'title',
         },
         {
             headerName: 'Level',
@@ -311,15 +311,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             minWidth: 100,
             sortable: true,
             filter: 'agSetColumnFilter',
-        },
-        {
-            headerName: 'Title',
-            field: 'title',
-            flex: 2,
-            minWidth: 200,
-            sortable: true,
-            filter: 'agTextColumnFilter',
-            tooltipField: 'title',
         },
         {
             headerName: 'Application',
@@ -379,14 +370,24 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             filter: 'agTextColumnFilter',
             hide: true,
         },
+        {
+            headerName: 'Time',
+            field: 'timestamp',
+            width: 110,
+            minWidth: 90,
+            valueFormatter: (params) => formatTimestamp(params.value),
+            tooltipValueGetter: (params) => formatFullTimestamp(params.value),
+            sortable: true,
+            filter: TimestampFilter,
+        },
     ], []);
 
-    // Default column definition
+    // Default column definition - filter icons show on hover (via CSS)
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
         sortable: true,
         filter: true,
-        suppressMenu: false,
+        suppressHeaderMenuButton: true,
     }), []);
 
     // Sidebar with column tool panel

@@ -182,7 +182,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
-        suppressMenu: true,
+        suppressHeaderMenuButton: true,
     }), []);
 
     const onGridReady = useCallback((params: GridReadyEvent) => {
