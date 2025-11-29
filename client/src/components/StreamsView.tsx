@@ -54,7 +54,7 @@ interface StreamsViewProps {
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams } = useLogStore();
+    const { streams, clearAllStreams, clearStream } = useLogStore();
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterText, setFilterText] = useState('');
     const [excludeFilter, setExcludeFilter] = useState(false);
@@ -95,6 +95,24 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         document.body.style.cursor = 'ew-resize';
         document.body.style.userSelect = 'none';
     }, [listWidth]);
+
+    // Clear selected stream only
+    const handleClearSelected = useCallback(() => {
+        if (selectedChannel) {
+            clearStream(selectedChannel);
+        }
+    }, [selectedChannel, clearStream]);
+
+    // Clear all streams (for footer button)
+    const handleClearAll = useCallback(async () => {
+        try {
+            await fetch('/api/streams', { method: 'DELETE' });
+            clearAllStreams();
+            setSelectedChannel(null);
+        } catch (err) {
+            console.error('Failed to clear streams:', err);
+        }
+    }, [clearAllStreams]);
 
     const channels = Object.keys(streams);
     const entries = selectedChannel ? (streams[selectedChannel] || []) : [];
@@ -240,11 +258,21 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     )}
                 </div>
 
-                {/* Footer stats */}
-                <div className="px-3 py-2 border-t border-slate-200 bg-white">
+                {/* Footer stats with Clear All button */}
+                <div className="px-3 py-2 border-t border-slate-200 bg-white flex items-center justify-between">
                     <span className="text-xs text-slate-500">
                         Total: {totalCount} entries
                     </span>
+                    <button
+                        onClick={handleClearAll}
+                        className="text-xs text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1"
+                        title="Clear all streams"
+                    >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Clear
+                    </button>
                 </div>
             </div>
 
@@ -258,16 +286,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
             {/* Right: Entries table */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Toolbar - filter, exclude, pause, autoscroll */}
+                {/* Toolbar - filter, exclude, spacer, pause, autoscroll, clear (right-aligned) */}
                 <div className="h-[42px] px-3 border-b border-slate-200 bg-white flex items-center gap-2">
                     {/* Filter input */}
-                    <div className="relative flex-1 max-w-xs">
+                    <div className="relative max-w-xs">
                         <input
                             type="text"
                             value={filterText}
                             onChange={(e) => setFilterText(e.target.value)}
                             placeholder="Filter entries..."
-                            className="w-full text-sm border border-slate-200 rounded pl-8 pr-3 py-1 h-[28px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-48 text-sm border border-slate-200 rounded pl-8 pr-3 py-1 h-[28px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         />
                         <svg className="w-4 h-4 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -275,7 +303,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     </div>
 
                     {/* Exclude checkbox */}
-                    <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                    <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer" title="Hide entries matching the filter instead of showing only matches">
                         <input
                             type="checkbox"
                             checked={excludeFilter}
@@ -285,56 +313,62 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         Exclude
                     </label>
 
-                    <div className="w-px h-5 bg-slate-200" />
-
-                    {/* Pause button */}
-                    <button
-                        onClick={() => setPaused(!paused)}
-                        className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                            paused
-                                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                        title={paused ? 'Resume' : 'Pause'}
-                    >
-                        {paused ? (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        ) : (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        )}
-                        {paused ? 'Resume' : 'Pause'}
-                    </button>
-
-                    {/* AutoScroll button */}
-                    <button
-                        onClick={() => setAutoScroll(!autoScroll)}
-                        className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
-                            autoScroll
-                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                        title={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
-                    >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                        </svg>
-                        Auto-scroll
-                    </button>
-
+                    {/* Spacer */}
                     <div className="flex-1" />
 
-                    {/* Entry count */}
-                    {selectedChannel && (
-                        <span className="text-xs text-slate-500">
-                            {displayedEntries.length} of {entries.length} entries
-                            {paused && <span className="text-amber-600 ml-1">(paused)</span>}
-                        </span>
-                    )}
+                    {/* Control buttons - right aligned like FilterBar */}
+                    <div className="flex items-center gap-1.5">
+                        {/* Pause button */}
+                        <button
+                            onClick={() => setPaused(!paused)}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                                paused
+                                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                            title={paused ? 'Resume' : 'Pause'}
+                        >
+                            {paused ? (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            ) : (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            )}
+                            Pause
+                        </button>
+
+                        {/* AutoScroll button */}
+                        <button
+                            onClick={() => setAutoScroll(!autoScroll)}
+                            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                                autoScroll
+                                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                            title={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                            </svg>
+                            Auto-scroll
+                        </button>
+
+                        {/* Clear button - clears selected stream only */}
+                        <button
+                            onClick={handleClearSelected}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                            title={selectedChannel ? `Clear ${selectedChannel} stream` : 'Clear selected stream'}
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Clear
+                        </button>
+                    </div>
                 </div>
 
                 {/* Entries grid */}

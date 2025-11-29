@@ -176,6 +176,18 @@ app.delete('/api/watches', (req, res) => {
 });
 
 /**
+ * DELETE /api/streams - Clear all streams
+ */
+app.delete('/api/streams', (req, res) => {
+    // Clear all stream data
+    for (const key of Object.keys(streamStore)) {
+        delete streamStore[key];
+    }
+    connectionManager.broadcast({ type: 'clear', target: 'streams' });
+    res.json({ success: true });
+});
+
+/**
  * GET /api/server/stats - Server stats for monitoring
  */
 app.get('/api/server/stats', (req, res) => {

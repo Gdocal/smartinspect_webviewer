@@ -1,8 +1,9 @@
 /**
  * FilterBar - Quick filter controls for log entries with playback controls
- * Now placed inside left content area (above grid, not above watches)
+ * Enterprise-grade unified toolbar matching StreamsView layout
  */
 
+import { useState, useRef, useEffect } from 'react';
 import { useLogStore, Level, getLevelName } from '../store/logStore';
 
 const LEVELS = [
@@ -14,6 +15,159 @@ const LEVELS = [
     { level: Level.Fatal, color: 'bg-red-600', activeColor: 'bg-red-700' }
 ];
 
+// Multi-select dropdown for sessions
+interface SessionMultiSelectProps {
+    sessions: Record<string, number>;
+    selected: string[];
+    onChange: (selected: string[]) => void;
+}
+
+function SessionMultiSelect({ sessions, selected, onChange }: SessionMultiSelectProps) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const sessionNames = Object.keys(sessions);
+
+    // Close on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filteredSessions = sessionNames.filter(s =>
+        s.toLowerCase().includes(search.toLowerCase())
+    );
+
+    const toggleSession = (session: string) => {
+        if (selected.includes(session)) {
+            onChange(selected.filter(s => s !== session));
+        } else {
+            onChange([...selected, session]);
+        }
+    };
+
+    const selectAll = () => onChange([...sessionNames]);
+    const clearAll = () => onChange([]);
+
+    // Display text
+    const displayText = selected.length === 0
+        ? `All (${sessionNames.length})`
+        : selected.length === 1
+            ? selected[0]
+            : `${selected.length} sessions`;
+
+    return (
+        <div ref={dropdownRef} className="relative">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center gap-1.5 px-2 py-1 h-[28px] text-sm border border-slate-200 rounded bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[130px]"
+            >
+                <span className={`flex-1 text-left truncate ${selected.length === 0 ? 'text-slate-500' : 'text-slate-700'}`}>
+                    {displayText}
+                </span>
+                <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+
+            {isOpen && (
+                <div className="absolute z-50 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg max-h-80 overflow-hidden">
+                    {/* Search */}
+                    <div className="p-2 border-b border-slate-100">
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Search sessions..."
+                            className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            autoFocus
+                        />
+                    </div>
+
+                    {/* Quick actions */}
+                    <div className="px-2 py-1.5 border-b border-slate-100 flex gap-2 items-center">
+                        <button
+                            type="button"
+                            onClick={selectAll}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                            Select All
+                        </button>
+                        <button
+                            type="button"
+                            onClick={clearAll}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                        >
+                            Clear
+                        </button>
+                        <span className="text-xs text-slate-400 ml-auto">
+                            {selected.length} of {sessionNames.length}
+                        </span>
+                    </div>
+
+                    {/* Session list */}
+                    <div className="overflow-auto max-h-48">
+                        {filteredSessions.length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-slate-400">
+                                {sessionNames.length === 0 ? 'No sessions available' : 'No matches'}
+                            </div>
+                        ) : (
+                            filteredSessions.map(session => (
+                                <label
+                                    key={session}
+                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.includes(session)}
+                                        onChange={() => toggleSession(session)}
+                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-slate-700 truncate flex-1">{session}</span>
+                                    <span className="text-xs text-slate-400 ml-2">{sessions[session]}</span>
+                                </label>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Selected tags */}
+                    {selected.length > 0 && (
+                        <div className="px-2 py-1.5 border-t border-slate-100 flex flex-wrap gap-1 max-h-16 overflow-auto">
+                            {selected.slice(0, 5).map(s => (
+                                <span
+                                    key={s}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded"
+                                >
+                                    {s}
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleSession(s); }}
+                                        className="hover:text-blue-900"
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </span>
+                            ))}
+                            {selected.length > 5 && (
+                                <span className="text-xs text-slate-400">+{selected.length - 5} more</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function FilterBar() {
     const {
         filter,
@@ -23,8 +177,7 @@ export function FilterBar() {
         setPaused,
         autoScroll,
         setAutoScroll,
-        clearEntries,
-        stats
+        clearEntries
     } = useLogStore();
 
     const toggleLevel = (level: number) => {
@@ -43,11 +196,9 @@ export function FilterBar() {
         }
     };
 
-    const sessionNames = Object.keys(sessions);
-
     return (
-        <div className="h-[42px] bg-white border-b border-slate-200 px-3 flex items-center gap-4 flex-shrink-0">
-            {/* Level filters */}
+        <div className="h-[42px] bg-white border-b border-slate-200 px-3 flex items-center gap-3 flex-shrink-0">
+            {/* Level filters - compact toggle buttons */}
             <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-slate-500">Level</span>
                 <div className="flex rounded overflow-hidden border border-slate-200">
@@ -70,40 +221,31 @@ export function FilterBar() {
                 </div>
             </div>
 
-            {/* Session filter dropdown */}
+            {/* Session multi-select */}
             <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-slate-500">Session</span>
-                <select
-                    value={filter.sessions[0] || ''}
-                    onChange={(e) => {
-                        setFilter({ sessions: e.target.value ? [e.target.value] : [] });
-                    }}
-                    className="text-sm border border-slate-200 rounded px-2 py-1 h-[28px] bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[120px]"
-                >
-                    <option value="">All ({sessionNames.length})</option>
-                    {sessionNames.map(session => (
-                        <option key={session} value={session}>
-                            {session} ({sessions[session]})
-                        </option>
-                    ))}
-                </select>
+                <SessionMultiSelect
+                    sessions={sessions}
+                    selected={filter.sessions}
+                    onChange={(sessions) => setFilter({ sessions })}
+                />
             </div>
 
-            {/* Text filter */}
+            {/* Filter input with Exclude grouped together */}
             <div className="flex items-center gap-2">
-                <div className="relative flex-1 max-w-xs">
+                <div className="relative">
                     <input
                         type="text"
                         placeholder="Filter entries..."
                         value={filter.messagePattern}
                         onChange={(e) => setFilter({ messagePattern: e.target.value })}
-                        className="w-full text-sm border border-slate-200 rounded pl-8 pr-3 py-1 h-[28px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-48 text-sm border border-slate-200 rounded pl-8 pr-3 py-1 h-[28px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
                     <svg className="w-4 h-4 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                 </div>
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer" title="Hide entries matching the filter instead of showing only matches">
                     <input
                         type="checkbox"
                         checked={filter.inverseMatch}
@@ -114,24 +256,15 @@ export function FilterBar() {
                 </label>
             </div>
 
-            <div className="w-px h-5 bg-slate-200" />
-
             {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Stats */}
-            <div className="text-xs text-slate-500 font-medium">
-                <span className="text-slate-700">{stats.size.toLocaleString()}</span>
-                <span className="mx-1">/</span>
-                <span>{stats.maxEntries.toLocaleString()}</span>
-            </div>
-
-            {/* Control buttons - matching StreamsView style */}
-            <div className="flex items-center gap-1">
+            {/* Control buttons - unified layout matching StreamsView */}
+            <div className="flex items-center gap-1.5">
                 {/* Pause button */}
                 <button
                     onClick={() => setPaused(!paused)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
                         paused
                             ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -148,13 +281,13 @@ export function FilterBar() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     )}
-                    {paused ? 'Resume' : 'Pause'}
+                    Pause
                 </button>
 
                 {/* AutoScroll button */}
                 <button
                     onClick={() => setAutoScroll(!autoScroll)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded transition-colors ${
                         autoScroll
                             ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -167,12 +300,10 @@ export function FilterBar() {
                     Auto-scroll
                 </button>
 
-                <div className="w-px h-5 bg-slate-200" />
-
                 {/* Clear button */}
                 <button
                     onClick={handleClear}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                     title="Clear all logs"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
