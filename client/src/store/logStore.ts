@@ -91,23 +91,87 @@ export interface Filter {
     entryTypes: number[];
 }
 
+// Text filter with operator and inverse support
+export interface TextFilter {
+    value: string;
+    operator: 'contains' | 'equals' | 'regex';
+    inverse: boolean;
+}
+
+// Combined list + text filter - can use EITHER list selection OR text matching
+// mode: 'list' = match against selected values, 'text' = use text filter
+export interface ListTextFilter {
+    mode: 'list' | 'text';
+    // List mode
+    values: string[];
+    // Text mode
+    textValue: string;
+    textOperator: 'contains' | 'equals' | 'regex';
+    // Common
+    inverse: boolean;
+}
+
+// Default list text filter
+export const defaultListTextFilter: ListTextFilter = {
+    mode: 'list',
+    values: [],
+    textValue: '',
+    textOperator: 'contains',
+    inverse: false
+};
+
+// Highlight filter - same structure as view filter but for highlighting
+export interface HighlightFilter {
+    // String fields with dual mode (list + text)
+    sessionFilter: ListTextFilter;
+    appNameFilter: ListTextFilter;
+    hostNameFilter: ListTextFilter;
+    // Numeric multi-select (levels and entry types are always from predefined list)
+    levels: number[];
+    levelsInverse: boolean;
+    entryTypes: number[];
+    entryTypesInverse: boolean;
+    // Single value filters
+    processId: number | null;
+    processIdInverse: boolean;
+    // Text filters with operators
+    titleFilter: TextFilter;
+}
+
+// Default highlight filter
+export const defaultHighlightFilter: HighlightFilter = {
+    sessionFilter: { ...defaultListTextFilter },
+    appNameFilter: { ...defaultListTextFilter },
+    hostNameFilter: { ...defaultListTextFilter },
+    levels: [],
+    levelsInverse: false,
+    entryTypes: [],
+    entryTypesInverse: false,
+    processId: null,
+    processIdInverse: false,
+    titleFilter: { value: '', operator: 'contains', inverse: false }
+};
+
 // Highlighting rule for custom styling
 export interface HighlightRule {
     id: string;
     name: string;
     enabled: boolean;
     priority: number; // Higher = applied first
-    conditions: {
-        field: 'level' | 'sessionName' | 'appName' | 'title' | 'logEntryType';
-        operator: 'equals' | 'contains' | 'regex' | 'in';
-        value: string | number | string[] | number[];
-    }[];
+    filter: HighlightFilter; // Use unified filter structure
     style: {
         backgroundColor?: string;
         textColor?: string;
         fontWeight?: 'normal' | 'bold';
         fontStyle?: 'normal' | 'italic';
     };
+}
+
+// Legacy conditions type for backwards compatibility
+export interface LegacyHighlightCondition {
+    field: 'level' | 'sessionName' | 'appName' | 'title' | 'logEntryType';
+    operator: 'equals' | 'contains' | 'regex' | 'in';
+    value: string | number | string[] | number[];
 }
 
 // View = predefined filter set with highlighting rules
@@ -504,32 +568,123 @@ export function getLevelColor(level: number): string {
     }
 }
 
-// Helper to check if entry matches a highlight rule
+// Regex cache to avoid recompiling the same patterns
+const regexCache = new Map<string, RegExp | null>();
+const MAX_REGEX_CACHE_SIZE = 300;
+
+function getCachedRegex(pattern: string): RegExp | null {
+    if (regexCache.has(pattern)) {
+        return regexCache.get(pattern)!;
+    }
+
+    // Evict old entries if cache is full
+    if (regexCache.size >= MAX_REGEX_CACHE_SIZE) {
+        const firstKey = regexCache.keys().next().value;
+        if (firstKey) regexCache.delete(firstKey);
+    }
+
+    try {
+        const regex = new RegExp(pattern, 'i');
+        regexCache.set(pattern, regex);
+        return regex;
+    } catch {
+        regexCache.set(pattern, null); // Cache invalid patterns too
+        return null;
+    }
+}
+
+// Helper to match text with operator
+function matchText(value: string | undefined, filter: TextFilter): boolean {
+    if (!filter.value) return true; // Empty filter matches everything
+
+    const text = String(value || '');
+    let matches = false;
+
+    switch (filter.operator) {
+        case 'equals':
+            matches = text.toLowerCase() === filter.value.toLowerCase();
+            break;
+        case 'contains':
+            matches = text.toLowerCase().includes(filter.value.toLowerCase());
+            break;
+        case 'regex': {
+            const regex = getCachedRegex(filter.value);
+            matches = regex ? regex.test(text) : false;
+            break;
+        }
+    }
+
+    return filter.inverse ? !matches : matches;
+}
+
+// Helper to match ListTextFilter (dual mode: list or text)
+function matchListTextFilter(value: string | undefined, filter: ListTextFilter): boolean {
+    const text = String(value || '');
+
+    if (filter.mode === 'list') {
+        // List mode - check if value is in the selected list
+        if (filter.values.length === 0) return true; // Empty list matches everything
+        const inList = filter.values.includes(text);
+        return filter.inverse ? !inList : inList;
+    } else {
+        // Text mode - use text matching with operator
+        if (!filter.textValue) return true; // Empty text matches everything
+
+        let matches = false;
+        switch (filter.textOperator) {
+            case 'equals':
+                matches = text.toLowerCase() === filter.textValue.toLowerCase();
+                break;
+            case 'contains':
+                matches = text.toLowerCase().includes(filter.textValue.toLowerCase());
+                break;
+            case 'regex': {
+                const regex = getCachedRegex(filter.textValue);
+                matches = regex ? regex.test(text) : false;
+                break;
+            }
+        }
+        return filter.inverse ? !matches : matches;
+    }
+}
+
+// Helper to check if entry matches a highlight rule using new filter structure
 export function matchesHighlightRule(entry: LogEntry, rule: HighlightRule): boolean {
     if (!rule.enabled) return false;
 
-    return rule.conditions.every(condition => {
-        const fieldValue = entry[condition.field as keyof LogEntry];
+    const f = rule.filter;
 
-        switch (condition.operator) {
-            case 'equals':
-                return fieldValue === condition.value;
-            case 'contains':
-                return String(fieldValue || '').toLowerCase().includes(String(condition.value).toLowerCase());
-            case 'regex':
-                try {
-                    const regex = new RegExp(String(condition.value), 'i');
-                    return regex.test(String(fieldValue || ''));
-                } catch {
-                    return false;
-                }
-            case 'in':
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return Array.isArray(condition.value) && (condition.value as any[]).includes(fieldValue);
-            default:
-                return false;
-        }
-    });
+    // Session filter (dual mode)
+    if (!matchListTextFilter(entry.sessionName, f.sessionFilter)) return false;
+
+    // App name filter (dual mode)
+    if (!matchListTextFilter(entry.appName, f.appNameFilter)) return false;
+
+    // Host name filter (dual mode)
+    if (!matchListTextFilter(entry.hostName, f.hostNameFilter)) return false;
+
+    // Levels filter
+    if (f.levels.length > 0) {
+        const inList = f.levels.includes(entry.level ?? -1);
+        if (f.levelsInverse ? inList : !inList) return false;
+    }
+
+    // Entry types filter
+    if (f.entryTypes.length > 0) {
+        const inList = f.entryTypes.includes(entry.logEntryType ?? -1);
+        if (f.entryTypesInverse ? inList : !inList) return false;
+    }
+
+    // Process ID filter
+    if (f.processId !== null) {
+        const matches = entry.processId === f.processId;
+        if (f.processIdInverse ? matches : !matches) return false;
+    }
+
+    // Title filter
+    if (!matchText(entry.title, f.titleFilter)) return false;
+
+    return true;
 }
 
 // Helper to get style for entry based on highlight rules

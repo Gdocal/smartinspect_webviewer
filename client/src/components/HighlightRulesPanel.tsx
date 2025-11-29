@@ -3,267 +3,58 @@
  */
 
 import { useState } from 'react';
-import { useLogStore, HighlightRule, Level } from '../store/logStore';
+import { useLogStore, HighlightRule } from '../store/logStore';
+import { HighlightRuleEditor } from './HighlightRuleEditor';
 
-interface RuleEditorProps {
-    rule?: HighlightRule;
-    onSave: (rule: Omit<HighlightRule, 'id'>) => void;
-    onCancel: () => void;
-}
+// Helper to get a summary of the filter for display
+function getFilterSummary(rule: HighlightRule): string {
+    const parts: string[] = [];
+    const f = rule.filter;
 
-const fieldOptions = [
-    { value: 'level', label: 'Level' },
-    { value: 'sessionName', label: 'Session Name' },
-    { value: 'appName', label: 'Application Name' },
-    { value: 'title', label: 'Title' },
-    { value: 'logEntryType', label: 'Entry Type' }
-];
+    // Session filter
+    const sf = f.sessionFilter;
+    if (sf.mode === 'list' && sf.values.length > 0) {
+        const prefix = sf.inverse ? 'not ' : '';
+        parts.push(`${prefix}session: ${sf.values.slice(0, 2).join(', ')}${sf.values.length > 2 ? '...' : ''}`);
+    } else if (sf.mode === 'text' && sf.textValue) {
+        const prefix = sf.inverse ? 'not ' : '';
+        parts.push(`${prefix}session ${sf.textOperator}: "${sf.textValue.slice(0, 15)}..."`);
+    }
 
-const operatorOptions = [
-    { value: 'equals', label: 'Equals' },
-    { value: 'contains', label: 'Contains' },
-    { value: 'regex', label: 'Matches Regex' }
-];
+    // Levels
+    if (f.levels.length > 0) {
+        const levelNames = ['Debug', 'Verbose', 'Info', 'Warning', 'Error', 'Fatal'];
+        const prefix = f.levelsInverse ? 'not ' : '';
+        parts.push(`${prefix}level: ${f.levels.map(l => levelNames[l] || l).slice(0, 2).join(', ')}${f.levels.length > 2 ? '...' : ''}`);
+    }
 
-const levelOptions = [
-    { value: Level.Debug, label: 'Debug' },
-    { value: Level.Verbose, label: 'Verbose' },
-    { value: Level.Message, label: 'Info' },
-    { value: Level.Warning, label: 'Warning' },
-    { value: Level.Error, label: 'Error' },
-    { value: Level.Fatal, label: 'Fatal' }
-];
+    // Title filter
+    if (f.titleFilter.value) {
+        const prefix = f.titleFilter.inverse ? 'not ' : '';
+        parts.push(`${prefix}title ${f.titleFilter.operator}: "${f.titleFilter.value.slice(0, 15)}..."`);
+    }
 
-const colorPresets = [
-    { bg: '#fef2f2', text: '#991b1b', name: 'Red' },
-    { bg: '#fffbeb', text: '#92400e', name: 'Amber' },
-    { bg: '#ecfdf5', text: '#065f46', name: 'Green' },
-    { bg: '#eff6ff', text: '#1e40af', name: 'Blue' },
-    { bg: '#f5f3ff', text: '#5b21b6', name: 'Purple' },
-    { bg: '#fdf4ff', text: '#86198f', name: 'Pink' },
-    { bg: '#f8fafc', text: '#475569', name: 'Gray' }
-];
+    // App name filter
+    const af = f.appNameFilter;
+    if (af.mode === 'list' && af.values.length > 0) {
+        const prefix = af.inverse ? 'not ' : '';
+        parts.push(`${prefix}app: ${af.values[0]}${af.values.length > 1 ? '...' : ''}`);
+    } else if (af.mode === 'text' && af.textValue) {
+        const prefix = af.inverse ? 'not ' : '';
+        parts.push(`${prefix}app ${af.textOperator}: "${af.textValue.slice(0, 15)}..."`);
+    }
 
-function RuleEditor({ rule, onSave, onCancel }: RuleEditorProps) {
-    const [name, setName] = useState(rule?.name || 'New Rule');
-    const [enabled, setEnabled] = useState(rule?.enabled ?? true);
-    const [priority, setPriority] = useState(rule?.priority ?? 1);
-    const [field, setField] = useState<string>(rule?.conditions[0]?.field || 'level');
-    const [operator, setOperator] = useState<string>(rule?.conditions[0]?.operator || 'equals');
-    const [value, setValue] = useState<string>(String(rule?.conditions[0]?.value ?? ''));
-    const [bgColor, setBgColor] = useState(rule?.style.backgroundColor || '#eff6ff');
-    const [textColor, setTextColor] = useState(rule?.style.textColor || '#1e40af');
-    const [fontWeight, setFontWeight] = useState<'normal' | 'bold'>(rule?.style.fontWeight || 'normal');
+    // Host name filter
+    const hf = f.hostNameFilter;
+    if (hf.mode === 'list' && hf.values.length > 0) {
+        const prefix = hf.inverse ? 'not ' : '';
+        parts.push(`${prefix}host: ${hf.values[0]}${hf.values.length > 1 ? '...' : ''}`);
+    } else if (hf.mode === 'text' && hf.textValue) {
+        const prefix = hf.inverse ? 'not ' : '';
+        parts.push(`${prefix}host ${hf.textOperator}: "${hf.textValue.slice(0, 15)}..."`);
+    }
 
-    const handleSave = () => {
-        let parsedValue: string | number = value;
-        if (field === 'level' && operator === 'equals') {
-            parsedValue = parseInt(value);
-        }
-
-        onSave({
-            name,
-            enabled,
-            priority,
-            conditions: [{
-                field: field as 'level' | 'sessionName' | 'appName' | 'title' | 'logEntryType',
-                operator: operator as 'equals' | 'contains' | 'regex' | 'in',
-                value: parsedValue
-            }],
-            style: {
-                backgroundColor: bgColor,
-                textColor: textColor,
-                fontWeight
-            }
-        });
-    };
-
-    const applyPreset = (preset: typeof colorPresets[0]) => {
-        setBgColor(preset.bg);
-        setTextColor(preset.text);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[450px] max-h-[80vh] overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                    <h3 className="font-semibold text-slate-800">
-                        {rule ? 'Edit Highlight Rule' : 'Create Highlight Rule'}
-                    </h3>
-                </div>
-
-                <div className="p-4 overflow-auto max-h-[60vh]">
-                    {/* Name */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
-                            Rule Name
-                        </label>
-                        <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                        />
-                    </div>
-
-                    {/* Enabled & Priority */}
-                    <div className="flex gap-4 mb-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={enabled}
-                                onChange={(e) => setEnabled(e.target.checked)}
-                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-slate-700">Enabled</span>
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm text-slate-600">Priority:</label>
-                            <input
-                                type="number"
-                                value={priority}
-                                onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
-                                className="w-16 px-2 py-1 border border-slate-200 rounded text-sm"
-                                min={1}
-                                max={100}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Condition */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
-                            Condition
-                        </label>
-                        <div className="flex gap-2">
-                            <select
-                                value={field}
-                                onChange={(e) => setField(e.target.value)}
-                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                            >
-                                {fieldOptions.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
-                            <select
-                                value={operator}
-                                onChange={(e) => setOperator(e.target.value)}
-                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                            >
-                                {operatorOptions.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="mt-2">
-                            {field === 'level' && operator === 'equals' ? (
-                                <select
-                                    value={value}
-                                    onChange={(e) => setValue(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                                >
-                                    {levelOptions.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
-                            ) : (
-                                <input
-                                    type="text"
-                                    value={value}
-                                    onChange={(e) => setValue(e.target.value)}
-                                    placeholder={operator === 'regex' ? 'Enter regex pattern...' : 'Enter value...'}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                                />
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Style */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
-                            Style Presets
-                        </label>
-                        <div className="flex gap-1.5 mb-3">
-                            {colorPresets.map(preset => (
-                                <button
-                                    key={preset.name}
-                                    onClick={() => applyPreset(preset)}
-                                    className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 transition-colors"
-                                    style={{ backgroundColor: preset.bg }}
-                                    title={preset.name}
-                                >
-                                    <span className="text-xs font-bold" style={{ color: preset.text }}>A</span>
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex gap-4">
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">Background</label>
-                                <input
-                                    type="color"
-                                    value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="w-16 h-8 rounded cursor-pointer"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">Text</label>
-                                <input
-                                    type="color"
-                                    value={textColor}
-                                    onChange={(e) => setTextColor(e.target.value)}
-                                    className="w-16 h-8 rounded cursor-pointer"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 mb-1">Font</label>
-                                <select
-                                    value={fontWeight}
-                                    onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-sm"
-                                >
-                                    <option value="normal">Normal</option>
-                                    <option value="bold">Bold</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Preview */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
-                            Preview
-                        </label>
-                        <div
-                            className="px-3 py-2 rounded border border-slate-200 text-sm"
-                            style={{
-                                backgroundColor: bgColor,
-                                color: textColor,
-                                fontWeight
-                            }}
-                        >
-                            Sample log entry text
-                        </div>
-                    </div>
-                </div>
-
-                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
-                    <button
-                        onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        className="px-4 py-2 text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 rounded-lg transition-colors"
-                    >
-                        {rule ? 'Save Changes' : 'Create Rule'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
+    return parts.length > 0 ? parts.join(' & ') : 'No conditions (matches all)';
 }
 
 interface HighlightRulesPanelProps {
@@ -271,9 +62,16 @@ interface HighlightRulesPanelProps {
 }
 
 export function HighlightRulesPanel({ onClose }: HighlightRulesPanelProps) {
-    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule } = useLogStore();
+    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions } = useLogStore();
     const [showEditor, setShowEditor] = useState(false);
     const [editingRule, setEditingRule] = useState<HighlightRule | undefined>(undefined);
+
+    // Get available values for dropdowns
+    const availableSessions = Object.keys(sessions);
+    // For now, appNames and hostNames would need to be extracted from entries
+    // In a real implementation, you'd track these in the store
+    const availableAppNames: string[] = [];
+    const availableHostNames: string[] = [];
 
     const handleAddRule = () => {
         setEditingRule(undefined);
@@ -351,10 +149,10 @@ export function HighlightRulesPanel({ onClose }: HighlightRulesPanelProps) {
                                         className="w-6 h-6 rounded border"
                                         style={{ backgroundColor: rule.style.backgroundColor }}
                                     />
-                                    <div className="flex-1">
+                                    <div className="flex-1 min-w-0">
                                         <div className="font-medium text-sm text-slate-800">{rule.name}</div>
-                                        <div className="text-xs text-slate-500">
-                                            {rule.conditions[0]?.field} {rule.conditions[0]?.operator} "{rule.conditions[0]?.value}"
+                                        <div className="text-xs text-slate-500 truncate">
+                                            {getFilterSummary(rule)}
                                         </div>
                                     </div>
                                     <span className="text-xs text-slate-400">Priority: {rule.priority}</span>
@@ -402,13 +200,16 @@ export function HighlightRulesPanel({ onClose }: HighlightRulesPanelProps) {
             </div>
 
             {showEditor && (
-                <RuleEditor
+                <HighlightRuleEditor
                     rule={editingRule}
                     onSave={handleSaveRule}
                     onCancel={() => {
                         setShowEditor(false);
                         setEditingRule(undefined);
                     }}
+                    availableSessions={availableSessions}
+                    availableAppNames={availableAppNames}
+                    availableHostNames={availableHostNames}
                 />
             )}
         </div>

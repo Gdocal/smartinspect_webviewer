@@ -5,6 +5,58 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useLogStore, View, Filter, Level, HighlightRule } from '../store/logStore';
+import { HighlightRuleEditor } from './HighlightRuleEditor';
+
+// Helper to get a summary of the filter for display
+function getFilterSummary(rule: HighlightRule): string {
+    const parts: string[] = [];
+    const f = rule.filter;
+
+    // Session filter
+    const sf = f.sessionFilter;
+    if (sf.mode === 'list' && sf.values.length > 0) {
+        const prefix = sf.inverse ? 'not ' : '';
+        parts.push(`${prefix}session: ${sf.values.slice(0, 2).join(', ')}${sf.values.length > 2 ? '...' : ''}`);
+    } else if (sf.mode === 'text' && sf.textValue) {
+        const prefix = sf.inverse ? 'not ' : '';
+        parts.push(`${prefix}session ${sf.textOperator}: "${sf.textValue.slice(0, 15)}..."`);
+    }
+
+    // Levels
+    if (f.levels.length > 0) {
+        const levelNames = ['Debug', 'Verbose', 'Info', 'Warning', 'Error', 'Fatal'];
+        const prefix = f.levelsInverse ? 'not ' : '';
+        parts.push(`${prefix}level: ${f.levels.map(l => levelNames[l] || l).slice(0, 2).join(', ')}${f.levels.length > 2 ? '...' : ''}`);
+    }
+
+    // Title filter
+    if (f.titleFilter.value) {
+        const prefix = f.titleFilter.inverse ? 'not ' : '';
+        parts.push(`${prefix}title ${f.titleFilter.operator}: "${f.titleFilter.value.slice(0, 15)}..."`);
+    }
+
+    // App name filter
+    const af = f.appNameFilter;
+    if (af.mode === 'list' && af.values.length > 0) {
+        const prefix = af.inverse ? 'not ' : '';
+        parts.push(`${prefix}app: ${af.values[0]}${af.values.length > 1 ? '...' : ''}`);
+    } else if (af.mode === 'text' && af.textValue) {
+        const prefix = af.inverse ? 'not ' : '';
+        parts.push(`${prefix}app ${af.textOperator}: "${af.textValue.slice(0, 15)}..."`);
+    }
+
+    // Host name filter
+    const hf = f.hostNameFilter;
+    if (hf.mode === 'list' && hf.values.length > 0) {
+        const prefix = hf.inverse ? 'not ' : '';
+        parts.push(`${prefix}host: ${hf.values[0]}${hf.values.length > 1 ? '...' : ''}`);
+    } else if (hf.mode === 'text' && hf.textValue) {
+        const prefix = hf.inverse ? 'not ' : '';
+        parts.push(`${prefix}host ${hf.textOperator}: "${hf.textValue.slice(0, 15)}..."`);
+    }
+
+    return parts.length > 0 ? parts.join(' & ') : 'No conditions (matches all)';
+}
 
 const defaultFilter: Filter = {
     sessions: [],
@@ -183,6 +235,8 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const [useGlobalHighlights, setUseGlobalHighlights] = useState(view?.useGlobalHighlights ?? true);
     const [highlightRules, setHighlightRules] = useState(view?.highlightRules || []);
     const [activeTab, setActiveTab] = useState<'filters' | 'highlights'>('filters');
+    const [showHighlightEditor, setShowHighlightEditor] = useState(false);
+    const [editingHighlightRule, setEditingHighlightRule] = useState<HighlightRule | undefined>(undefined);
 
     const handleSave = () => {
         onSave({
@@ -201,24 +255,42 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
         });
     };
 
-    const addHighlightRule = () => {
-        const newRule: HighlightRule = {
-            id: Math.random().toString(36).substring(2, 9),
-            name: 'New Rule',
-            enabled: true,
-            priority: highlightRules.length,
-            conditions: [{ field: 'level', operator: 'equals', value: Level.Error }],
-            style: { backgroundColor: '#fee2e2', textColor: '#dc2626' }
-        };
-        setHighlightRules([...highlightRules, newRule]);
+    const handleAddHighlightRule = () => {
+        setEditingHighlightRule(undefined);
+        setShowHighlightEditor(true);
     };
 
-    const removeHighlightRule = (id: string) => {
-        setHighlightRules(highlightRules.filter(r => r.id !== id));
+    const handleEditHighlightRule = (rule: HighlightRule) => {
+        setEditingHighlightRule(rule);
+        setShowHighlightEditor(true);
     };
 
-    const updateHighlightRule = (id: string, updates: Partial<HighlightRule>) => {
-        setHighlightRules(highlightRules.map(r => r.id === id ? { ...r, ...updates } : r));
+    const handleSaveHighlightRule = (ruleData: Omit<HighlightRule, 'id'>) => {
+        if (editingHighlightRule) {
+            setHighlightRules(highlightRules.map(r =>
+                r.id === editingHighlightRule.id ? { ...ruleData, id: editingHighlightRule.id } : r
+            ));
+        } else {
+            const newRule: HighlightRule = {
+                ...ruleData,
+                id: Math.random().toString(36).substring(2, 9)
+            };
+            setHighlightRules([...highlightRules, newRule]);
+        }
+        setShowHighlightEditor(false);
+        setEditingHighlightRule(undefined);
+    };
+
+    const handleDeleteHighlightRule = (id: string) => {
+        if (confirm('Delete this highlight rule?')) {
+            setHighlightRules(highlightRules.filter(r => r.id !== id));
+        }
+    };
+
+    const handleToggleHighlightRule = (rule: HighlightRule) => {
+        setHighlightRules(highlightRules.map(r =>
+            r.id === rule.id ? { ...r, enabled: !r.enabled } : r
+        ));
     };
 
     const toggleLevel = (level: number) => {
@@ -409,7 +481,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         View Highlight Rules
                                     </label>
                                     <button
-                                        onClick={addHighlightRule}
+                                        onClick={handleAddHighlightRule}
                                         className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                                     >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,127 +502,62 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         {highlightRules.map((rule) => (
                                             <div
                                                 key={rule.id}
-                                                className="border border-slate-200 rounded-lg p-3 bg-white"
+                                                className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
                                             >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <input
-                                                        type="text"
-                                                        value={rule.name}
-                                                        onChange={(e) => updateHighlightRule(rule.id, { name: e.target.value })}
-                                                        className="text-sm font-medium text-slate-700 border-0 bg-transparent focus:ring-0 p-0"
-                                                    />
-                                                    <div className="flex items-center gap-2">
-                                                        <label className="flex items-center gap-1 text-xs text-slate-500">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={rule.enabled}
-                                                                onChange={(e) => updateHighlightRule(rule.id, { enabled: e.target.checked })}
-                                                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
-                                                            />
-                                                            Enabled
-                                                        </label>
-                                                        <button
-                                                            onClick={() => removeHighlightRule(rule.id)}
-                                                            className="text-slate-400 hover:text-red-500"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                            </svg>
-                                                        </button>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={rule.enabled}
+                                                    onChange={() => handleToggleHighlightRule(rule)}
+                                                    className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                                />
+                                                <div
+                                                    className="w-6 h-6 rounded border flex-shrink-0"
+                                                    style={{ backgroundColor: rule.style.backgroundColor }}
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-medium text-sm text-slate-800">{rule.name}</div>
+                                                    <div className="text-xs text-slate-500 truncate">
+                                                        {getFilterSummary(rule)}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2 text-xs">
-                                                    <span className="text-slate-500">Match:</span>
-                                                    <select
-                                                        value={rule.conditions[0]?.field || 'level'}
-                                                        onChange={(e) => updateHighlightRule(rule.id, {
-                                                            conditions: [{ ...rule.conditions[0], field: e.target.value as 'level' | 'sessionName' | 'appName' | 'title' | 'logEntryType' }]
-                                                        })}
-                                                        className="border border-slate-200 rounded px-2 py-1"
-                                                    >
-                                                        <option value="level">Level</option>
-                                                        <option value="sessionName">Session</option>
-                                                        <option value="appName">App Name</option>
-                                                        <option value="title">Title</option>
-                                                        <option value="logEntryType">Entry Type</option>
-                                                    </select>
-                                                    <select
-                                                        value={rule.conditions[0]?.operator || 'equals'}
-                                                        onChange={(e) => updateHighlightRule(rule.id, {
-                                                            conditions: [{ ...rule.conditions[0], operator: e.target.value as 'equals' | 'contains' | 'regex' }]
-                                                        })}
-                                                        className="border border-slate-200 rounded px-2 py-1"
-                                                    >
-                                                        <option value="equals">equals</option>
-                                                        <option value="contains">contains</option>
-                                                        <option value="regex">regex</option>
-                                                    </select>
-                                                    {rule.conditions[0]?.field === 'level' ? (
-                                                        <select
-                                                            value={String(rule.conditions[0]?.value || Level.Error)}
-                                                            onChange={(e) => updateHighlightRule(rule.id, {
-                                                                conditions: [{ ...rule.conditions[0], value: Number(e.target.value) }]
-                                                            })}
-                                                            className="border border-slate-200 rounded px-2 py-1"
-                                                        >
-                                                            <option value={Level.Debug}>Debug</option>
-                                                            <option value={Level.Verbose}>Verbose</option>
-                                                            <option value={Level.Message}>Info</option>
-                                                            <option value={Level.Warning}>Warning</option>
-                                                            <option value={Level.Error}>Error</option>
-                                                            <option value={Level.Fatal}>Fatal</option>
-                                                        </select>
-                                                    ) : (
-                                                        <input
-                                                            type="text"
-                                                            value={String(rule.conditions[0]?.value || '')}
-                                                            onChange={(e) => updateHighlightRule(rule.id, {
-                                                                conditions: [{ ...rule.conditions[0], value: e.target.value }]
-                                                            })}
-                                                            className="border border-slate-200 rounded px-2 py-1 flex-1"
-                                                            placeholder="Value..."
-                                                        />
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2 mt-2 text-xs">
-                                                    <span className="text-slate-500">Style:</span>
-                                                    <label className="flex items-center gap-1">
-                                                        <span>BG:</span>
-                                                        <input
-                                                            type="color"
-                                                            value={rule.style.backgroundColor || '#ffffff'}
-                                                            onChange={(e) => updateHighlightRule(rule.id, {
-                                                                style: { ...rule.style, backgroundColor: e.target.value }
-                                                            })}
-                                                            className="w-6 h-6 rounded cursor-pointer"
-                                                        />
-                                                    </label>
-                                                    <label className="flex items-center gap-1">
-                                                        <span>Text:</span>
-                                                        <input
-                                                            type="color"
-                                                            value={rule.style.textColor || '#000000'}
-                                                            onChange={(e) => updateHighlightRule(rule.id, {
-                                                                style: { ...rule.style, textColor: e.target.value }
-                                                            })}
-                                                            className="w-6 h-6 rounded cursor-pointer"
-                                                        />
-                                                    </label>
-                                                    <div
-                                                        className="ml-2 px-2 py-0.5 rounded text-xs"
-                                                        style={{
-                                                            backgroundColor: rule.style.backgroundColor,
-                                                            color: rule.style.textColor
-                                                        }}
-                                                    >
-                                                        Preview
-                                                    </div>
-                                                </div>
+                                                <button
+                                                    onClick={() => handleEditHighlightRule(rule)}
+                                                    className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
+                                                    title="Edit rule"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteHighlightRule(rule.id)}
+                                                    className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                                                    title="Delete rule"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
+
+                            {/* Highlight Rule Editor Modal */}
+                            {showHighlightEditor && (
+                                <HighlightRuleEditor
+                                    rule={editingHighlightRule}
+                                    onSave={handleSaveHighlightRule}
+                                    onCancel={() => {
+                                        setShowHighlightEditor(false);
+                                        setEditingHighlightRule(undefined);
+                                    }}
+                                    availableSessions={sessionNames}
+                                    availableAppNames={[]}
+                                    availableHostNames={[]}
+                                />
+                            )}
                         </>
                     )}
                 </div>
