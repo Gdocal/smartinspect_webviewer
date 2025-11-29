@@ -600,7 +600,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     // Stream actions
     addStreamEntry: (channel, entry) => set((state) => {
         const channelEntries = state.streams[channel] || [];
-        const newEntry = { ...entry, id: Date.now() };
+        const newEntry: StreamEntry = { ...entry, id: Date.now(), channel };
 
         // Efficient trimming
         const maxLen = state.streamMaxEntries;

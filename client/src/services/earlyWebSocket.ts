@@ -281,6 +281,20 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             // This message type is handled for future use
             break;
         }
+        case 'stream': {
+            // Stream data for high-frequency metrics/timeseries
+            if (!useLogStore.getState().connected && !pendingAuth) {
+                completeConnection();
+            }
+            const { channel, entry } = message as { channel: string; entry: { data: string; timestamp: string } };
+            if (channel && entry) {
+                store.addStreamEntry(channel, {
+                    data: entry.data,
+                    timestamp: entry.timestamp
+                });
+            }
+            break;
+        }
     }
 }
 

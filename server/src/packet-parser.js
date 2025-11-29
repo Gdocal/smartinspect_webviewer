@@ -10,7 +10,8 @@ const PacketType = {
     LogEntry: 4,
     Watch: 5,
     ProcessFlow: 6,
-    LogHeader: 7
+    LogHeader: 7,
+    Stream: 8
 };
 
 const Level = {
@@ -227,6 +228,8 @@ class PacketParser {
                 return this.parseProcessFlow(data);
             case PacketType.ControlCommand:
                 return this.parseControlCommand(data);
+            case PacketType.Stream:
+                return this.parseStream(data);
             default:
                 return null;
         }
@@ -380,6 +383,33 @@ class PacketParser {
             type: 'controlCommand',
             controlCommandType,
             data: commandData
+        };
+    }
+
+    /**
+     * Parse Stream packet
+     * Format: [channelLen(4)] [dataLen(4)] [timestamp(8)] [channel] [data]
+     */
+    parseStream(data) {
+        if (data.length < 16) return null;
+
+        let offset = 0;
+
+        const channelLen = data.readInt32LE(offset); offset += 4;
+        const dataLen = data.readInt32LE(offset); offset += 4;
+        const timestamp = data.readDoubleLE(offset); offset += 8;
+
+        const channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
+        offset += channelLen;
+
+        const streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+
+        return {
+            packetType: PacketType.Stream,
+            type: 'stream',
+            channel,
+            data: streamData,
+            timestamp: timestampToDate(timestamp)
         };
     }
 }

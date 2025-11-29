@@ -9,7 +9,7 @@
  * - MethodContextTracker for call stacks
  */
 
-const { LogRingBuffer, WatchStore, MethodContextTracker } = require('./storage');
+const { LogRingBuffer, WatchStore, MethodContextTracker, StreamStore } = require('./storage');
 
 /**
  * Storage container for a single room
@@ -18,7 +18,7 @@ class RoomStorage {
     constructor(maxEntries = 100000) {
         this.logBuffer = new LogRingBuffer(maxEntries);
         this.watchStore = new WatchStore();
-        this.streamStore = {};
+        this.streamStore = new StreamStore();
         this.methodTracker = new MethodContextTracker();
         this.clients = new Set();    // TCP client IDs in this room
         this.viewers = new Set();    // WebSocket viewer IDs in this room
@@ -40,9 +40,7 @@ class RoomStorage {
         this.logBuffer.clear();
         this.watchStore.clear();
         this.methodTracker.clear();
-        for (const key of Object.keys(this.streamStore)) {
-            delete this.streamStore[key];
-        }
+        this.streamStore.clear();
         this.touch();
     }
 
@@ -53,7 +51,7 @@ class RoomStorage {
         return {
             logStats: this.logBuffer.getStats(),
             watchCount: Object.keys(this.watchStore.getAll()).length,
-            streamCount: Object.keys(this.streamStore).length,
+            streamStats: this.streamStore.getStats(),
             clientCount: this.clients.size,
             viewerCount: this.viewers.size,
             createdAt: this.createdAt,
@@ -267,7 +265,7 @@ class RoomManager {
         for (const [, room] of this.rooms) {
             totalLogs += room.logBuffer.size;
             totalWatches += Object.keys(room.watchStore.getAll()).length;
-            totalStreams += Object.keys(room.streamStore).length;
+            totalStreams += room.streamStore.getStats().channelCount;
             totalClients += room.clients.size;
             totalViewers += room.viewers.size;
         }

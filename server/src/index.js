@@ -240,10 +240,7 @@ app.delete('/api/watches', (req, res) => {
 app.delete('/api/streams', (req, res) => {
     const roomId = getRoomFromRequest(req);
     const room = getRoomStorage(roomId);
-    // Clear all stream data
-    for (const key of Object.keys(room.streamStore)) {
-        delete room.streamStore[key];
-    }
+    room.streamStore.clear();
     connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'streams' });
     res.json({ success: true, room: roomId });
 });
@@ -537,11 +534,12 @@ app.get('/api/logs/query', (req, res) => {
 app.get('/api/streams', (req, res) => {
     const roomId = getRoomFromRequest(req);
     const room = getRoomStorage(roomId);
-    const channels = Object.keys(room.streamStore).map(channel => ({
+    const channelNames = room.streamStore.getAllChannels();
+    const channels = channelNames.map(channel => ({
         channel,
-        count: room.streamStore[channel]?.length || 0
+        count: room.streamStore.getChannel(channel).length
     }));
-    res.json({ channels, room: roomId });
+    res.json({ channels, room: roomId, stats: room.streamStore.getStats() });
 });
 
 /**
@@ -747,6 +745,27 @@ function handlePacket(packet, clientInfo) {
         case 'controlCommand':
             handleControlCommand(packet, roomId);
             break;
+
+        case 'stream': {
+            // Store in room's stream store
+            const streamEntry = room.streamStore.add(
+                packet.channel,
+                packet.data,
+                packet.timestamp
+            );
+            room.touch();
+
+            // Broadcast to viewers in this room
+            connectionManager.broadcastStreamToRoom(roomId, {
+                channel: packet.channel,
+                entry: {
+                    id: streamEntry.id,
+                    data: streamEntry.data,
+                    timestamp: streamEntry.timestamp.toISOString()
+                }
+            });
+            break;
+        }
     }
 }
 

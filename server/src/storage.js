@@ -420,8 +420,101 @@ class MethodContextTracker {
     }
 }
 
+/**
+ * Stream data store
+ * Stores recent entries per channel for high-frequency data streams
+ */
+class StreamStore {
+    constructor(maxEntriesPerChannel = 1000) {
+        this.channels = new Map();  // channel -> Array<StreamEntry>
+        this.maxEntries = maxEntriesPerChannel;
+        this.entryId = 0;
+    }
+
+    /**
+     * Add a stream entry to a channel
+     */
+    add(channel, data, timestamp) {
+        if (!this.channels.has(channel)) {
+            this.channels.set(channel, []);
+        }
+
+        const entry = {
+            id: ++this.entryId,
+            channel,
+            data,
+            timestamp: timestamp || new Date()
+        };
+
+        const entries = this.channels.get(channel);
+        entries.push(entry);
+
+        // Trim if over limit
+        if (entries.length > this.maxEntries) {
+            entries.shift();
+        }
+
+        return entry;
+    }
+
+    /**
+     * Get all entries for a specific channel
+     */
+    getChannel(channel) {
+        return this.channels.get(channel) || [];
+    }
+
+    /**
+     * Get list of all channel names
+     */
+    getAllChannels() {
+        return Array.from(this.channels.keys());
+    }
+
+    /**
+     * Get all streams data grouped by channel
+     */
+    getAll() {
+        const result = {};
+        for (const [channel, entries] of this.channels) {
+            result[channel] = entries;
+        }
+        return result;
+    }
+
+    /**
+     * Clear a specific channel
+     */
+    clearChannel(channel) {
+        this.channels.delete(channel);
+    }
+
+    /**
+     * Clear all stream data
+     */
+    clear() {
+        this.channels.clear();
+    }
+
+    /**
+     * Get stats about the stream store
+     */
+    getStats() {
+        let totalEntries = 0;
+        for (const entries of this.channels.values()) {
+            totalEntries += entries.length;
+        }
+        return {
+            channelCount: this.channels.size,
+            totalEntries,
+            maxEntriesPerChannel: this.maxEntries
+        };
+    }
+}
+
 module.exports = {
     LogRingBuffer,
     WatchStore,
-    MethodContextTracker
+    MethodContextTracker,
+    StreamStore
 };

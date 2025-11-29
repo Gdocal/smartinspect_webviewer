@@ -17,9 +17,10 @@ interface ServerStats {
         system: number;
     };
     uptime: number;
-    logs: {
-        count: number;
-        maxEntries: number;
+    rooms: {
+        totalLogs: number;
+        maxEntriesPerRoom: number;
+        roomCount: number;
     };
     connections: {
         viewers: number;
@@ -148,8 +149,8 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
     const memoryPercent = stats
         ? (stats.memory.heapUsed / stats.memory.heapTotal) * 100
         : 0;
-    const bufferPercent = stats
-        ? (stats.logs.count / stats.logs.maxEntries) * 100
+    const bufferPercent = stats?.rooms
+        ? (stats.rooms.totalLogs / (stats.rooms.maxEntriesPerRoom * stats.rooms.roomCount)) * 100
         : 0;
 
     return (
@@ -209,7 +210,7 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                                 <div className="flex justify-between text-sm mb-1">
                                     <span className="text-slate-600 font-medium">Log Buffer</span>
                                     <span className="text-slate-500">
-                                        {formatNumber(stats.logs.count)} / {formatNumber(stats.logs.maxEntries)}
+                                        {formatNumber(stats.rooms.totalLogs)} / {formatNumber(stats.rooms.maxEntriesPerRoom * stats.rooms.roomCount)}
                                     </span>
                                 </div>
                                 <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
@@ -227,11 +228,17 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                             </div>
 
                             {/* Stats Grid */}
-                            <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="grid grid-cols-3 gap-3 pt-2">
                                 <div className="bg-slate-50 rounded p-3">
                                     <div className="text-xs text-slate-500 uppercase tracking-wide">Uptime</div>
                                     <div className="text-lg font-semibold text-slate-700">
                                         {formatUptime(stats.uptime)}
+                                    </div>
+                                </div>
+                                <div className="bg-slate-50 rounded p-3">
+                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Rooms</div>
+                                    <div className="text-lg font-semibold text-slate-700">
+                                        {stats.rooms.roomCount}
                                     </div>
                                 </div>
                                 <div className="bg-slate-50 rounded p-3">
@@ -246,10 +253,10 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                                         {stats.connections.clients}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Buffer Size</div>
+                                <div className="bg-slate-50 rounded p-3 col-span-2">
+                                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Buffer Size (per room)</div>
                                     <select
-                                        value={stats.logs.maxEntries}
+                                        value={stats.rooms.maxEntriesPerRoom}
                                         onChange={(e) => handleBufferSizeChange(parseInt(e.target.value))}
                                         disabled={changingBuffer}
                                         className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50"

@@ -3,14 +3,35 @@
  * Left: Stream channel list (30%)
  * Right: Entries table for selected stream (70%)
  * Uses shared DetailPanel for entry details
+ * Uses AG Grid Enterprise for consistent look with All Logs view
  */
 
 import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, GridReadyEvent, ICellRendererParams, RowClickedEvent, GridApi } from 'ag-grid-community';
+import {
+    ColDef,
+    GridReadyEvent,
+    ICellRendererParams,
+    RowClickedEvent,
+    GridApi,
+    SideBarDef,
+    ModuleRegistry,
+    AllCommunityModule
+} from 'ag-grid-community';
+import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
+
+// Register AG Grid modules (required for v34+)
+ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
+
 import { useLogStore, StreamEntry } from '../store/logStore';
 import { HighlightRulesPanel } from './HighlightRulesPanel';
 import { format } from 'date-fns';
+
+// Set license key if available
+const licenseKey = import.meta.env.VITE_AG_GRID_LICENSE;
+if (licenseKey) {
+    LicenseManager.setLicenseKey(licenseKey);
+}
 
 // Format timestamp for display
 function formatTime(timestamp: string): string {
@@ -160,16 +181,8 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         lastEntryCountRef.current = displayedEntries.length;
     }, [displayedEntries.length, autoScroll, paused]);
 
-    // Column definitions
+    // Column definitions - Content first, Time at the end
     const columnDefs = useMemo<ColDef<StreamEntry>[]>(() => [
-        {
-            headerName: 'Time',
-            field: 'timestamp',
-            width: 110,
-            minWidth: 100,
-            valueFormatter: (params) => formatTime(params.value),
-            sortable: true,
-        },
         {
             headerName: 'Content',
             field: 'data',
@@ -177,12 +190,51 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             minWidth: 200,
             cellRenderer: ContentCellRenderer,
             sortable: false,
+            filter: 'agTextColumnFilter',
+        },
+        {
+            headerName: 'Time',
+            field: 'timestamp',
+            width: 110,
+            minWidth: 90,
+            valueFormatter: (params) => formatTime(params.value),
+            sortable: true,
+            filter: 'agTextColumnFilter',
         },
     ], []);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
+        sortable: true,
+        filter: true,
         suppressHeaderMenuButton: true,
+    }), []);
+
+    // Sidebar with column tool panel - same as LogGrid
+    const sideBar = useMemo<SideBarDef>(() => ({
+        toolPanels: [
+            {
+                id: 'columns',
+                labelDefault: 'Columns',
+                labelKey: 'columns',
+                iconKey: 'columns',
+                toolPanel: 'agColumnsToolPanel',
+                toolPanelParams: {
+                    suppressRowGroups: true,
+                    suppressValues: true,
+                    suppressPivots: true,
+                    suppressPivotMode: true,
+                },
+            },
+            {
+                id: 'filters',
+                labelDefault: 'Filters',
+                labelKey: 'filters',
+                iconKey: 'filter',
+                toolPanel: 'agFiltersToolPanel',
+            },
+        ],
+        defaultToolPanel: '',
     }), []);
 
     const onGridReady = useCallback((params: GridReadyEvent) => {
@@ -386,8 +438,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                 {/* Entries grid */}
                 {selectedChannel ? (
-                    <div className="flex-1 ag-theme-balham" style={{ fontSize: '13px' }}>
+                    <div className="flex-1 ag-theme-balham h-full w-full" style={{ fontSize: '13px' }}>
                         <AgGridReact
+                            theme="legacy"
                             rowData={displayedEntries}
                             columnDefs={columnDefs}
                             defaultColDef={defaultColDef}
@@ -395,10 +448,26 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             getRowStyle={getRowStyle}
                             onGridReady={onGridReady}
                             onRowClicked={onRowClicked}
+                            // PERFORMANCE OPTIMIZATIONS - same as LogGrid
                             animateRows={false}
-                            rowSelection="single"
+                            rowSelection={{ mode: 'singleRow', enableClickSelection: true, hideDisabledCheckboxes: true, checkboxes: false }}
+                            sideBar={sideBar}
+                            cellSelection={true}
                             suppressCellFocus={true}
-                            rowBuffer={30}
+                            rowBuffer={50}
+                            suppressColumnVirtualisation={false}
+                            suppressRowVirtualisation={false}
+                            debounceVerticalScrollbar={true}
+                            suppressAnimationFrame={false}
+                            asyncTransactionWaitMillis={50}
+                            tooltipShowDelay={500}
+                            overlayNoRowsTemplate='<span class="text-slate-400">No stream entries</span>'
+                            statusBar={{
+                                statusPanels: [
+                                    { statusPanel: 'agTotalRowCountComponent', align: 'left' },
+                                    { statusPanel: 'agFilteredRowCountComponent', align: 'left' },
+                                ]
+                            }}
                         />
                     </div>
                 ) : (

@@ -107,32 +107,9 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
                 </button>
             </div>
 
-            {/* Content */}
+            {/* Content - Data only, no metadata */}
             <div className="flex-1 overflow-auto p-4">
-                {/* Metadata */}
-                <div className="mb-4">
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Metadata</div>
-                    <div className="bg-purple-50 rounded-lg p-3">
-                        <InfoRow label="Channel" value={
-                            <span className="inline-flex items-center gap-1.5">
-                                <svg className="w-3.5 h-3.5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                </svg>
-                                <span className="font-medium text-purple-700">{entry.channel}</span>
-                            </span>
-                        } />
-                        <InfoRow label="Timestamp" value={formatTimestamp(entry.timestamp)} mono />
-                        {entry.sessionName && (
-                            <InfoRow label="Session" value={entry.sessionName} />
-                        )}
-                    </div>
-                </div>
-
-                {/* Data section */}
-                <div>
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Data</div>
-                    <DataViewer data={entry.data} />
-                </div>
+                <DataViewer data={entry.data} />
             </div>
         </div>
     );

@@ -362,6 +362,18 @@ class ConnectionManager {
     }
 
     /**
+     * Broadcast stream entry to viewers in a specific room
+     */
+    broadcastStreamToRoom(roomId, streamData) {
+        const message = {
+            type: 'stream',
+            channel: streamData.channel,
+            entry: streamData.entry
+        };
+        this.broadcastToRoom(roomId, message);
+    }
+
+    /**
      * Serialize entry for JSON transport
      */
     _serializeEntry(entry) {
