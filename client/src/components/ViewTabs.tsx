@@ -241,15 +241,15 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[600px] max-h-[85vh] overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+            <div className="bg-white rounded-lg shadow-xl w-[600px] h-[600px] flex flex-col overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
                     <h3 className="font-semibold text-slate-800">
                         {view ? 'Edit View' : 'Create New View'}
                     </h3>
                 </div>
 
                 {/* Name field */}
-                <div className="px-4 pt-4">
+                <div className="px-4 pt-4 flex-shrink-0">
                     <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
                         View Name
                     </label>
@@ -263,7 +263,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                 </div>
 
                 {/* Tab bar */}
-                <div className="px-4 pt-4 border-b border-slate-200">
+                <div className="px-4 pt-4 border-b border-slate-200 flex-shrink-0">
                     <div className="flex gap-1">
                         <button
                             onClick={() => setActiveTab('filters')}
@@ -293,7 +293,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                     </div>
                 </div>
 
-                <div className="p-4 overflow-auto max-h-[50vh]">
+                <div className="p-4 overflow-auto flex-1 min-h-0">
                     {activeTab === 'filters' ? (
                         <>
                             {/* Session Filter - Searchable Multi-Select */}
@@ -555,7 +555,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                     )}
                 </div>
 
-                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
                     <button
                         onClick={onCancel}
                         className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
