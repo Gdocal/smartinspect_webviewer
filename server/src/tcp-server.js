@@ -2,6 +2,7 @@
  * SmartInspect Web Viewer - TCP Server
  * Receives log packets from SmartInspect client libraries
  * Uses the same protocol as SmartInspect Console
+ * Supports room-based routing for multi-project isolation
  */
 
 const net = require('net');
@@ -21,6 +22,7 @@ class TcpLogServer {
         this.port = options.port || 4229;
         this.host = options.host || '0.0.0.0';
         this.authToken = options.authToken || null;
+        this.roomManager = options.roomManager || null;
         this.server = null;
         this.clients = new Map();  // socket -> client info
         this.clientIdCounter = 0;
@@ -61,7 +63,11 @@ class TcpLogServer {
     stop() {
         return new Promise((resolve) => {
             // Close all client connections
-            for (const [socket] of this.clients) {
+            for (const [socket, clientInfo] of this.clients) {
+                // Remove from room manager if present
+                if (this.roomManager && clientInfo.room) {
+                    this.roomManager.removeClient(clientInfo.room, clientInfo.id);
+                }
                 socket.destroy();
             }
             this.clients.clear();
@@ -88,6 +94,7 @@ class TcpLogServer {
             port: socket.remotePort,
             connectedAt: new Date(),
             appName: null,
+            room: 'default',            // Room for this client (extracted from LogHeader)
             authenticated: !this.authToken,  // If no token required, auto-authenticate
             handshakeComplete: false,        // Client banner received
             clientBanner: '',                // Accumulates client banner text
@@ -97,6 +104,11 @@ class TcpLogServer {
         };
 
         this.clients.set(socket, clientInfo);
+
+        // Add to default room initially
+        if (this.roomManager) {
+            this.roomManager.addClient('default', clientId);
+        }
 
         console.log(`[TCP] Client ${clientId} connected from ${clientInfo.address}:${clientInfo.port}`);
 
@@ -110,7 +122,11 @@ class TcpLogServer {
 
         // Handle disconnect
         socket.on('close', () => {
-            console.log(`[TCP] Client ${clientId} disconnected`);
+            console.log(`[TCP] Client ${clientId} disconnected from room: ${clientInfo.room}`);
+            // Remove from room manager
+            if (this.roomManager) {
+                this.roomManager.removeClient(clientInfo.room, clientId);
+            }
             this.onClientDisconnect(clientInfo);
             this.clients.delete(socket);
         });
@@ -175,23 +191,37 @@ class TcpLogServer {
             // Send acknowledgment (2 bytes) for each packet
             socket.write(ACK_OK);
 
-            // Extract app name from LogHeader
+            // Extract app name and room from LogHeader
             if (packet.type === 'logHeader' && packet.content) {
-                // Parse "hostname=xxx\r\nappname=yyy\r\n" format
+                // Parse "hostname=xxx\r\nappname=yyy\r\nroom=zzz\r\n" format
                 const lines = packet.content.split('\r\n');
                 for (const line of lines) {
                     const [key, value] = line.split('=');
                     if (key === 'appname' && value) {
                         clientInfo.appName = value;
                     }
+                    if (key === 'room' && value) {
+                        const newRoom = value.trim() || 'default';
+                        if (newRoom !== clientInfo.room) {
+                            // Room changed - update room manager
+                            const oldRoom = clientInfo.room;
+                            if (this.roomManager) {
+                                this.roomManager.removeClient(oldRoom, clientInfo.id);
+                                this.roomManager.addClient(newRoom, clientInfo.id);
+                            }
+                            clientInfo.room = newRoom;
+                            console.log(`[TCP] Client ${clientInfo.id} moved to room: ${newRoom}`);
+                        }
+                    }
                 }
-                console.log(`[TCP] Client ${clientInfo.id} app: ${clientInfo.appName}`);
+                console.log(`[TCP] Client ${clientInfo.id} app: ${clientInfo.appName}, room: ${clientInfo.room}`);
             }
 
             // Add client metadata to packet
             packet.clientId = clientInfo.id;
             packet.clientAddress = clientInfo.address;
             packet.clientAppName = clientInfo.appName;
+            packet.clientRoom = clientInfo.room;
 
             // Emit packet
             this.onPacket(packet, clientInfo);
@@ -210,6 +240,7 @@ class TcpLogServer {
                 port: clientInfo.port,
                 connectedAt: clientInfo.connectedAt,
                 appName: clientInfo.appName,
+                room: clientInfo.room,
                 authenticated: clientInfo.authenticated,
                 packetsReceived: clientInfo.packetsReceived,
                 bytesReceived: clientInfo.bytesReceived
@@ -219,10 +250,39 @@ class TcpLogServer {
     }
 
     /**
+     * Get clients in a specific room
+     */
+    getClientsInRoom(roomId) {
+        const result = [];
+        for (const [, clientInfo] of this.clients) {
+            if (clientInfo.room === roomId) {
+                result.push({
+                    id: clientInfo.id,
+                    address: clientInfo.address,
+                    appName: clientInfo.appName,
+                    packetsReceived: clientInfo.packetsReceived
+                });
+            }
+        }
+        return result;
+    }
+
+    /**
      * Get client count
      */
     getClientCount() {
         return this.clients.size;
+    }
+
+    /**
+     * Get client count for a specific room
+     */
+    getClientCountInRoom(roomId) {
+        let count = 0;
+        for (const [, clientInfo] of this.clients) {
+            if (clientInfo.room === roomId) count++;
+        }
+        return count;
     }
 }
 

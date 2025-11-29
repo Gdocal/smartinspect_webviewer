@@ -204,6 +204,12 @@ interface LogState {
     reconnectIn: number | null; // Seconds until reconnect attempt
     serverUrl: string | null; // Current server URL being connected to
 
+    // Room isolation (multi-project support)
+    currentRoom: string; // Active room ID
+    currentUser: string; // User identifier for settings
+    availableRooms: string[]; // List of known rooms from server
+    roomSwitching: boolean; // True while switching rooms
+
     // Log entries (limited buffer for performance)
     entries: LogEntry[];
     maxDisplayEntries: number;
@@ -259,6 +265,13 @@ interface LogState {
     setError: (error: string | null) => void;
     setReconnectIn: (seconds: number | null) => void;
     setServerUrl: (url: string | null) => void;
+
+    // Room actions
+    setCurrentRoom: (room: string) => void;
+    setCurrentUser: (user: string) => void;
+    setAvailableRooms: (rooms: string[]) => void;
+    setRoomSwitching: (switching: boolean) => void;
+    switchRoom: (room: string) => void; // Clears data and triggers reconnect
     addEntries: (entries: LogEntry[]) => void;
     addEntriesBatch: (entries: LogEntry[]) => void; // Optimized batch add
     setEntries: (entries: LogEntry[]) => void;
@@ -346,6 +359,13 @@ export const useLogStore = create<LogState>((set, get) => ({
     error: null,
     reconnectIn: null,
     serverUrl: null,
+
+    // Room state
+    currentRoom: 'default',
+    currentUser: 'default',
+    availableRooms: ['default'],
+    roomSwitching: false,
+
     entries: [],
     maxDisplayEntries: INITIAL_CAPACITY,
     lastEntryId: 0,
@@ -385,6 +405,27 @@ export const useLogStore = create<LogState>((set, get) => ({
     setError: (error) => set({ error }),
     setReconnectIn: (reconnectIn) => set({ reconnectIn }),
     setServerUrl: (serverUrl) => set({ serverUrl }),
+
+    // Room actions
+    setCurrentRoom: (currentRoom) => set({ currentRoom }),
+    setCurrentUser: (currentUser) => set({ currentUser }),
+    setAvailableRooms: (availableRooms) => set({ availableRooms }),
+    setRoomSwitching: (roomSwitching) => set({ roomSwitching }),
+    switchRoom: (room) => set((state) => ({
+        currentRoom: room,
+        roomSwitching: true,
+        // Clear data for new room
+        entries: [],
+        lastEntryId: 0,
+        entriesVersion: state.entriesVersion + 1,
+        watches: {},
+        sessions: {},
+        appNames: {},
+        hostNames: {},
+        streams: {},
+        selectedEntryId: null,
+        selectedStreamEntryId: null
+    })),
 
     // Legacy single-update method (kept for compatibility)
     addEntries: (newEntries) => set((state) => {

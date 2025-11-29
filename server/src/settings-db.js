@@ -1,0 +1,378 @@
+/**
+ * SmartInspect Web Viewer - Settings Database
+ * SQLite-based persistence for user settings per room
+ *
+ * Settings are stored per (room, user) combination.
+ * Default user is "default" for anonymous/no-auth mode.
+ */
+
+const Database = require('better-sqlite3');
+const path = require('path');
+const crypto = require('crypto');
+
+/**
+ * Settings database manager
+ */
+class SettingsDB {
+    constructor(dbPath = null) {
+        // Default to data directory next to server
+        if (!dbPath) {
+            dbPath = path.join(__dirname, '../data/smartinspect.db');
+        }
+
+        // Ensure data directory exists
+        const dataDir = path.dirname(dbPath);
+        const fs = require('fs');
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+
+        this.db = new Database(dbPath);
+        this.db.pragma('journal_mode = WAL');  // Better performance
+        this._init();
+
+        console.log(`[SettingsDB] Database initialized at ${dbPath}`);
+    }
+
+    /**
+     * Initialize database schema
+     */
+    _init() {
+        this.db.exec(`
+            -- Users table (for optional authentication)
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT,
+                salt TEXT,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                last_login INTEGER
+            );
+
+            -- Settings table (room + user -> key -> value)
+            CREATE TABLE IF NOT EXISTS settings (
+                room TEXT NOT NULL,
+                user TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+                PRIMARY KEY (room, user, key)
+            );
+
+            -- Create indexes for faster queries
+            CREATE INDEX IF NOT EXISTS idx_settings_room ON settings(room);
+            CREATE INDEX IF NOT EXISTS idx_settings_user ON settings(user);
+
+            -- Insert default user if not exists
+            INSERT OR IGNORE INTO users (username, password_hash, salt)
+            VALUES ('default', NULL, NULL);
+        `);
+
+        // Prepare commonly used statements
+        this._stmts = {
+            getSetting: this.db.prepare(`
+                SELECT value FROM settings
+                WHERE room = ? AND user = ? AND key = ?
+            `),
+            setSetting: this.db.prepare(`
+                INSERT OR REPLACE INTO settings (room, user, key, value, updated_at)
+                VALUES (?, ?, ?, ?, strftime('%s', 'now'))
+            `),
+            deleteSetting: this.db.prepare(`
+                DELETE FROM settings
+                WHERE room = ? AND user = ? AND key = ?
+            `),
+            getAllSettings: this.db.prepare(`
+                SELECT key, value FROM settings
+                WHERE room = ? AND user = ?
+            `),
+            deleteAllSettings: this.db.prepare(`
+                DELETE FROM settings
+                WHERE room = ? AND user = ?
+            `),
+            getUserByUsername: this.db.prepare(`
+                SELECT username, password_hash, salt, created_at, last_login
+                FROM users WHERE username = ?
+            `),
+            createUser: this.db.prepare(`
+                INSERT INTO users (username, password_hash, salt)
+                VALUES (?, ?, ?)
+            `),
+            updateLastLogin: this.db.prepare(`
+                UPDATE users SET last_login = strftime('%s', 'now')
+                WHERE username = ?
+            `),
+            listUsers: this.db.prepare(`
+                SELECT username, created_at, last_login FROM users
+                WHERE username != 'default'
+            `)
+        };
+    }
+
+    // ==================== Settings CRUD ====================
+
+    /**
+     * Get a single setting value
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (default: 'default')
+     * @param {string} key - Setting key
+     * @returns {any} Parsed JSON value or null
+     */
+    getSetting(room, user, key) {
+        const row = this._stmts.getSetting.get(room, user, key);
+        if (row && row.value) {
+            try {
+                return JSON.parse(row.value);
+            } catch (e) {
+                return row.value;  // Return as string if not valid JSON
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Set a single setting value
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (default: 'default')
+     * @param {string} key - Setting key
+     * @param {any} value - Setting value (will be JSON-stringified)
+     */
+    setSetting(room, user, key, value) {
+        const jsonValue = typeof value === 'string' ? value : JSON.stringify(value);
+        this._stmts.setSetting.run(room, user, key, jsonValue);
+    }
+
+    /**
+     * Delete a single setting
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     * @param {string} key - Setting key
+     */
+    deleteSetting(room, user, key) {
+        this._stmts.deleteSetting.run(room, user, key);
+    }
+
+    /**
+     * Get all settings for a room/user combination
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (default: 'default')
+     * @returns {Object} All settings as key-value pairs
+     */
+    getAllSettings(room, user) {
+        const rows = this._stmts.getAllSettings.all(room, user);
+        const result = {};
+        for (const row of rows) {
+            try {
+                result[row.key] = JSON.parse(row.value);
+            } catch (e) {
+                result[row.key] = row.value;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Set multiple settings at once
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     * @param {Object} settings - Key-value pairs to set
+     */
+    setMultipleSettings(room, user, settings) {
+        const setMany = this.db.transaction((entries) => {
+            for (const [key, value] of entries) {
+                const jsonValue = typeof value === 'string' ? value : JSON.stringify(value);
+                this._stmts.setSetting.run(room, user, key, jsonValue);
+            }
+        });
+        setMany(Object.entries(settings));
+    }
+
+    /**
+     * Delete all settings for a room/user combination
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     */
+    deleteAllSettings(room, user) {
+        this._stmts.deleteAllSettings.run(room, user);
+    }
+
+    /**
+     * Copy settings from one room/user to another
+     * @param {string} fromRoom - Source room
+     * @param {string} fromUser - Source user
+     * @param {string} toRoom - Destination room
+     * @param {string} toUser - Destination user
+     */
+    copySettings(fromRoom, fromUser, toRoom, toUser) {
+        const settings = this.getAllSettings(fromRoom, fromUser);
+        this.setMultipleSettings(toRoom, toUser, settings);
+    }
+
+    // ==================== User Authentication ====================
+
+    /**
+     * Hash a password with salt
+     * @param {string} password - Plain text password
+     * @param {string} salt - Salt (or null to generate)
+     * @returns {{ hash: string, salt: string }}
+     */
+    _hashPassword(password, salt = null) {
+        if (!salt) {
+            salt = crypto.randomBytes(16).toString('hex');
+        }
+        const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+        return { hash, salt };
+    }
+
+    /**
+     * Create a new user with password
+     * @param {string} username - Username
+     * @param {string} password - Plain text password
+     * @returns {boolean} True if created successfully
+     */
+    createUser(username, password) {
+        // Check if user exists
+        const existing = this._stmts.getUserByUsername.get(username);
+        if (existing) {
+            return false;
+        }
+
+        const { hash, salt } = this._hashPassword(password);
+        try {
+            this._stmts.createUser.run(username, hash, salt);
+            return true;
+        } catch (e) {
+            console.error('[SettingsDB] Failed to create user:', e.message);
+            return false;
+        }
+    }
+
+    /**
+     * Validate user credentials
+     * @param {string} username - Username
+     * @param {string} password - Plain text password
+     * @returns {boolean} True if valid
+     */
+    validateUser(username, password) {
+        const user = this._stmts.getUserByUsername.get(username);
+        if (!user || !user.password_hash || !user.salt) {
+            return false;
+        }
+
+        const { hash } = this._hashPassword(password, user.salt);
+        if (hash === user.password_hash) {
+            // Update last login
+            this._stmts.updateLastLogin.run(username);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if a user exists
+     * @param {string} username - Username
+     * @returns {boolean}
+     */
+    userExists(username) {
+        const user = this._stmts.getUserByUsername.get(username);
+        return !!user;
+    }
+
+    /**
+     * Get user info (without password)
+     * @param {string} username - Username
+     * @returns {Object|null}
+     */
+    getUser(username) {
+        const user = this._stmts.getUserByUsername.get(username);
+        if (user) {
+            return {
+                username: user.username,
+                createdAt: new Date(user.created_at * 1000),
+                lastLogin: user.last_login ? new Date(user.last_login * 1000) : null
+            };
+        }
+        return null;
+    }
+
+    /**
+     * List all users (excluding default)
+     * @returns {Object[]}
+     */
+    listUsers() {
+        const rows = this._stmts.listUsers.all();
+        return rows.map(row => ({
+            username: row.username,
+            createdAt: new Date(row.created_at * 1000),
+            lastLogin: row.last_login ? new Date(row.last_login * 1000) : null
+        }));
+    }
+
+    /**
+     * Change user password
+     * @param {string} username - Username
+     * @param {string} newPassword - New plain text password
+     * @returns {boolean}
+     */
+    changePassword(username, newPassword) {
+        const { hash, salt } = this._hashPassword(newPassword);
+        const stmt = this.db.prepare(`
+            UPDATE users SET password_hash = ?, salt = ?
+            WHERE username = ?
+        `);
+        const result = stmt.run(hash, salt, username);
+        return result.changes > 0;
+    }
+
+    /**
+     * Delete a user and their settings
+     * @param {string} username - Username
+     * @returns {boolean}
+     */
+    deleteUser(username) {
+        if (username === 'default') {
+            return false;  // Cannot delete default user
+        }
+
+        const deleteSettings = this.db.prepare(`
+            DELETE FROM settings WHERE user = ?
+        `);
+        const deleteUser = this.db.prepare(`
+            DELETE FROM users WHERE username = ?
+        `);
+
+        const transaction = this.db.transaction(() => {
+            deleteSettings.run(username);
+            return deleteUser.run(username);
+        });
+
+        const result = transaction();
+        return result.changes > 0;
+    }
+
+    // ==================== Utility Methods ====================
+
+    /**
+     * Get database statistics
+     * @returns {Object}
+     */
+    getStats() {
+        const settingsCount = this.db.prepare('SELECT COUNT(*) as count FROM settings').get();
+        const usersCount = this.db.prepare('SELECT COUNT(*) as count FROM users').get();
+        const roomsQuery = this.db.prepare('SELECT DISTINCT room FROM settings').all();
+
+        return {
+            totalSettings: settingsCount.count,
+            totalUsers: usersCount.count,
+            rooms: roomsQuery.map(r => r.room)
+        };
+    }
+
+    /**
+     * Close the database connection
+     */
+    close() {
+        this.db.close();
+    }
+}
+
+module.exports = { SettingsDB };

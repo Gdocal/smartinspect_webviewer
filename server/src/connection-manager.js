@@ -1,6 +1,7 @@
 /**
  * SmartInspect Web Viewer - Connection Manager
  * Manages web viewer clients (WebSocket connections)
+ * Supports room-based isolation for multi-project viewing
  */
 
 const WebSocket = require('ws');
@@ -11,6 +12,8 @@ const WebSocket = require('ws');
 class ConnectionManager {
     constructor(options = {}) {
         this.authToken = options.authToken || null;
+        this.authRequired = options.authRequired || false;
+        this.roomManager = options.roomManager || null;
         this.wss = null;
         this.viewers = new Map();  // ws -> viewer info
         this.viewerIdCounter = 0;
@@ -41,9 +44,11 @@ class ConnectionManager {
      * Handle new viewer connection
      */
     _handleConnection(ws, req) {
-        // Extract token from query string
+        // Extract token and room from query string
         const url = new URL(req.url, 'http://localhost');
         const token = url.searchParams.get('token');
+        const room = url.searchParams.get('room') || 'default';
+        const user = url.searchParams.get('user') || 'default';
 
         // Authenticate if token is required
         if (this.authToken && token !== this.authToken) {
@@ -57,14 +62,21 @@ class ConnectionManager {
             id: viewerId,
             address: req.socket.remoteAddress,
             connectedAt: new Date(),
-            lastEntryId: 0,  // For streaming updates
-            filters: null,   // Client-side filters (for server-side filtering)
+            room: room,              // Current room
+            user: user,              // User identifier
+            lastEntryId: 0,          // For streaming updates
+            filters: null,           // Client-side filters (for server-side filtering)
             paused: false
         };
 
         this.viewers.set(ws, viewerInfo);
 
-        console.log(`[WS] Viewer ${viewerId} connected from ${viewerInfo.address}`);
+        // Register with room manager if available
+        if (this.roomManager) {
+            this.roomManager.addViewer(room, viewerId);
+        }
+
+        console.log(`[WS] Viewer ${viewerId} connected from ${viewerInfo.address} to room: ${room}`);
 
         // Handle messages from viewer
         ws.on('message', (message) => {
@@ -73,7 +85,11 @@ class ConnectionManager {
 
         // Handle disconnect
         ws.on('close', () => {
-            console.log(`[WS] Viewer ${viewerId} disconnected`);
+            console.log(`[WS] Viewer ${viewerId} disconnected from room: ${viewerInfo.room}`);
+            // Remove from room manager
+            if (this.roomManager) {
+                this.roomManager.removeViewer(viewerInfo.room, viewerId);
+            }
             this.onViewerDisconnect(viewerInfo);
             this.viewers.delete(ws);
         });
@@ -102,12 +118,45 @@ class ConnectionManager {
     }
 
     /**
-     * Broadcast a message to all connected viewers
+     * Switch a viewer to a different room
+     */
+    switchViewerRoom(ws, newRoom) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return;
+
+        const oldRoom = viewerInfo.room;
+        if (oldRoom === newRoom) return;
+
+        // Update room manager
+        if (this.roomManager) {
+            this.roomManager.moveViewer(viewerInfo.id, oldRoom, newRoom);
+        }
+
+        viewerInfo.room = newRoom;
+        viewerInfo.lastEntryId = 0;  // Reset entry tracking for new room
+
+        console.log(`[WS] Viewer ${viewerInfo.id} switched from ${oldRoom} to ${newRoom}`);
+    }
+
+    /**
+     * Broadcast a message to all connected viewers (all rooms)
      */
     broadcast(message) {
         const data = JSON.stringify(message);
         for (const [ws, viewerInfo] of this.viewers) {
             if (ws.readyState === WebSocket.OPEN && !viewerInfo.paused) {
+                ws.send(data);
+            }
+        }
+    }
+
+    /**
+     * Broadcast a message to all viewers in a specific room
+     */
+    broadcastToRoom(roomId, message) {
+        const data = JSON.stringify(message);
+        for (const [ws, viewerInfo] of this.viewers) {
+            if (viewerInfo.room === roomId && ws.readyState === WebSocket.OPEN && !viewerInfo.paused) {
                 ws.send(data);
             }
         }
@@ -123,10 +172,9 @@ class ConnectionManager {
     }
 
     /**
-     * Broadcast new log entries to viewers
-     * Optionally filter by viewer's subscriptions
+     * Broadcast new log entries to viewers in a specific room
      */
-    broadcastEntries(entries) {
+    broadcastEntriesToRoom(roomId, entries) {
         if (entries.length === 0) return;
 
         // Prepare entries for JSON serialization
@@ -137,11 +185,42 @@ class ConnectionManager {
             data: serialized
         };
 
+        this.broadcastToRoom(roomId, message);
+    }
+
+    /**
+     * Legacy: Broadcast entries to all rooms (for backward compatibility)
+     */
+    broadcastEntries(entries) {
+        if (entries.length === 0) return;
+
+        const serialized = entries.map(entry => this._serializeEntry(entry));
+        const message = {
+            type: 'entries',
+            data: serialized
+        };
+
         this.broadcast(message);
     }
 
     /**
-     * Broadcast watch update to viewers
+     * Broadcast watch update to viewers in a specific room
+     */
+    broadcastWatchToRoom(roomId, watch) {
+        const message = {
+            type: 'watch',
+            data: {
+                name: watch.name,
+                value: watch.value,
+                timestamp: watch.timestamp,
+                watchType: watch.watchType
+            }
+        };
+        this.broadcastToRoom(roomId, message);
+    }
+
+    /**
+     * Legacy: Broadcast watch update to all viewers
      */
     broadcastWatch(watch) {
         const message = {
@@ -157,7 +236,18 @@ class ConnectionManager {
     }
 
     /**
-     * Broadcast control command to viewers
+     * Broadcast control command to viewers in a specific room
+     */
+    broadcastControlToRoom(roomId, command) {
+        const message = {
+            type: 'control',
+            data: command
+        };
+        this.broadcastToRoom(roomId, message);
+    }
+
+    /**
+     * Legacy: Broadcast control command to all viewers
      */
     broadcastControl(command) {
         const message = {
@@ -212,8 +302,28 @@ class ConnectionManager {
                 id: viewerInfo.id,
                 address: viewerInfo.address,
                 connectedAt: viewerInfo.connectedAt,
+                room: viewerInfo.room,
+                user: viewerInfo.user,
                 paused: viewerInfo.paused
             });
+        }
+        return result;
+    }
+
+    /**
+     * Get viewers in a specific room
+     */
+    getViewersInRoom(roomId) {
+        const result = [];
+        for (const [, viewerInfo] of this.viewers) {
+            if (viewerInfo.room === roomId) {
+                result.push({
+                    id: viewerInfo.id,
+                    address: viewerInfo.address,
+                    user: viewerInfo.user,
+                    paused: viewerInfo.paused
+                });
+            }
         }
         return result;
     }
@@ -223,6 +333,17 @@ class ConnectionManager {
      */
     getViewerCount() {
         return this.viewers.size;
+    }
+
+    /**
+     * Get viewer count for a specific room
+     */
+    getViewerCountInRoom(roomId) {
+        let count = 0;
+        for (const [, viewerInfo] of this.viewers) {
+            if (viewerInfo.room === roomId) count++;
+        }
+        return count;
     }
 }
 

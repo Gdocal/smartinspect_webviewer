@@ -3,6 +3,7 @@
  */
 
 import { useLogStore } from '../store/logStore';
+import { RoomSelector } from './RoomSelector';
 
 interface StatusBarProps {
     onServerInfoClick?: () => void;
@@ -34,6 +35,9 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
                 <span className={`w-2 h-2 rounded-full ${dotClass}`} />
                 <span className="text-slate-300">{statusText}</span>
             </div>
+
+            {/* Room selector */}
+            <RoomSelector />
 
             {/* Server info button with URL (only when connected) */}
             {connected && serverUrl && onServerInfoClick && (

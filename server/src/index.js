@@ -4,6 +4,7 @@
  * Main entry point for the log viewer server.
  * - TCP server receives logs from Node.js apps (port 4229)
  * - HTTP + WebSocket server serves web UI and streams logs to browsers
+ * - Supports multiple rooms for isolated log namespaces
  */
 
 const http = require('http');
@@ -13,7 +14,8 @@ const path = require('path');
 
 const { TcpLogServer } = require('./tcp-server');
 const { ConnectionManager } = require('./connection-manager');
-const { LogRingBuffer, WatchStore, MethodContextTracker } = require('./storage');
+const { RoomManager } = require('./room-manager');
+const { SettingsDB } = require('./settings-db');
 const { PacketType, ControlCommandType, Level, LogEntryType } = require('./packet-parser');
 const { registerQueryRoutes } = require('./query-api');
 
@@ -22,16 +24,18 @@ const config = {
     httpPort: parseInt(process.env.HTTP_PORT) || 3000,
     tcpPort: parseInt(process.env.TCP_PORT) || 4229,
     authToken: process.env.SI_AUTH_TOKEN || null,
+    authRequired: process.env.SI_AUTH_REQUIRED === 'true',
     maxEntries: parseInt(process.env.MAX_ENTRIES) || 100000
 };
 
-// Initialize storage
-const logBuffer = new LogRingBuffer(config.maxEntries);
-const watchStore = new WatchStore();
-const methodTracker = new MethodContextTracker();
+// Initialize room manager (replaces global storage)
+const roomManager = new RoomManager(config.maxEntries);
 
-// Stream data store (high-frequency data)
-const streamStore = {};
+// Ensure default room exists
+roomManager.getOrCreate('default');
+
+// Initialize settings database
+const settingsDB = new SettingsDB();
 
 // Initialize Express app
 const app = express();
@@ -42,18 +46,49 @@ app.use(express.json());
 const clientBuildPath = path.join(__dirname, '../../client/dist');
 app.use(express.static(clientBuildPath));
 
+// ==================== Helper Functions ====================
+
+/**
+ * Get room ID from request (query param or header)
+ */
+function getRoomFromRequest(req) {
+    return req.query.room || req.headers['x-room'] || 'default';
+}
+
+/**
+ * Get room storage, creating if needed
+ */
+function getRoomStorage(roomId) {
+    return roomManager.getOrCreate(roomId);
+}
+
 // ==================== REST API ====================
 
 /**
  * GET /api/status - Server status
  */
 app.get('/api/status', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = roomManager.get(roomId);
+
     res.json({
         status: 'ok',
         uptime: process.uptime(),
+        room: roomId,
         logSources: tcpServer.getClientCount(),
         viewers: connectionManager.getViewerCount(),
-        storage: logBuffer.getStats()
+        storage: room ? room.logBuffer.getStats() : null,
+        totalStats: roomManager.getTotalStats()
+    });
+});
+
+/**
+ * GET /api/rooms - List all rooms
+ */
+app.get('/api/rooms', (req, res) => {
+    res.json({
+        rooms: roomManager.listRooms(),
+        details: roomManager.getRoomsInfo()
     });
 });
 
@@ -61,6 +96,8 @@ app.get('/api/status', (req, res) => {
  * GET /api/logs - Query logs with filters
  */
 app.get('/api/logs', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
     const filter = {};
 
     // Parse query parameters
@@ -89,7 +126,7 @@ app.get('/api/logs', (req, res) => {
     const offset = parseInt(req.query.offset) || 0;
     const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
 
-    const result = logBuffer.query(filter, offset, limit);
+    const result = room.logBuffer.query(filter, offset, limit);
 
     // Serialize entries for JSON
     result.entries = result.entries.map(entry => {
@@ -101,15 +138,17 @@ app.get('/api/logs', (req, res) => {
         return serialized;
     });
 
-    res.json(result);
+    res.json({ ...result, room: roomId });
 });
 
 /**
  * GET /api/logs/since/:id - Get logs since a given ID (for polling)
  */
 app.get('/api/logs/since/:id', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
     const sinceId = parseInt(req.params.id) || 0;
-    const entries = logBuffer.getSince(sinceId);
+    const entries = room.logBuffer.getSince(sinceId);
 
     // Serialize entries for JSON
     const serialized = entries.map(entry => {
@@ -123,7 +162,8 @@ app.get('/api/logs/since/:id', (req, res) => {
 
     res.json({
         entries: serialized,
-        lastId: entries.length > 0 ? entries[entries.length - 1].id : sinceId
+        lastId: entries.length > 0 ? entries[entries.length - 1].id : sinceId,
+        room: roomId
     });
 });
 
@@ -131,21 +171,27 @@ app.get('/api/logs/since/:id', (req, res) => {
  * GET /api/sessions - Get list of sessions
  */
 app.get('/api/sessions', (req, res) => {
-    res.json(logBuffer.getSessions());
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ sessions: room.logBuffer.getSessions(), room: roomId });
 });
 
 /**
  * GET /api/watches - Get current watch values
  */
 app.get('/api/watches', (req, res) => {
-    res.json(watchStore.getAll());
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ watches: room.watchStore.getAll(), room: roomId });
 });
 
 /**
  * GET /api/watches/:name/history - Get watch history
  */
 app.get('/api/watches/:name/history', (req, res) => {
-    res.json(watchStore.getHistory(req.params.name));
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ history: room.watchStore.getHistory(req.params.name), room: roomId });
 });
 
 /**
@@ -156,35 +202,57 @@ app.get('/api/clients', (req, res) => {
 });
 
 /**
- * DELETE /api/logs - Clear all logs
+ * DELETE /api/logs - Clear all logs in a room
  */
 app.delete('/api/logs', (req, res) => {
-    logBuffer.clear();
-    watchStore.clear();
-    methodTracker.clear();
-    connectionManager.broadcast({ type: 'clear', target: 'logs' });
-    res.json({ success: true });
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    room.logBuffer.clear();
+    room.watchStore.clear();
+    room.methodTracker.clear();
+    connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'logs' });
+    res.json({ success: true, room: roomId });
 });
 
 /**
- * DELETE /api/watches - Clear all watches
+ * DELETE /api/watches - Clear all watches in a room
  */
 app.delete('/api/watches', (req, res) => {
-    watchStore.clear();
-    connectionManager.broadcast({ type: 'clear', target: 'watches' });
-    res.json({ success: true });
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    room.watchStore.clear();
+    connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'watches' });
+    res.json({ success: true, room: roomId });
 });
 
 /**
- * DELETE /api/streams - Clear all streams
+ * DELETE /api/streams - Clear all streams in a room
  */
 app.delete('/api/streams', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
     // Clear all stream data
-    for (const key of Object.keys(streamStore)) {
-        delete streamStore[key];
+    for (const key of Object.keys(room.streamStore)) {
+        delete room.streamStore[key];
     }
-    connectionManager.broadcast({ type: 'clear', target: 'streams' });
-    res.json({ success: true });
+    connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'streams' });
+    res.json({ success: true, room: roomId });
+});
+
+/**
+ * DELETE /api/rooms/:roomId - Delete a room
+ */
+app.delete('/api/rooms/:roomId', (req, res) => {
+    const { roomId } = req.params;
+    if (roomId === 'default') {
+        return res.status(400).json({ error: 'Cannot delete default room' });
+    }
+    const deleted = roomManager.deleteRoom(roomId);
+    if (deleted) {
+        res.json({ success: true, deleted: roomId });
+    } else {
+        res.status(404).json({ error: 'Room not found' });
+    }
 });
 
 /**
@@ -203,10 +271,7 @@ app.get('/api/server/stats', (req, res) => {
         },
         cpu: cpuUsage,
         uptime: process.uptime(),
-        logs: {
-            count: logBuffer.size,
-            maxEntries: logBuffer.maxEntries
-        },
+        rooms: roomManager.getTotalStats(),
         connections: {
             viewers: connectionManager.getViewerCount(),
             clients: tcpServer.getClientCount()
@@ -219,9 +284,11 @@ app.get('/api/server/stats', (req, res) => {
  */
 app.get('/api/server/config', (req, res) => {
     res.json({
-        maxEntries: logBuffer.maxEntries,
+        maxEntries: config.maxEntries,
         httpPort: config.httpPort,
-        tcpPort: config.tcpPort
+        tcpPort: config.tcpPort,
+        authRequired: config.authRequired,
+        rooms: roomManager.listRooms()
     });
 });
 
@@ -238,20 +305,269 @@ app.patch('/api/server/config', (req, res) => {
                 error: 'maxEntries must be between 1,000 and 1,000,000'
             });
         }
-        logBuffer.resize(newMax);
+        roomManager.setMaxEntries(newMax);
         config.maxEntries = newMax;
     }
 
     res.json({
-        maxEntries: logBuffer.maxEntries,
+        maxEntries: config.maxEntries,
         httpPort: config.httpPort,
         tcpPort: config.tcpPort
     });
 });
 
-// ==================== Query API ====================
-// Register /api/logs/query and /api/streams/query endpoints
-registerQueryRoutes(app, logBuffer, streamStore);
+// ==================== Settings API ====================
+
+/**
+ * Helper to get user from request
+ */
+function getUserFromRequest(req) {
+    return req.query.user || req.headers['x-user'] || 'default';
+}
+
+/**
+ * GET /api/settings - Get all settings for room+user
+ */
+app.get('/api/settings', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    const settings = settingsDB.getAllSettings(roomId, userId);
+    res.json({
+        room: roomId,
+        user: userId,
+        settings
+    });
+});
+
+/**
+ * GET /api/settings/:key - Get a specific setting
+ */
+app.get('/api/settings/:key', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { key } = req.params;
+
+    const value = settingsDB.getSetting(roomId, userId, key);
+    res.json({
+        room: roomId,
+        user: userId,
+        key,
+        value
+    });
+});
+
+/**
+ * PUT /api/settings - Save multiple settings
+ */
+app.put('/api/settings', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { settings } = req.body;
+
+    if (!settings || typeof settings !== 'object') {
+        return res.status(400).json({ error: 'settings object required' });
+    }
+
+    settingsDB.setMultipleSettings(roomId, userId, settings);
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId,
+        keysUpdated: Object.keys(settings)
+    });
+});
+
+/**
+ * PUT /api/settings/:key - Save a single setting
+ */
+app.put('/api/settings/:key', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { key } = req.params;
+    const { value } = req.body;
+
+    if (value === undefined) {
+        return res.status(400).json({ error: 'value required in body' });
+    }
+
+    settingsDB.setSetting(roomId, userId, key, value);
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId,
+        key
+    });
+});
+
+/**
+ * DELETE /api/settings/:key - Delete a specific setting
+ */
+app.delete('/api/settings/:key', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { key } = req.params;
+
+    settingsDB.deleteSetting(roomId, userId, key);
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId,
+        key
+    });
+});
+
+/**
+ * DELETE /api/settings - Delete all settings for room+user
+ */
+app.delete('/api/settings', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    settingsDB.deleteAllSettings(roomId, userId);
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId
+    });
+});
+
+// ==================== Auth API (for optional authentication) ====================
+
+/**
+ * POST /api/auth/login - Authenticate user
+ */
+app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'username and password required' });
+    }
+
+    if (settingsDB.validateUser(username, password)) {
+        // In production, you'd generate a JWT token here
+        const user = settingsDB.getUser(username);
+        res.json({
+            success: true,
+            user: {
+                username: user.username,
+                lastLogin: user.lastLogin
+            }
+        });
+    } else {
+        res.status(401).json({ error: 'Invalid credentials' });
+    }
+});
+
+/**
+ * POST /api/auth/register - Register new user (only when auth not required)
+ */
+app.post('/api/auth/register', (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'username and password required' });
+    }
+
+    if (username === 'default') {
+        return res.status(400).json({ error: 'Cannot register as default user' });
+    }
+
+    if (settingsDB.userExists(username)) {
+        return res.status(409).json({ error: 'Username already exists' });
+    }
+
+    if (settingsDB.createUser(username, password)) {
+        res.json({
+            success: true,
+            username
+        });
+    } else {
+        res.status(500).json({ error: 'Failed to create user' });
+    }
+});
+
+/**
+ * GET /api/auth/users - List users (admin only in production)
+ */
+app.get('/api/auth/users', (req, res) => {
+    const users = settingsDB.listUsers();
+    res.json({ users });
+});
+
+// ==================== Room-Aware Query API ====================
+
+/**
+ * GET /api/logs/query - Query logs with comprehensive filters (room-aware)
+ */
+app.get('/api/logs/query', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+
+    // Import query functions
+    const { parseQueryParams, queryLogs } = require('./query-api');
+
+    try {
+        const filter = parseQueryParams(req.query);
+        const result = queryLogs(room.logBuffer, filter);
+
+        res.json({
+            ...result,
+            room: roomId,
+            query: req.query
+        });
+    } catch (err) {
+        console.error('[Query API] Error:', err.message);
+        res.status(500).json({ error: 'Query failed', message: err.message });
+    }
+});
+
+/**
+ * GET /api/streams - List stream channels (room-aware)
+ */
+app.get('/api/streams', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const channels = Object.keys(room.streamStore).map(channel => ({
+        channel,
+        count: room.streamStore[channel]?.length || 0
+    }));
+    res.json({ channels, room: roomId });
+});
+
+/**
+ * GET /api/streams/query - Query stream data (room-aware)
+ */
+app.get('/api/streams/query', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const { channel } = req.query;
+
+    if (!channel) {
+        return res.status(400).json({
+            error: 'Missing required parameter',
+            message: 'channel parameter is required'
+        });
+    }
+
+    const { parseQueryParams, queryStreams } = require('./query-api');
+
+    try {
+        const filter = parseQueryParams(req.query);
+        filter.limit = Math.min(filter.limit || 100, 1000);
+        const result = queryStreams(room.streamStore, channel, filter);
+
+        res.json({
+            channel,
+            ...result,
+            room: roomId,
+            query: req.query
+        });
+    } catch (err) {
+        console.error('[Query API] Stream query error:', err.message);
+        res.status(500).json({ error: 'Stream query failed', message: err.message });
+    }
+});
 
 // Fallback to index.html for SPA routing
 app.get('*', (req, res) => {
@@ -264,23 +580,30 @@ const httpServer = http.createServer(app);
 
 const connectionManager = new ConnectionManager({
     authToken: config.authToken,
+    authRequired: config.authRequired,
+    roomManager: roomManager,
     onViewerConnect: (viewerInfo) => {
-        console.log(`[Server] Viewer ${viewerInfo.id} connected`);
-        // Send initial state
+        console.log(`[Server] Viewer ${viewerInfo.id} connected to room: ${viewerInfo.room}`);
+        // Send initial state for the viewer's room
+        const room = roomManager.getOrCreate(viewerInfo.room);
         const ws = [...connectionManager.viewers.entries()]
             .find(([, v]) => v.id === viewerInfo.id)?.[0];
         if (ws) {
             connectionManager.send(ws, {
                 type: 'init',
                 data: {
-                    stats: logBuffer.getStats(),
-                    watches: watchStore.getAll(),
-                    sessions: logBuffer.getSessions()
+                    room: viewerInfo.room,
+                    stats: room.logBuffer.getStats(),
+                    watches: room.watchStore.getAll(),
+                    sessions: room.logBuffer.getSessions(),
+                    availableRooms: roomManager.listRooms()
                 }
             });
         }
     },
     onViewerMessage: (msg, viewerInfo, ws) => {
+        const room = roomManager.getOrCreate(viewerInfo.room);
+
         // Handle viewer commands
         switch (msg.type) {
             case 'subscribe':
@@ -292,16 +615,45 @@ const connectionManager = new ConnectionManager({
             case 'resume':
                 connectionManager.setViewerPaused(ws, false);
                 // Send any entries they missed
-                const entries = logBuffer.getSince(viewerInfo.lastEntryId);
+                const entries = room.logBuffer.getSince(viewerInfo.lastEntryId);
                 if (entries.length > 0) {
-                    connectionManager.broadcastEntries(entries);
+                    connectionManager.broadcastEntriesToRoom(viewerInfo.room, entries);
                 }
                 break;
             case 'getSince':
-                const sinceEntries = logBuffer.getSince(msg.sinceId || 0);
+                const sinceEntries = room.logBuffer.getSince(msg.sinceId || 0);
                 connectionManager.send(ws, {
                     type: 'entries',
                     data: sinceEntries.map(e => connectionManager._serializeEntry(e))
+                });
+                break;
+            case 'switchRoom':
+                // Handle room switching
+                if (msg.room && msg.room !== viewerInfo.room) {
+                    const oldRoom = viewerInfo.room;
+                    connectionManager.switchViewerRoom(ws, msg.room);
+                    console.log(`[Server] Viewer ${viewerInfo.id} switched from ${oldRoom} to ${msg.room}`);
+
+                    // Send new room's initial state
+                    const newRoom = roomManager.getOrCreate(msg.room);
+                    connectionManager.send(ws, {
+                        type: 'roomChanged',
+                        data: {
+                            room: msg.room,
+                            stats: newRoom.logBuffer.getStats(),
+                            watches: newRoom.watchStore.getAll(),
+                            sessions: newRoom.logBuffer.getSessions()
+                        }
+                    });
+                }
+                break;
+            case 'getRooms':
+                connectionManager.send(ws, {
+                    type: 'rooms',
+                    data: {
+                        rooms: roomManager.listRooms(),
+                        details: roomManager.getRoomsInfo()
+                    }
                 });
                 break;
         }
@@ -315,19 +667,20 @@ connectionManager.attach(httpServer);
 const tcpServer = new TcpLogServer({
     port: config.tcpPort,
     authToken: config.authToken,
+    roomManager: roomManager,
     onPacket: (packet, clientInfo) => {
         handlePacket(packet, clientInfo);
     },
     onClientConnect: (clientInfo) => {
-        console.log(`[Server] Log source ${clientInfo.id} connected: ${clientInfo.address}`);
-        connectionManager.broadcast({
+        console.log(`[Server] Log source ${clientInfo.id} connected: ${clientInfo.address} -> room: ${clientInfo.room}`);
+        connectionManager.broadcastToRoom(clientInfo.room, {
             type: 'clientConnect',
-            data: { id: clientInfo.id, address: clientInfo.address }
+            data: { id: clientInfo.id, address: clientInfo.address, room: clientInfo.room }
         });
     },
     onClientDisconnect: (clientInfo) => {
-        console.log(`[Server] Log source ${clientInfo.id} disconnected`);
-        connectionManager.broadcast({
+        console.log(`[Server] Log source ${clientInfo.id} disconnected from room: ${clientInfo.room}`);
+        connectionManager.broadcastToRoom(clientInfo.room, {
             type: 'clientDisconnect',
             data: { id: clientInfo.id }
         });
@@ -338,52 +691,52 @@ const tcpServer = new TcpLogServer({
  * Handle incoming packet from log source
  */
 function handlePacket(packet, clientInfo) {
+    const roomId = clientInfo.room || 'default';
+    const room = roomManager.getOrCreate(roomId);
+
     switch (packet.type) {
         case 'logHeader':
             // App name update - just metadata
             break;
 
         case 'logEntry':
-            // Add method context tracking for ProcessFlow-related entries
-            if (packet.logEntryType === LogEntryType.EnterMethod ||
-                packet.logEntryType === LogEntryType.LeaveMethod) {
-                // These are tracked via processFlow packets, not logEntry
-            }
+            // Store in room's buffer
+            const entry = room.logBuffer.push(packet);
+            room.touch();
 
-            // Store in buffer
-            const entry = logBuffer.push(packet);
-
-            // Broadcast to viewers
-            connectionManager.broadcastEntries([entry]);
+            // Broadcast to viewers in this room
+            connectionManager.broadcastEntriesToRoom(roomId, [entry]);
             break;
 
         case 'processFlow':
             // Track method context
-            methodTracker.processEntry(packet);
+            room.methodTracker.processEntry(packet);
 
-            // Store in buffer
-            const flowEntry = logBuffer.push(packet);
+            // Store in room's buffer
+            const flowEntry = room.logBuffer.push(packet);
+            room.touch();
 
-            // Broadcast to viewers
-            connectionManager.broadcastEntries([flowEntry]);
+            // Broadcast to viewers in this room
+            connectionManager.broadcastEntriesToRoom(roomId, [flowEntry]);
             break;
 
         case 'watch':
-            // Update watch store
-            watchStore.set(
+            // Update room's watch store
+            room.watchStore.set(
                 packet.name,
                 packet.value,
                 packet.timestamp,
                 clientInfo.appName,
                 packet.watchType
             );
+            room.touch();
 
-            // Broadcast to viewers
-            connectionManager.broadcastWatch(packet);
+            // Broadcast to viewers in this room
+            connectionManager.broadcastWatchToRoom(roomId, packet);
             break;
 
         case 'controlCommand':
-            handleControlCommand(packet);
+            handleControlCommand(packet, roomId);
             break;
     }
 }
@@ -391,29 +744,31 @@ function handlePacket(packet, clientInfo) {
 /**
  * Handle control commands
  */
-function handleControlCommand(packet) {
+function handleControlCommand(packet, roomId) {
+    const room = roomManager.getOrCreate(roomId);
+
     switch (packet.controlCommandType) {
         case ControlCommandType.ClearLog:
-            logBuffer.clear();
-            methodTracker.clear();
-            connectionManager.broadcastControl({ command: 'clearLog' });
+            room.logBuffer.clear();
+            room.methodTracker.clear();
+            connectionManager.broadcastControlToRoom(roomId, { command: 'clearLog' });
             break;
 
         case ControlCommandType.ClearWatches:
-            watchStore.clear();
-            connectionManager.broadcastControl({ command: 'clearWatches' });
+            room.watchStore.clear();
+            connectionManager.broadcastControlToRoom(roomId, { command: 'clearWatches' });
             break;
 
         case ControlCommandType.ClearAll:
-            logBuffer.clear();
-            watchStore.clear();
-            methodTracker.clear();
-            connectionManager.broadcastControl({ command: 'clearAll' });
+            room.logBuffer.clear();
+            room.watchStore.clear();
+            room.methodTracker.clear();
+            connectionManager.broadcastControlToRoom(roomId, { command: 'clearAll' });
             break;
 
         case ControlCommandType.ClearProcessFlow:
-            methodTracker.clear();
-            connectionManager.broadcastControl({ command: 'clearProcessFlow' });
+            room.methodTracker.clear();
+            connectionManager.broadcastControlToRoom(roomId, { command: 'clearProcessFlow' });
             break;
     }
 }
@@ -438,7 +793,9 @@ async function start() {
             } else {
                 console.log('Auth token:  None (open access)');
             }
-            console.log(`Max entries: ${config.maxEntries.toLocaleString()}`);
+            console.log(`Auth required: ${config.authRequired ? 'Yes' : 'No'}`);
+            console.log(`Max entries: ${config.maxEntries.toLocaleString()} per room`);
+            console.log(`Rooms:       ${roomManager.listRooms().join(', ')}`);
             console.log('');
         });
 
@@ -465,4 +822,4 @@ process.on('SIGTERM', async () => {
 // Start the server
 start();
 
-module.exports = { app, httpServer, tcpServer, connectionManager, logBuffer, watchStore, streamStore };
+module.exports = { app, httpServer, tcpServer, connectionManager, roomManager, settingsDB };

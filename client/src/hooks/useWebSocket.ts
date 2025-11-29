@@ -9,6 +9,8 @@ import { getWebSocket, isInitialized as isEarlyInitialized } from '../services/e
 
 interface UseWebSocketOptions {
     token?: string;
+    room?: string; // Room ID for room isolation
+    user?: string; // User ID for settings
     autoReconnect?: boolean;
     reconnectDelay?: number;
     batchInterval?: number; // ms between batch flushes
@@ -28,6 +30,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         reconnectDelay = 3000,
         batchInterval = 50 // Flush every 50ms for smooth updates
     } = options;
+
+    // Get room/user from store if not provided in options
+    const currentRoom = useLogStore(state => state.currentRoom);
+    const currentUser = useLogStore(state => state.currentUser);
+    const room = options.room ?? currentRoom;
+    const user = options.user ?? currentUser;
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<number | null>(null);
@@ -171,6 +179,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case 'clientDisconnect':
                 break;
 
+            case 'rooms': {
+                // Server sending list of available rooms
+                const roomsData = message.data as { rooms: string[] };
+                store.setAvailableRooms(roomsData.rooms);
+                break;
+            }
+
+            case 'roomSwitched': {
+                // Confirmation that room switch completed
+                store.setRoomSwitching(false);
+                break;
+            }
+
             case 'clear': {
                 const clearData = message.data as { target: string };
                 if (clearData.target === 'logs') {
@@ -226,13 +247,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         store.setConnecting(true);
         store.setError(null);
 
-        // Build WebSocket URL
+        // Build WebSocket URL with room and user
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        let url = `${protocol}//${host}/ws`;
-        if (token) {
-            url += `?token=${encodeURIComponent(token)}`;
-        }
+        const params = new URLSearchParams();
+        if (token) params.set('token', token);
+        params.set('room', room);
+        params.set('user', user);
+        const queryString = params.toString();
+        const url = `${protocol}//${host}/ws${queryString ? '?' + queryString : ''}`;
 
         // Store the server URL (just host:port for display)
         store.setServerUrl(host);
@@ -251,9 +274,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             store.setError(null);
             store.setLoadingInitialData(true);
 
-            // Fetch existing logs from REST API
+            // Fetch existing logs from REST API for this room
             try {
-                const response = await fetch('/api/logs?limit=5000');
+                const response = await fetch(`/api/logs?limit=5000&room=${encodeURIComponent(room)}`);
                 const data = await response.json();
                 if (data.entries && data.entries.length > 0) {
                     console.log(`[WS] Loaded ${data.entries.length} existing entries`);
@@ -321,7 +344,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 console.error('[WS] Failed to parse message:', err);
             }
         };
-    }, [token, autoReconnect, reconnectDelay, handleMessage, clearReconnectTimers]);
+    }, [token, room, user, autoReconnect, reconnectDelay, handleMessage, clearReconnectTimers]);
 
     const send = useCallback((message: object) => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -342,6 +365,24 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         });
         return unsubscribe;
     }, [send]);
+
+    // Subscribe to room switching - reconnect when room changes
+    useEffect(() => {
+        let prevRoom = useLogStore.getState().currentRoom;
+        const unsubscribe = useLogStore.subscribe((state) => {
+            if (state.roomSwitching && state.currentRoom !== prevRoom) {
+                prevRoom = state.currentRoom;
+                console.log(`[WS] Room switched to: ${state.currentRoom}, reconnecting...`);
+                // Disconnect and reconnect with new room
+                disconnect();
+                // Small delay to allow cleanup
+                setTimeout(() => {
+                    connect();
+                }, 100);
+            }
+        });
+        return unsubscribe;
+    }, [connect, disconnect]);
 
     // Sync with early WebSocket on mount
     useEffect(() => {
