@@ -51,6 +51,82 @@
     --ag-chip-background-color: #334155; /* slate-700 */
     --ag-invalid-color: #f87171; /* red-400 */
     --ag-icon-font-color: #94a3b8; /* slate-400 */
+
+    /* Side bar / Tool panel (filter panel on right side) */
+    --ag-side-bar-background-color: #1e293b; /* slate-800 */
+    --ag-side-button-selected-background-color: #334155; /* slate-700 */
+    --ag-tool-panel-background-color: #1e293b; /* slate-800 */
+    --ag-filter-tool-panel-group-indent: 16px;
+
+    /* Column menu / filter popup */
+    --ag-menu-background-color: #1e293b; /* slate-800 */
+    --ag-menu-border-color: #475569; /* slate-600 */
+
+    /* Input fields in filter panels */
+    --ag-input-background-color: #0f172a; /* slate-900 */
+    --ag-input-border-color: #475569; /* slate-600 */
+    --ag-input-disabled-background-color: #334155; /* slate-700 */
+
+    /* Column chooser / Columns panel */
+    --ag-control-panel-background-color: #1e293b; /* slate-800 */
+    --ag-subheader-background-color: #334155; /* slate-700 */
+    --ag-subheader-toolbar-background-color: #334155; /* slate-700 */
+
+    /* Drag and drop */
+    --ag-row-drag-background-color: #334155; /* slate-700 */
+
+    /* Set filter (checkbox list) */
+    --ag-set-filter-indent-size: 16px;
+
+    /* Wrapper panels */
+    --ag-wrapper-border-color: #475569; /* slate-600 */
+    --ag-panel-background-color: #1e293b; /* slate-800 */
+    --ag-panel-title-bar-background-color: #334155; /* slate-700 */
+}
+
+/* AG Grid dark: Additional overrides for tool panels */
+.ag-theme-balham-dark .ag-tool-panel-wrapper,
+.ag-theme-balham-dark .ag-column-panel,
+.ag-theme-balham-dark .ag-filter-panel,
+.ag-theme-balham-dark .ag-column-select,
+.ag-theme-balham-dark .ag-column-select-panel,
+.ag-theme-balham-dark .ag-filter-toolpanel {
+    background-color: #1e293b !important; /* slate-800 */
+}
+
+.ag-theme-balham-dark .ag-column-select-header,
+.ag-theme-balham-dark .ag-filter-toolpanel-header,
+.ag-theme-balham-dark .ag-column-panel-column-select {
+    background-color: #334155 !important; /* slate-700 */
+}
+
+.ag-theme-balham-dark .ag-column-select-list,
+.ag-theme-balham-dark .ag-filter-list-panel {
+    background-color: #1e293b !important; /* slate-800 */
+}
+
+/* Column drop zones */
+.ag-theme-balham-dark .ag-column-drop,
+.ag-theme-balham-dark .ag-column-drop-wrapper {
+    background-color: #1e293b !important; /* slate-800 */
+}
+
+.ag-theme-balham-dark .ag-column-drop-cell {
+    background-color: #334155 !important; /* slate-700 */
+}
+
+/* Pill/chip styling in panels */
+.ag-theme-balham-dark .ag-column-drop-cell-text {
+    color: #e2e8f0 !important; /* slate-200 */
+}
+
+/* Search input in column panel */
+.ag-theme-balham-dark .ag-column-select-header-filter-wrapper input,
+.ag-theme-balham-dark .ag-filter-toolpanel-search input,
+.ag-theme-balham-dark .ag-mini-filter input {
+    background-color: #0f172a !important; /* slate-900 */
+    border-color: #475569 !important; /* slate-600 */
+    color: #e2e8f0 !important; /* slate-200 */
 }
 
 /* Ensure proper height */
