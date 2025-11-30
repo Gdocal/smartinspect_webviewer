@@ -1,20 +1,22 @@
 /**
  * HighlightRuleEditor - Unified component for editing highlight rules
  * Supports dual-mode filters (list selection OR text matching) for string fields
+ * Supports dual-theme colors with auto-adapt or manual mode
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { HighlightRule, HighlightFilter, TextFilter, ListTextFilter, Level, LogEntryType, defaultHighlightFilter } from '../store/logStore';
+import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
 
-// Color presets for quick styling
+// Color presets for quick styling - includes both light and dark variants
 const colorPresets = [
-    { bg: '#fef2f2', text: '#991b1b', name: 'Red' },
-    { bg: '#fffbeb', text: '#92400e', name: 'Amber' },
-    { bg: '#ecfdf5', text: '#065f46', name: 'Green' },
-    { bg: '#eff6ff', text: '#1e40af', name: 'Blue' },
-    { bg: '#f5f3ff', text: '#5b21b6', name: 'Purple' },
-    { bg: '#fdf4ff', text: '#86198f', name: 'Pink' },
-    { bg: '#f8fafc', text: '#475569', name: 'Gray' }
+    { bg: '#fef2f2', bgDark: '#3b1515', text: '#991b1b', textDark: '#fca5a5', name: 'Red' },
+    { bg: '#fffbeb', bgDark: '#3b2f10', text: '#92400e', textDark: '#fcd34d', name: 'Amber' },
+    { bg: '#ecfdf5', bgDark: '#153b2a', text: '#065f46', textDark: '#6ee7b7', name: 'Green' },
+    { bg: '#eff6ff', bgDark: '#1e2a4a', text: '#1e40af', textDark: '#93c5fd', name: 'Blue' },
+    { bg: '#f5f3ff', bgDark: '#2d1f4a', text: '#5b21b6', textDark: '#c4b5fd', name: 'Purple' },
+    { bg: '#fdf4ff', bgDark: '#3b1a3b', text: '#86198f', textDark: '#f0abfc', name: 'Pink' },
+    { bg: '#f8fafc', bgDark: '#1e293b', text: '#475569', textDark: '#cbd5e1', name: 'Gray' }
 ];
 
 // Level options
@@ -558,9 +560,35 @@ export function HighlightRuleEditor({
     const [enabled, setEnabled] = useState(rule?.enabled ?? true);
     const [priority, setPriority] = useState(rule?.priority ?? 1);
     const [filter, setFilter] = useState<HighlightFilter>(rule?.filter || { ...defaultHighlightFilter });
+
+    // Color state - light theme colors
     const [bgColor, setBgColor] = useState(rule?.style.backgroundColor || '#eff6ff');
     const [textColor, setTextColor] = useState(rule?.style.textColor || '#1e40af');
+    // Color state - dark theme colors (undefined = auto-adapt)
+    const [bgColorDark, setBgColorDark] = useState<string | undefined>(rule?.style.backgroundColorDark);
+    const [textColorDark, setTextColorDark] = useState<string | undefined>(rule?.style.textColorDark);
+    // Color mode: 'auto' = auto-adapt dark from light, 'manual' = user sets both independently
+    const [colorMode, setColorMode] = useState<'auto' | 'manual'>(
+        rule?.style.backgroundColorDark !== undefined ? 'manual' : 'auto'
+    );
     const [fontWeight, setFontWeight] = useState<'normal' | 'bold'>(rule?.style.fontWeight || 'normal');
+
+    // Computed dark colors (either manual or auto-adapted)
+    const effectiveBgColorDark = useMemo(() => {
+        if (colorMode === 'manual' && bgColorDark !== undefined) {
+            return bgColorDark;
+        }
+        return adaptColorForTheme(bgColor, 'dark');
+    }, [colorMode, bgColorDark, bgColor]);
+
+    const effectiveTextColorDark = useMemo(() => {
+        if (colorMode === 'manual' && textColorDark !== undefined) {
+            return textColorDark;
+        }
+        // Auto-adapt text color, ensuring good contrast with dark background
+        const adaptedBg = adaptColorForTheme(bgColor, 'dark');
+        return adaptTextColor(textColor, adaptedBg, 'dark');
+    }, [colorMode, textColorDark, textColor, bgColor]);
 
     // Check if filter is valid (no regex errors)
     const isValid = useMemo(() => {
@@ -593,7 +621,10 @@ export function HighlightRuleEditor({
             style: {
                 backgroundColor: bgColor,
                 textColor,
-                fontWeight
+                fontWeight,
+                // Only save dark colors if in manual mode (auto = undefined = recalculate)
+                backgroundColorDark: colorMode === 'manual' ? effectiveBgColorDark : undefined,
+                textColorDark: colorMode === 'manual' ? effectiveTextColorDark : undefined
             }
         });
     };
@@ -601,6 +632,19 @@ export function HighlightRuleEditor({
     const applyPreset = (preset: typeof colorPresets[0]) => {
         setBgColor(preset.bg);
         setTextColor(preset.text);
+        // If in manual mode, also set dark colors from preset
+        if (colorMode === 'manual') {
+            setBgColorDark(preset.bgDark);
+            setTextColorDark(preset.textDark);
+        }
+    };
+
+    // Handler for switching to manual mode
+    const handleSwitchToManual = () => {
+        setColorMode('manual');
+        // Initialize dark colors with current auto-adapted values
+        setBgColorDark(effectiveBgColorDark);
+        setTextColorDark(effectiveTextColorDark);
     };
 
     const updateFilter = <K extends keyof HighlightFilter>(key: K, value: HighlightFilter[K]) => {
@@ -737,7 +781,37 @@ export function HighlightRuleEditor({
 
                     {/* Style Section */}
                     <div className="border-t border-slate-200 dark:border-slate-600 pt-4 mt-4">
-                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Style</h4>
+                        <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Style</h4>
+                            {/* Auto/Manual toggle */}
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 dark:text-slate-400">Dark theme colors:</span>
+                                <div className="flex gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setColorMode('auto')}
+                                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                                            colorMode === 'auto'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                        }`}
+                                    >
+                                        Auto
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleSwitchToManual}
+                                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                                            colorMode === 'manual'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                        }`}
+                                    >
+                                        Manual
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
                         {/* Presets */}
                         <div className="mb-3">
@@ -748,60 +822,144 @@ export function HighlightRuleEditor({
                                         key={preset.name}
                                         type="button"
                                         onClick={() => applyPreset(preset)}
-                                        className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
-                                        style={{ backgroundColor: preset.bg }}
+                                        className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors relative group"
+                                        style={{
+                                            background: `linear-gradient(135deg, ${preset.bg} 50%, ${preset.bgDark} 50%)`
+                                        }}
                                         title={preset.name}
                                     >
-                                        <span className="text-xs font-bold" style={{ color: preset.text }}>A</span>
+                                        <span
+                                            className="absolute inset-0 flex items-center justify-center text-xs font-bold"
+                                            style={{
+                                                background: `linear-gradient(135deg, ${preset.text} 50%, ${preset.textDark} 50%)`,
+                                                WebkitBackgroundClip: 'text',
+                                                WebkitTextFillColor: 'transparent',
+                                                backgroundClip: 'text'
+                                            }}
+                                        >
+                                            A
+                                        </span>
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="flex gap-4 mb-4">
-                            <div>
-                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
-                                <input
-                                    type="color"
-                                    value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="w-16 h-8 rounded cursor-pointer"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
-                                <input
-                                    type="color"
-                                    value={textColor}
-                                    onChange={(e) => setTextColor(e.target.value)}
-                                    className="w-16 h-8 rounded cursor-pointer"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
-                                <select
-                                    value={fontWeight}
-                                    onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
-                                    className="px-2 py-1.5 border border-slate-200 dark:border-slate-600 rounded text-sm bg-white dark:bg-slate-700 dark:text-slate-200"
-                                >
-                                    <option value="normal">Normal</option>
-                                    <option value="bold">Bold</option>
-                                </select>
+                        {/* Color pickers - Light theme (always shown) */}
+                        <div className="mb-3">
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                                </svg>
+                                Light Theme
+                            </label>
+                            <div className="flex gap-3 items-center">
+                                <div>
+                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
+                                    <input
+                                        type="color"
+                                        value={bgColor}
+                                        onChange={(e) => setBgColor(e.target.value)}
+                                        className="w-14 h-7 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
+                                    <input
+                                        type="color"
+                                        value={textColor}
+                                        onChange={(e) => setTextColor(e.target.value)}
+                                        className="w-14 h-7 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
+                                    <select
+                                        value={fontWeight}
+                                        onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
+                                        className="px-2 py-1 border border-slate-200 dark:border-slate-600 rounded text-xs bg-white dark:bg-slate-700 dark:text-slate-200"
+                                    >
+                                        <option value="normal">Normal</option>
+                                        <option value="bold">Bold</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
-                        {/* Preview */}
+                        {/* Color pickers - Dark theme (only in manual mode) */}
+                        {colorMode === 'manual' && (
+                            <div className="mb-3">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                                    </svg>
+                                    Dark Theme
+                                </label>
+                                <div className="flex gap-3 items-center">
+                                    <div>
+                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
+                                        <input
+                                            type="color"
+                                            value={bgColorDark || effectiveBgColorDark}
+                                            onChange={(e) => setBgColorDark(e.target.value)}
+                                            className="w-14 h-7 rounded cursor-pointer"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
+                                        <input
+                                            type="color"
+                                            value={textColorDark || effectiveTextColorDark}
+                                            onChange={(e) => setTextColorDark(e.target.value)}
+                                            className="w-14 h-7 rounded cursor-pointer"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Dual Preview - side by side */}
                         <div>
                             <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Preview</label>
-                            <div
-                                className="px-3 py-2 rounded border border-slate-200 dark:border-slate-600 text-sm"
-                                style={{
-                                    backgroundColor: bgColor,
-                                    color: textColor,
-                                    fontWeight
-                                }}
-                            >
-                                Sample log entry text with this highlight style
+                            <div className="flex gap-2">
+                                {/* Light theme preview */}
+                                <div className="flex-1">
+                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mb-0.5 flex items-center gap-1">
+                                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                                        </svg>
+                                        Light
+                                    </div>
+                                    <div
+                                        className="px-2 py-1.5 rounded border border-slate-200 text-xs"
+                                        style={{
+                                            backgroundColor: bgColor,
+                                            color: textColor,
+                                            fontWeight
+                                        }}
+                                    >
+                                        Sample log entry
+                                    </div>
+                                </div>
+                                {/* Dark theme preview */}
+                                <div className="flex-1">
+                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mb-0.5 flex items-center gap-1">
+                                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                                        </svg>
+                                        Dark
+                                        {colorMode === 'auto' && <span className="text-blue-500">(auto)</span>}
+                                    </div>
+                                    <div
+                                        className="px-2 py-1.5 rounded border border-slate-600 text-xs"
+                                        style={{
+                                            backgroundColor: effectiveBgColorDark,
+                                            color: effectiveTextColorDark,
+                                            fontWeight
+                                        }}
+                                    >
+                                        Sample log entry
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

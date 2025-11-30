@@ -152,6 +152,17 @@ export const defaultHighlightFilter: HighlightFilter = {
     titleFilter: { value: '', operator: 'contains', inverse: false }
 };
 
+// Highlight style with optional dark theme variants
+// If *Dark fields are undefined, they will be auto-calculated from light colors
+export interface HighlightStyle {
+    backgroundColor?: string;      // Light theme background
+    backgroundColorDark?: string;  // Dark theme background (undefined = auto-adapt)
+    textColor?: string;            // Light theme text
+    textColorDark?: string;        // Dark theme text (undefined = auto-adapt)
+    fontWeight?: 'normal' | 'bold';
+    fontStyle?: 'normal' | 'italic';
+}
+
 // Highlighting rule for custom styling
 export interface HighlightRule {
     id: string;
@@ -159,12 +170,7 @@ export interface HighlightRule {
     enabled: boolean;
     priority: number; // Higher = applied first
     filter: HighlightFilter; // Use unified filter structure
-    style: {
-        backgroundColor?: string;
-        textColor?: string;
-        fontWeight?: 'normal' | 'bold';
-        fontStyle?: 'normal' | 'italic';
-    };
+    style: HighlightStyle;
 }
 
 // Legacy conditions type for backwards compatibility
