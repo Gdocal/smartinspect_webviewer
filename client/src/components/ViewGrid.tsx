@@ -377,7 +377,8 @@ export function ViewGrid({
         setSelectedEntryId,
         globalHighlightRules,
         entriesVersion,
-        theme
+        theme,
+        loadingInitialData
     } = useLogStore();
 
     // Get combined highlight rules for this view
@@ -398,6 +399,8 @@ export function ViewGrid({
     const lastEntriesVersionRef = useRef(0);
 
     const overlayNoRowsTemplate = '<span class="text-slate-400">No log entries</span>';
+    // Loading overlay shown only when loadingInitialData is true (actively fetching data)
+    const overlayLoadingTemplate = '<span class="text-slate-400">Loading...</span>';
 
     // Column definitions
     const columnDefs = useMemo<ColDef<LogEntry>[]>(() => [
@@ -680,6 +683,24 @@ export function ViewGrid({
         }
     }, [isActive, view.autoScroll]);
 
+    // Track previous loading state to only call overlay methods on transitions
+    const prevLoadingRef = useRef(loadingInitialData);
+
+    // Show/hide loading overlay based on loadingInitialData state
+    useEffect(() => {
+        if (!gridApiRef.current) return;
+
+        // Only act on state transitions, not on every render
+        if (loadingInitialData && !prevLoadingRef.current) {
+            // Transitioning to loading state - show overlay
+            gridApiRef.current.showLoadingOverlay();
+        } else if (!loadingInitialData && prevLoadingRef.current) {
+            // Transitioning from loading to not loading - hide overlay
+            gridApiRef.current.hideOverlay();
+        }
+        prevLoadingRef.current = loadingInitialData;
+    }, [loadingInitialData]);
+
     return (
         <div
             className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`}
@@ -721,6 +742,7 @@ export function ViewGrid({
                 asyncTransactionWaitMillis={50}
                 tooltipShowDelay={500}
                 overlayNoRowsTemplate={overlayNoRowsTemplate}
+                overlayLoadingTemplate={overlayLoadingTemplate}
                 statusBar={{
                     statusPanels: [
                         { statusPanel: 'agTotalRowCountComponent', align: 'left' },
