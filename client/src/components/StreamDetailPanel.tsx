@@ -53,7 +53,7 @@ function DataViewer({ data }: { data: string }) {
 
     // Default text view
     return (
-        <pre className="text-xs font-mono bg-slate-50 text-slate-700 p-3 rounded overflow-auto whitespace-pre-wrap">
+        <pre className="text-xs font-mono bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 p-3 rounded overflow-auto whitespace-pre-wrap">
             {data}
         </pre>
     );
@@ -68,17 +68,17 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
 
     if (!entry) {
         return (
-            <div className="h-full flex flex-col bg-white">
-                <div className="bg-gradient-to-r from-purple-100 to-purple-50 px-4 py-2.5 border-b border-purple-200 flex items-center justify-between">
-                    <span className="font-semibold text-sm text-purple-700 flex items-center gap-2">
-                        <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="h-full flex flex-col bg-white dark:bg-slate-800">
+                <div className="bg-gradient-to-r from-purple-100 to-purple-50 dark:from-purple-900/40 dark:to-purple-800/30 px-4 py-2.5 border-b border-purple-200 dark:border-purple-700 flex items-center justify-between">
+                    <span className="font-semibold text-sm text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                        <svg className="w-4 h-4 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                         Stream Entry Details
                     </span>
                     <button
                         onClick={() => setShowDetailPanel(false)}
-                        className="text-purple-400 hover:text-purple-600 transition-colors"
+                        className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 transition-colors"
                         title="Close detail panel"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,10 +88,10 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
                 </div>
                 <div className="flex-1 flex items-center justify-center p-6">
                     <div className="text-center">
-                        <svg className="w-12 h-12 mx-auto mb-3 text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-12 h-12 mx-auto mb-3 text-purple-200 dark:text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                        <p className="text-slate-500 text-sm">Select a stream entry to view details</p>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">Select a stream entry to view details</p>
                     </div>
                 </div>
             </div>
@@ -99,11 +99,11 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
     }
 
     return (
-        <div className="h-full flex flex-col bg-white">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-800">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-100 to-purple-50 px-4 py-2.5 border-b border-purple-200 flex items-center justify-between">
-                <span className="font-semibold text-sm text-purple-700 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-gradient-to-r from-purple-100 to-purple-50 dark:from-purple-900/40 dark:to-purple-800/30 px-4 py-2.5 border-b border-purple-200 dark:border-purple-700 flex items-center justify-between">
+                <span className="font-semibold text-sm text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-purple-500 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     Stream Entry Details
@@ -111,7 +111,7 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
                 </span>
                 <button
                     onClick={() => setShowDetailPanel(false)}
-                    className="text-purple-400 hover:text-purple-600 transition-colors"
+                    className="text-purple-400 hover:text-purple-600 dark:hover:text-purple-300 transition-colors"
                     title="Close detail panel"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

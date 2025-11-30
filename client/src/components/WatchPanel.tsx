@@ -134,12 +134,19 @@ export function WatchPanel() {
     };
 
     return (
-        <div className="h-full flex flex-col bg-white">
+        <div className="h-full flex flex-col bg-white dark:bg-slate-800">
             {/* Flash animation styles - only value cell flashes */}
             <style>{`
                 @keyframes value-flash {
                     0% { background-color: rgba(34, 197, 94, 0.5); }
                     100% { background-color: rgb(241, 245, 249); }
+                }
+                .dark .value-flash {
+                    animation: value-flash-dark 0.4s ease-out;
+                }
+                @keyframes value-flash-dark {
+                    0% { background-color: rgba(34, 197, 94, 0.5); }
+                    100% { background-color: rgb(51, 65, 85); }
                 }
                 .value-flash {
                     animation: value-flash 0.4s ease-out;
@@ -147,9 +154,9 @@ export function WatchPanel() {
             `}</style>
 
             {/* Header */}
-            <div className="bg-gradient-to-r from-slate-100 to-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
-                <span className="font-semibold text-sm text-slate-700 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 px-4 py-2.5 border-b border-slate-200 dark:border-slate-600 flex items-center justify-between">
+                <span className="font-semibold text-sm text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                     </svg>
@@ -158,7 +165,7 @@ export function WatchPanel() {
                 </span>
                 <button
                     onClick={() => setShowWatchPanel(false)}
-                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                     title="Close watch panel"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,14 +175,14 @@ export function WatchPanel() {
             </div>
 
             {/* Filter */}
-            <div className="px-3 py-2 border-b border-slate-100">
+            <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700">
                 <div className="relative">
                     <input
                         type="text"
                         placeholder="Filter watches..."
                         value={filterText}
                         onChange={(e) => setFilterText(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded-lg pl-8 pr-3 py-1.5 bg-white dark:bg-slate-700 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
                     <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -187,16 +194,16 @@ export function WatchPanel() {
             {watchEntries.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center p-6">
                     <div className="text-center">
-                        <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
-                        <p className="text-slate-500 text-sm">
+                        <p className="text-slate-500 dark:text-slate-400 text-sm">
                             {filterText ? 'No matches found' : 'No watches'}
                         </p>
                         {!filterText && (
-                            <p className="text-slate-400 text-xs mt-1">
-                                Use <code className="bg-slate-100 px-1.5 py-0.5 rounded">log.watch()</code>
+                            <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">
+                                Use <code className="bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">log.watch()</code>
                             </p>
                         )}
                     </div>
@@ -204,42 +211,42 @@ export function WatchPanel() {
             ) : (
                 <div className="flex-1 overflow-auto">
                     <table className="w-full text-xs">
-                        <thead className="bg-slate-50 sticky top-0 z-10">
+                        <thead className="bg-slate-50 dark:bg-slate-700 sticky top-0 z-10">
                             <tr>
                                 <th
                                     onClick={() => handleSort('name')}
-                                    className="px-3 py-2 text-left font-semibold text-slate-600 uppercase tracking-wide border-b border-slate-200 cursor-pointer hover:bg-slate-100"
+                                    className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide border-b border-slate-200 dark:border-slate-600 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600"
                                 >
                                     Name <SortIcon field="name" />
                                 </th>
                                 <th
                                     onClick={() => handleSort('value')}
-                                    className="px-3 py-2 text-left font-semibold text-slate-600 uppercase tracking-wide border-b border-slate-200 cursor-pointer hover:bg-slate-100"
+                                    className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide border-b border-slate-200 dark:border-slate-600 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600"
                                 >
                                     Value <SortIcon field="value" />
                                 </th>
                                 <th
                                     onClick={() => handleSort('timestamp')}
-                                    className="px-3 py-2 text-left font-semibold text-slate-600 uppercase tracking-wide border-b border-slate-200 cursor-pointer hover:bg-slate-100"
+                                    className="px-3 py-2 text-left font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide border-b border-slate-200 dark:border-slate-600 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600"
                                 >
                                     Updated <SortIcon field="timestamp" />
                                 </th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                             {watchEntries.map((watch) => {
                                 const isFlashing = flashingWatches.has(watch.name);
                                 return (
                                     <tr
                                         key={watch.name}
-                                        className="hover:bg-blue-50/50"
+                                        className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50"
                                     >
                                         <td className="px-3 py-2">
-                                            <span className="font-mono text-blue-600 font-medium">{watch.name}</span>
+                                            <span className="font-mono text-blue-600 dark:text-blue-400 font-medium">{watch.name}</span>
                                         </td>
                                         <td className="px-3 py-2">
                                             <span
-                                                className={`font-mono text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded ${isFlashing ? 'value-flash' : ''}`}
+                                                className={`font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded ${isFlashing ? 'value-flash' : ''}`}
                                                 key={watch.timestamp} // Force re-render to restart animation
                                             >
                                                 {watch.value}
@@ -257,13 +264,13 @@ export function WatchPanel() {
             )}
 
             {/* Footer */}
-            <div className="border-t border-slate-200 px-3 py-2 bg-slate-50 flex items-center justify-between">
-                <span className="text-xs text-slate-500">
+            <div className="border-t border-slate-200 dark:border-slate-600 px-3 py-2 bg-slate-50 dark:bg-slate-700 flex items-center justify-between">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                     {watchEntries.length} of {Object.keys(watches).length} watch{Object.keys(watches).length !== 1 ? 'es' : ''}
                 </span>
                 <button
                     onClick={() => clearWatches()}
-                    className="text-xs text-slate-500 hover:text-red-500 transition-colors flex items-center gap-1"
+                    className="text-xs text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1"
                     title="Clear all watches"
                 >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

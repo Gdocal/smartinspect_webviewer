@@ -67,9 +67,9 @@ function SessionMultiSelect({ sessions, selected, onChange }: SessionMultiSelect
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-1.5 px-2 py-1 h-[28px] text-sm border border-slate-200 rounded bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[130px]"
+                className="flex items-center gap-1.5 px-2 py-1 h-[28px] text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[130px]"
             >
-                <span className={`flex-1 text-left truncate ${selected.length === 0 ? 'text-slate-500' : 'text-slate-700'}`}>
+                <span className={`flex-1 text-left truncate ${selected.length === 0 ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
                     {displayText}
                 </span>
                 <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,32 +78,32 @@ function SessionMultiSelect({ sessions, selected, onChange }: SessionMultiSelect
             </button>
 
             {isOpen && (
-                <div className="absolute z-50 mt-1 w-64 bg-white border border-slate-200 rounded-lg shadow-lg max-h-80 overflow-hidden">
+                <div className="absolute z-50 mt-1 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-80 overflow-hidden">
                     {/* Search */}
-                    <div className="p-2 border-b border-slate-100">
+                    <div className="p-2 border-b border-slate-100 dark:border-slate-700">
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Search sessions..."
-                            className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-2 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                             autoFocus
                         />
                     </div>
 
                     {/* Quick actions */}
-                    <div className="px-2 py-1.5 border-b border-slate-100 flex gap-2 items-center">
+                    <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-700 flex gap-2 items-center">
                         <button
                             type="button"
                             onClick={selectAll}
-                            className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
                         >
                             Select All
                         </button>
                         <button
                             type="button"
                             onClick={clearAll}
-                            className="text-xs text-slate-500 hover:text-slate-700"
+                            className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                         >
                             Clear
                         </button>
@@ -122,15 +122,15 @@ function SessionMultiSelect({ sessions, selected, onChange }: SessionMultiSelect
                             filteredSessions.map(session => (
                                 <label
                                     key={session}
-                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                                 >
                                     <input
                                         type="checkbox"
                                         checked={selected.includes(session)}
                                         onChange={() => toggleSession(session)}
-                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 mr-2"
+                                        className="rounded border-slate-300 dark:border-slate-600 text-blue-500 focus:ring-blue-500 mr-2"
                                     />
-                                    <span className="text-sm text-slate-700 truncate flex-1">{session}</span>
+                                    <span className="text-sm text-slate-700 dark:text-slate-200 truncate flex-1">{session}</span>
                                     <span className="text-xs text-slate-400 ml-2">{sessions[session]}</span>
                                 </label>
                             ))
@@ -139,17 +139,17 @@ function SessionMultiSelect({ sessions, selected, onChange }: SessionMultiSelect
 
                     {/* Selected tags */}
                     {selected.length > 0 && (
-                        <div className="px-2 py-1.5 border-t border-slate-100 flex flex-wrap gap-1 max-h-16 overflow-auto">
+                        <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-1 max-h-16 overflow-auto">
                             {selected.slice(0, 5).map(s => (
                                 <span
                                     key={s}
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded"
                                 >
                                     {s}
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); toggleSession(s); }}
-                                        className="hover:text-blue-900"
+                                        className="hover:text-blue-900 dark:hover:text-blue-100"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -199,21 +199,21 @@ export function FilterBar() {
     };
 
     return (
-        <div className="h-[42px] bg-white border-b border-slate-200 px-3 flex items-center gap-3 flex-shrink-0">
+        <div className="h-[42px] bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 flex items-center gap-3 flex-shrink-0">
             {/* Level filters - compact toggle buttons */}
             <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-slate-500">Level</span>
-                <div className="flex rounded overflow-hidden border border-slate-200">
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Level</span>
+                <div className="flex rounded overflow-hidden border border-slate-200 dark:border-slate-600">
                     {LEVELS.map(({ level, activeColor }) => {
                         const isActive = filter.levels.length === 0 || filter.levels.includes(level);
                         return (
                             <button
                                 key={level}
                                 onClick={() => toggleLevel(level)}
-                                className={`px-2 py-1 text-xs font-medium transition-all border-r last:border-r-0 border-slate-200 ${
+                                className={`px-2 py-1 text-xs font-medium transition-all border-r last:border-r-0 border-slate-200 dark:border-slate-600 ${
                                     isActive
                                         ? `${activeColor} text-white`
-                                        : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                                        : 'bg-slate-50 dark:bg-slate-700 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600'
                                 }`}
                             >
                                 {getLevelName(level)}
@@ -225,7 +225,7 @@ export function FilterBar() {
 
             {/* Session multi-select */}
             <div className="flex items-center gap-1.5">
-                <span className="text-xs font-medium text-slate-500">Session</span>
+                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Session</span>
                 <SessionMultiSelect
                     sessions={sessions}
                     selected={filter.sessions}
@@ -241,18 +241,18 @@ export function FilterBar() {
                         placeholder="Filter entries..."
                         value={filter.messagePattern}
                         onChange={(e) => setFilter({ messagePattern: e.target.value })}
-                        className="w-48 text-sm border border-slate-200 rounded pl-8 pr-3 py-1 h-[28px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-48 text-sm border border-slate-200 dark:border-slate-600 rounded pl-8 pr-3 py-1 h-[28px] bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                     />
                     <svg className="w-4 h-4 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                 </div>
-                <label className="flex items-center gap-1 text-xs text-slate-600 cursor-pointer" title="Hide entries matching the filter instead of showing only matches">
+                <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 cursor-pointer" title="Hide entries matching the filter instead of showing only matches">
                     <input
                         type="checkbox"
                         checked={filter.inverseMatch}
                         onChange={(e) => setFilter({ inverseMatch: e.target.checked })}
-                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        className="rounded border-slate-300 dark:border-slate-600 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     Exclude
                 </label>
@@ -268,8 +268,8 @@ export function FilterBar() {
                     onClick={() => setPaused(!paused)}
                     className={`p-1.5 rounded transition-colors ${
                         paused
-                            ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                     title={paused ? 'Resume' : 'Pause'}
                 >
@@ -290,8 +290,8 @@ export function FilterBar() {
                     onClick={() => setAutoScroll(!autoScroll)}
                     className={`p-1.5 rounded transition-colors ${
                         autoScroll
-                            ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                     title={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
                 >
@@ -303,7 +303,7 @@ export function FilterBar() {
                 {/* Clear button */}
                 <button
                     onClick={handleClear}
-                    className="p-1.5 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                    className="p-1.5 rounded bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
                     title="Clear all logs"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,10 +313,10 @@ export function FilterBar() {
             </div>
 
             {/* Settings button - separated */}
-            <div className="ml-2 pl-2 border-l border-slate-200">
+            <div className="ml-2 pl-2 border-l border-slate-200 dark:border-slate-700">
                 <button
                     onClick={() => activeViewId && setEditingViewId(activeViewId)}
-                    className="p-1.5 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                    className="p-1.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                     title="Edit view settings"
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

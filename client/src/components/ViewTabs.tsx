@@ -116,9 +116,9 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-left bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between"
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between"
             >
-                <span className={selected.length === 0 ? 'text-slate-400' : 'text-slate-700'}>
+                <span className={selected.length === 0 ? 'text-slate-400' : 'text-slate-700 dark:text-slate-200'}>
                     {selected.length === 0
                         ? placeholder
                         : selected.length === 1
@@ -132,32 +132,32 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-hidden">
+                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-64 overflow-hidden">
                     {/* Search input */}
-                    <div className="p-2 border-b border-slate-100">
+                    <div className="p-2 border-b border-slate-100 dark:border-slate-600">
                         <input
                             type="text"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             placeholder="Search sessions..."
-                            className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-2.5 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-600 dark:text-slate-100"
                             autoFocus
                         />
                     </div>
 
                     {/* Quick actions */}
-                    <div className="px-2 py-1.5 border-b border-slate-100 flex gap-2">
+                    <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-2">
                         <button
                             type="button"
                             onClick={selectAll}
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                         >
                             Select All
                         </button>
                         <button
                             type="button"
                             onClick={clearAll}
-                            className="text-xs text-slate-500 hover:text-slate-700"
+                            className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                         >
                             Clear
                         </button>
@@ -176,15 +176,15 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
                             filteredOptions.map(option => (
                                 <label
                                     key={option}
-                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer"
+                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer"
                                 >
                                     <input
                                         type="checkbox"
                                         checked={selected.includes(option)}
                                         onChange={() => toggleOption(option)}
-                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 mr-2"
+                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 mr-2"
                                     />
-                                    <span className="text-sm text-slate-700 truncate">{option}</span>
+                                    <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{option}</span>
                                 </label>
                             ))
                         )}
@@ -192,17 +192,17 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
 
                     {/* Selected tags */}
                     {selected.length > 0 && (
-                        <div className="px-2 py-1.5 border-t border-slate-100 flex flex-wrap gap-1 max-h-20 overflow-auto">
+                        <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-600 flex flex-wrap gap-1 max-h-20 overflow-auto">
                             {selected.map(s => (
                                 <span
                                     key={s}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs rounded"
                                 >
                                     {s}
                                     <button
                                         type="button"
                                         onClick={() => toggleOption(s)}
-                                        className="hover:text-blue-900"
+                                        className="hover:text-blue-900 dark:hover:text-blue-100"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -315,36 +315,36 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[600px] h-[600px] flex flex-col overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-                    <h3 className="font-semibold text-slate-800">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[600px] h-[600px] flex flex-col overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex-shrink-0">
+                    <h3 className="font-semibold text-slate-800 dark:text-slate-200">
                         {view ? 'Edit View' : 'Create New View'}
                     </h3>
                 </div>
 
                 {/* Name field */}
                 <div className="px-4 pt-4 flex-shrink-0">
-                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                         View Name
                     </label>
                     <input
                         type="text"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         placeholder="Enter view name..."
                     />
                 </div>
 
                 {/* Tab bar */}
-                <div className="px-4 pt-4 border-b border-slate-200 flex-shrink-0">
+                <div className="px-4 pt-4 border-b border-slate-200 dark:border-slate-600 flex-shrink-0">
                     <div className="flex gap-1">
                         <button
                             onClick={() => setActiveTab('filters')}
                             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                                 activeTab === 'filters'
-                                    ? 'bg-white border-t border-l border-r border-slate-200 -mb-px text-blue-600'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                    ? 'bg-white dark:bg-slate-800 border-t border-l border-r border-slate-200 dark:border-slate-600 -mb-px text-blue-600 dark:text-blue-400'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                             }`}
                         >
                             Filters
@@ -353,13 +353,13 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                             onClick={() => setActiveTab('highlights')}
                             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-1.5 ${
                                 activeTab === 'highlights'
-                                    ? 'bg-white border-t border-l border-r border-slate-200 -mb-px text-blue-600'
-                                    : 'text-slate-500 hover:text-slate-700'
+                                    ? 'bg-white dark:bg-slate-800 border-t border-l border-r border-slate-200 dark:border-slate-600 -mb-px text-blue-600 dark:text-blue-400'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                             }`}
                         >
                             Highlights
                             {highlightRules.length > 0 && (
-                                <span className="text-xs bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded">
+                                <span className="text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded">
                                     {highlightRules.length}
                                 </span>
                             )}
@@ -372,7 +372,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                         <>
                             {/* Session Filter - Searchable Multi-Select */}
                             <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Filter by Sessions
                                 </label>
                                 <MultiSelectDropdown
@@ -381,7 +381,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                     onChange={setFilterSessions}
                                     placeholder="All sessions (none selected)"
                                 />
-                                <p className="text-xs text-slate-400 mt-1">
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     {filterSessions.length === 0
                                         ? 'All sessions shown when none selected'
                                         : `Showing ${filterSessions.length} of ${sessionNames.length} sessions`}
@@ -390,7 +390,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 
                             {/* Level Filter */}
                             <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Filter by Levels
                                 </label>
                                 <div className="flex flex-wrap gap-1.5">
@@ -401,7 +401,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                             className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
                                                 filterLevels.includes(level)
                                                     ? 'bg-blue-500 text-white'
-                                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                             }`}
                                         >
                                             {name}
@@ -409,34 +409,34 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                     ))}
                                 </div>
                                 {filterLevels.length === 0 && (
-                                    <p className="text-xs text-slate-400 mt-1">All levels shown when none selected</p>
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All levels shown when none selected</p>
                                 )}
                             </div>
 
                             {/* Title Pattern */}
                             <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Title Pattern (regex)
                                 </label>
                                 <input
                                     type="text"
                                     value={titlePattern}
                                     onChange={(e) => setTitlePattern(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                     placeholder="e.g., ^Error.*"
                                 />
                             </div>
 
                             {/* Message Pattern */}
                             <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Message Pattern (regex)
                                 </label>
                                 <input
                                     type="text"
                                     value={messagePattern}
                                     onChange={(e) => setMessagePattern(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                     placeholder="e.g., database|connection"
                                 />
                             </div>
@@ -448,24 +448,24 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         type="checkbox"
                                         checked={inverseMatch}
                                         onChange={(e) => setInverseMatch(e.target.checked)}
-                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
                                     />
-                                    <span className="text-sm text-slate-700">Inverse match (exclude matching entries)</span>
+                                    <span className="text-sm text-slate-700 dark:text-slate-200">Inverse match (exclude matching entries)</span>
                                 </label>
                             </div>
                         </>
                     ) : (
                         <>
                             {/* Use Global Highlights */}
-                            <div className="mb-4 p-3 bg-slate-50 rounded-lg">
+                            <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"
                                         checked={useGlobalHighlights}
                                         onChange={(e) => setUseGlobalHighlights(e.target.checked)}
-                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
                                     />
-                                    <span className="text-sm text-slate-700">
+                                    <span className="text-sm text-slate-700 dark:text-slate-200">
                                         Also apply global highlight rules
                                         {globalHighlightRules.length > 0 && (
                                             <span className="text-xs text-slate-400 ml-1">
@@ -479,12 +479,12 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                             {/* View-specific highlight rules */}
                             <div className="mb-4">
                                 <div className="flex items-center justify-between mb-2">
-                                    <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                                         View Highlight Rules
                                     </label>
                                     <button
                                         onClick={handleAddHighlightRule}
-                                        className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                        className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium flex items-center gap-1"
                                     >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -494,7 +494,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                 </div>
 
                                 {highlightRules.length === 0 ? (
-                                    <div className="text-center py-6 text-slate-400 text-sm">
+                                    <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-sm">
                                         No view-specific highlight rules.
                                         <br />
                                         <span className="text-xs">Click "Add Rule" to create one.</span>
@@ -504,21 +504,21 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         {highlightRules.map((rule) => (
                                             <div
                                                 key={rule.id}
-                                                className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
+                                                className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
                                             >
                                                 <input
                                                     type="checkbox"
                                                     checked={rule.enabled}
                                                     onChange={() => handleToggleHighlightRule(rule)}
-                                                    className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                                    className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
                                                 />
                                                 <div
-                                                    className="w-6 h-6 rounded border flex-shrink-0"
+                                                    className="w-6 h-6 rounded border dark:border-slate-500 flex-shrink-0"
                                                     style={{ backgroundColor: rule.style.backgroundColor }}
                                                 />
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-sm text-slate-800">{rule.name}</div>
-                                                    <div className="text-xs text-slate-500 truncate">
+                                                    <div className="font-medium text-sm text-slate-800 dark:text-slate-200">{rule.name}</div>
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                                                         {getFilterSummary(rule)}
                                                     </div>
                                                 </div>
@@ -564,10 +564,10 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                     )}
                 </div>
 
-                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
+                <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex justify-end gap-2 flex-shrink-0">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
                     >
                         Cancel
                     </button>
@@ -698,15 +698,15 @@ export function ViewTabs() {
 
     return (
         <>
-            <div className="bg-slate-100 border-b border-slate-200 flex items-center relative">
+            <div className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center relative">
                 {/* Left scroll indicator */}
                 {canScrollLeft && (
                     <button
                         onClick={() => scrollTabs('left')}
-                        className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-100 via-slate-100 to-transparent flex items-center"
+                        className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-100 dark:from-slate-800 via-slate-100 dark:via-slate-800 to-transparent flex items-center"
                         title="Scroll left"
                     >
-                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
@@ -726,19 +726,19 @@ export function ViewTabs() {
                         className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
                             isStreamsMode
                                 ? 'bg-gradient-to-b from-purple-500 to-purple-600 text-white border-t border-l border-r border-purple-400 -mb-px shadow-sm'
-                                : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                                : 'bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300'
                         }`}
                     >
-                        <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                        <span className={`text-sm font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700'}`}>
+                        <span className={`text-sm font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700 dark:text-purple-300'}`}>
                             Streams
                         </span>
                     </div>
 
                     {/* Separator */}
-                    <div className="w-px h-5 bg-slate-300 mx-1 flex-shrink-0" />
+                    <div className="w-px h-5 bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0" />
 
                     {/* Regular view tabs */}
                     {views.map(view => (
@@ -748,23 +748,23 @@ export function ViewTabs() {
                             onDoubleClick={() => handleEditView(view)}
                             className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
                                 !isStreamsMode && activeViewId === view.id
-                                    ? 'bg-white border-t border-l border-r border-slate-200 -mb-px'
-                                    : 'hover:bg-slate-200'
+                                    ? 'bg-white dark:bg-slate-700 border-t border-l border-r border-slate-200 dark:border-slate-600 -mb-px'
+                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700'
                             }`}
                             title={view.name}
                         >
-                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800' : 'text-slate-600'}`}>
+                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800 dark:text-slate-200' : 'text-slate-600 dark:text-slate-400'}`}>
                                 {view.name}
                             </span>
                             {view.filter.sessions.length > 0 && (
-                                <span className="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+                                <span className="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">
                                     {view.filter.sessions.length}
                                 </span>
                             )}
                             {view.id !== 'all' && (
                                 <button
                                     onClick={(e) => handleDeleteView(e, view.id)}
-                                    className="text-slate-400 hover:text-red-500 transition-colors"
+                                    className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                                     title="Close tab"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -778,7 +778,7 @@ export function ViewTabs() {
                     {/* Add View Button */}
                     <button
                         onClick={handleAddView}
-                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
                         title="Create new view"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -791,10 +791,10 @@ export function ViewTabs() {
                 {canScrollRight && (
                     <button
                         onClick={() => scrollTabs('right')}
-                        className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-100 via-slate-100 to-transparent flex items-center"
+                        className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-100 dark:from-slate-800 via-slate-100 dark:via-slate-800 to-transparent flex items-center"
                         title="Scroll right"
                     >
-                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                     </button>

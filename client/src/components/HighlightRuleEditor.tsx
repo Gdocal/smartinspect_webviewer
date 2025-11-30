@@ -135,15 +135,15 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
     return (
         <div className="mb-4">
             <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                     {label}
                 </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                     <input
                         type="checkbox"
                         checked={filter.inverse}
                         onChange={(e) => onChange({ ...filter, inverse: e.target.checked })}
-                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     Exclude
                 </label>
@@ -157,7 +157,7 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                     className={`px-3 py-1 text-xs rounded-lg transition-colors ${
                         filter.mode === 'list'
                             ? 'bg-blue-500 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                 >
                     Select from list
@@ -168,7 +168,7 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                     className={`px-3 py-1 text-xs rounded-lg transition-colors ${
                         filter.mode === 'text'
                             ? 'bg-blue-500 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                 >
                     Text filter
@@ -181,11 +181,11 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                     <button
                         type="button"
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                        className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between ${
-                            filter.inverse && filter.values.length > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                        className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between ${
+                            filter.inverse && filter.values.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                         }`}
                     >
-                        <span className={filter.values.length === 0 ? 'text-slate-400' : filter.inverse ? 'text-red-600' : 'text-slate-700'}>
+                        <span className={filter.values.length === 0 ? 'text-slate-400' : filter.inverse ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}>
                             {filter.values.length === 0
                                 ? `All ${label.toLowerCase()}`
                                 : filter.inverse
@@ -200,44 +200,44 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                     </button>
 
                     {isDropdownOpen && (
-                        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-72 overflow-hidden">
+                        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-72 overflow-hidden">
                             {/* Search input */}
-                            <div className="p-2 border-b border-slate-100">
+                            <div className="p-2 border-b border-slate-100 dark:border-slate-600">
                                 <input
                                     type="text"
                                     value={search}
                                     onChange={(e) => setSearch(e.target.value)}
                                     placeholder="Search..."
-                                    className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    className="w-full px-2.5 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-600 dark:text-slate-100"
                                     autoFocus
                                 />
                             </div>
 
                             {/* Quick actions */}
-                            <div className="px-2 py-1.5 border-b border-slate-100 flex gap-2">
-                                <button type="button" onClick={() => onChange({ ...filter, values: [...allOptions] })} className="text-xs text-blue-600 hover:text-blue-700">
+                            <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-2">
+                                <button type="button" onClick={() => onChange({ ...filter, values: [...allOptions] })} className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
                                     Select All
                                 </button>
-                                <button type="button" onClick={() => onChange({ ...filter, values: [] })} className="text-xs text-slate-500 hover:text-slate-700">
+                                <button type="button" onClick={() => onChange({ ...filter, values: [] })} className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                                     Clear
                                 </button>
                             </div>
 
                             {/* Add manual value */}
-                            <div className="px-2 py-1.5 border-b border-slate-100 flex gap-1">
+                            <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-1">
                                 <input
                                     type="text"
                                     value={manualValue}
                                     onChange={(e) => setManualValue(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && addManualValue()}
                                     placeholder="Add custom value..."
-                                    className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                                    className="flex-1 px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white dark:bg-slate-600 dark:text-slate-100"
                                 />
                                 <button
                                     type="button"
                                     onClick={addManualValue}
                                     disabled={!manualValue.trim()}
-                                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                                    className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-slate-300 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
                                 >
                                     Add
                                 </button>
@@ -249,14 +249,14 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                     <div className="px-3 py-2 text-sm text-slate-400">No matches</div>
                                 ) : (
                                     filteredOptions.map(option => (
-                                        <label key={option} className="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer">
+                                        <label key={option} className="flex items-center px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer">
                                             <input
                                                 type="checkbox"
                                                 checked={filter.values.includes(option)}
                                                 onChange={() => toggleOption(option)}
-                                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 mr-2"
+                                                className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 mr-2"
                                             />
-                                            <span className={`text-sm truncate ${!availableOptions.includes(option) ? 'text-slate-400 italic' : 'text-slate-700'}`}>
+                                            <span className={`text-sm truncate ${!availableOptions.includes(option) ? 'text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
                                                 {option}
                                                 {!availableOptions.includes(option) && ' (saved)'}
                                             </span>
@@ -267,9 +267,9 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
 
                             {/* Selected tags */}
                             {filter.values.length > 0 && (
-                                <div className="px-2 py-1.5 border-t border-slate-100 flex flex-wrap gap-1 max-h-20 overflow-auto">
+                                <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-600 flex flex-wrap gap-1 max-h-20 overflow-auto">
                                     {filter.values.map(v => (
-                                        <span key={v} className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded ${filter.inverse ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        <span key={v} className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded ${filter.inverse ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'}`}>
                                             {v}
                                             <button type="button" onClick={() => toggleOption(v)} className="hover:opacity-70">
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,7 +290,7 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                         <select
                             value={filter.textOperator}
                             onChange={(e) => onChange({ ...filter, textOperator: e.target.value as ListTextFilter['textOperator'] })}
-                            className="px-2 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="px-2 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-200"
                         >
                             <option value="contains">Contains</option>
                             <option value="equals">Equals</option>
@@ -301,13 +301,13 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                             value={filter.textValue}
                             onChange={(e) => onChange({ ...filter, textValue: e.target.value })}
                             placeholder={filter.textOperator === 'regex' ? 'Enter regex pattern...' : 'Enter text...'}
-                            className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                                regexError ? 'border-red-300 bg-red-50' : filter.inverse && filter.textValue ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                            className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100 ${
+                                regexError ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : filter.inverse && filter.textValue ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                             }`}
                         />
                     </div>
                     {regexError && (
-                        <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+                        <p className="mt-1 text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
@@ -340,15 +340,15 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
     return (
         <div className="mb-4">
             <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                     Levels
                 </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                     <input
                         type="checkbox"
                         checked={inverse}
                         onChange={(e) => onInverseChange(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     Exclude
                 </label>
@@ -364,7 +364,7 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
                                 ? inverse
                                     ? 'bg-red-500 text-white'
                                     : 'bg-blue-500 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                         }`}
                     >
                         {label}
@@ -372,7 +372,7 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
                 ))}
             </div>
             {selected.length === 0 && (
-                <p className="text-xs text-slate-400 mt-1">All levels when none selected</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All levels when none selected</p>
             )}
         </div>
     );
@@ -403,15 +403,15 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
     return (
         <div className="mb-4">
             <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                     Entry Types
                 </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                     <input
                         type="checkbox"
                         checked={inverse}
                         onChange={(e) => onInverseChange(e.target.checked)}
-                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     Exclude
                 </label>
@@ -419,11 +419,11 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
             <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white hover:border-slate-300 flex items-center justify-between ${
-                    inverse && selected.length > 0 ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 flex items-center justify-between ${
+                    inverse && selected.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                 }`}
             >
-                <span className={selected.length === 0 ? 'text-slate-400' : inverse ? 'text-red-600' : 'text-slate-700'}>
+                <span className={selected.length === 0 ? 'text-slate-400' : inverse ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}>
                     {selected.length === 0
                         ? 'All entry types'
                         : inverse
@@ -435,10 +435,10 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
                 </svg>
             </button>
             {expanded && (
-                <div className="mt-2 border border-slate-200 rounded-lg p-2 max-h-48 overflow-auto">
+                <div className="mt-2 border border-slate-200 dark:border-slate-600 rounded-lg p-2 max-h-48 overflow-auto">
                     {Object.entries(entryTypeGroups).map(([group, types]) => (
                         <div key={group} className="mb-2 last:mb-0">
-                            <div className="text-xs font-semibold text-slate-500 mb-1">{group}</div>
+                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{group}</div>
                             <div className="flex flex-wrap gap-1">
                                 {types.map(({ value, label }) => (
                                     <button
@@ -448,7 +448,7 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
                                         className={`px-2 py-0.5 text-xs rounded transition-colors ${
                                             selected.includes(value)
                                                 ? inverse ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'
-                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                         }`}
                                     >
                                         {label}
@@ -462,7 +462,7 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
             {selected.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1.5">
                     {selectedLabels.map((label, i) => (
-                        <span key={i} className={`text-xs px-1.5 py-0.5 rounded ${inverse ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                        <span key={i} className={`text-xs px-1.5 py-0.5 rounded ${inverse ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300'}`}>
                             {label}
                         </span>
                     ))}
@@ -491,15 +491,15 @@ function TextFilterInput({ label, filter, onChange }: TextFilterInputProps) {
     return (
         <div className="mb-4">
             <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                     {label}
                 </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                     <input
                         type="checkbox"
                         checked={filter.inverse}
                         onChange={(e) => onChange({ ...filter, inverse: e.target.checked })}
-                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                     />
                     Exclude
                 </label>
@@ -508,7 +508,7 @@ function TextFilterInput({ label, filter, onChange }: TextFilterInputProps) {
                 <select
                     value={filter.operator}
                     onChange={(e) => onChange({ ...filter, operator: e.target.value as TextFilter['operator'] })}
-                    className="px-2 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    className="px-2 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-200"
                 >
                     <option value="contains">Contains</option>
                     <option value="equals">Equals</option>
@@ -519,13 +519,13 @@ function TextFilterInput({ label, filter, onChange }: TextFilterInputProps) {
                     value={filter.value}
                     onChange={(e) => onChange({ ...filter, value: e.target.value })}
                     placeholder={filter.operator === 'regex' ? 'Enter regex pattern...' : 'Enter text...'}
-                    className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                        regexError ? 'border-red-300 bg-red-50' : filter.inverse && filter.value ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                    className={`flex-1 px-3 py-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100 ${
+                        regexError ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : filter.inverse && filter.value ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                     }`}
                 />
             </div>
             {regexError && (
-                <p className="mt-1 text-xs text-red-500 flex items-center gap-1">
+                <p className="mt-1 text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
@@ -609,9 +609,9 @@ export function HighlightRuleEditor({
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-            <div className="bg-white rounded-lg shadow-xl w-[600px] h-[700px] flex flex-col overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex-shrink-0">
-                    <h3 className="font-semibold text-slate-800">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[600px] h-[700px] flex flex-col overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex-shrink-0">
+                    <h3 className="font-semibold text-slate-800 dark:text-slate-200">
                         {rule ? 'Edit Highlight Rule' : 'Create Highlight Rule'}
                     </h3>
                 </div>
@@ -619,14 +619,14 @@ export function HighlightRuleEditor({
                 <div className="p-4 overflow-auto flex-1 min-h-0">
                     {/* Name */}
                     <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                             Rule Name
                         </label>
                         <input
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         />
                     </div>
 
@@ -637,26 +637,26 @@ export function HighlightRuleEditor({
                                 type="checkbox"
                                 checked={enabled}
                                 onChange={(e) => setEnabled(e.target.checked)}
-                                className="rounded border-slate-300 text-blue-500 focus:ring-blue-500"
+                                className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
                             />
-                            <span className="text-sm text-slate-700">Enabled</span>
+                            <span className="text-sm text-slate-700 dark:text-slate-200">Enabled</span>
                         </label>
                         <div className="flex items-center gap-2">
-                            <label className="text-sm text-slate-600">Priority:</label>
+                            <label className="text-sm text-slate-600 dark:text-slate-400">Priority:</label>
                             <input
                                 type="number"
                                 value={priority}
                                 onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
-                                className="w-16 px-2 py-1 border border-slate-200 rounded text-sm"
+                                className="w-16 px-2 py-1 border border-slate-200 dark:border-slate-600 rounded text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
                                 min={1}
                                 max={100}
                             />
                         </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-4 mt-4">
-                        <h4 className="text-sm font-semibold text-slate-700 mb-3">Filter Conditions</h4>
-                        <p className="text-xs text-slate-500 mb-4">
+                    <div className="border-t border-slate-200 dark:border-slate-600 pt-4 mt-4">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Filter Conditions</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
                             Log entries must match ALL conditions to be highlighted. Empty filters match everything.
                         </p>
 
@@ -703,15 +703,15 @@ export function HighlightRuleEditor({
                         {/* Process ID */}
                         <div className="mb-4">
                             <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                                     Process ID
                                 </label>
-                                <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
                                     <input
                                         type="checkbox"
                                         checked={filter.processIdInverse}
                                         onChange={(e) => updateFilter('processIdInverse', e.target.checked)}
-                                        className="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
                                     />
                                     Exclude
                                 </label>
@@ -721,8 +721,8 @@ export function HighlightRuleEditor({
                                 value={filter.processId ?? ''}
                                 onChange={(e) => updateFilter('processId', e.target.value ? parseInt(e.target.value) : null)}
                                 placeholder="Any process"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none ${
-                                    filter.processIdInverse && filter.processId !== null ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100 ${
+                                    filter.processIdInverse && filter.processId !== null ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                                 }`}
                             />
                         </div>
@@ -736,19 +736,19 @@ export function HighlightRuleEditor({
                     </div>
 
                     {/* Style Section */}
-                    <div className="border-t border-slate-200 pt-4 mt-4">
-                        <h4 className="text-sm font-semibold text-slate-700 mb-3">Style</h4>
+                    <div className="border-t border-slate-200 dark:border-slate-600 pt-4 mt-4">
+                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Style</h4>
 
                         {/* Presets */}
                         <div className="mb-3">
-                            <label className="block text-xs text-slate-500 mb-1.5">Quick Presets</label>
+                            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Quick Presets</label>
                             <div className="flex gap-1.5">
                                 {colorPresets.map(preset => (
                                     <button
                                         key={preset.name}
                                         type="button"
                                         onClick={() => applyPreset(preset)}
-                                        className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 transition-colors"
+                                        className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
                                         style={{ backgroundColor: preset.bg }}
                                         title={preset.name}
                                     >
@@ -760,7 +760,7 @@ export function HighlightRuleEditor({
 
                         <div className="flex gap-4 mb-4">
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">Background</label>
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
                                 <input
                                     type="color"
                                     value={bgColor}
@@ -769,7 +769,7 @@ export function HighlightRuleEditor({
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">Text</label>
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
                                 <input
                                     type="color"
                                     value={textColor}
@@ -778,11 +778,11 @@ export function HighlightRuleEditor({
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">Font</label>
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
                                 <select
                                     value={fontWeight}
                                     onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
-                                    className="px-2 py-1.5 border border-slate-200 rounded text-sm"
+                                    className="px-2 py-1.5 border border-slate-200 dark:border-slate-600 rounded text-sm bg-white dark:bg-slate-700 dark:text-slate-200"
                                 >
                                     <option value="normal">Normal</option>
                                     <option value="bold">Bold</option>
@@ -792,9 +792,9 @@ export function HighlightRuleEditor({
 
                         {/* Preview */}
                         <div>
-                            <label className="block text-xs text-slate-500 mb-1.5">Preview</label>
+                            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Preview</label>
                             <div
-                                className="px-3 py-2 rounded border border-slate-200 text-sm"
+                                className="px-3 py-2 rounded border border-slate-200 dark:border-slate-600 text-sm"
                                 style={{
                                     backgroundColor: bgColor,
                                     color: textColor,
@@ -807,10 +807,10 @@ export function HighlightRuleEditor({
                     </div>
                 </div>
 
-                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 flex-shrink-0">
+                <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex justify-end gap-2 flex-shrink-0">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
+                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
                     >
                         Cancel
                     </button>
@@ -820,7 +820,7 @@ export function HighlightRuleEditor({
                         className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                             isValid
                                 ? 'bg-blue-500 text-white hover:bg-blue-600'
-                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                : 'bg-slate-300 dark:bg-slate-600 text-slate-500 dark:text-slate-400 cursor-not-allowed'
                         }`}
                     >
                         {rule ? 'Save Changes' : 'Create Rule'}

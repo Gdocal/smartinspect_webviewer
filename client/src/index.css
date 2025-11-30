@@ -10,6 +10,14 @@
     --ag-list-item-height: 24px;
 }
 
+/* AG Grid dark theme customizations */
+.ag-theme-balham-dark {
+    --ag-header-height: 32px;
+    --ag-row-height: 28px;
+    --ag-font-size: 13px;
+    --ag-list-item-height: 24px;
+}
+
 /* Ensure proper height */
 html, body, #root {
     height: 100%;
@@ -17,7 +25,7 @@ html, body, #root {
     padding: 0;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - Light mode */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -34,6 +42,19 @@ html, body, #root {
 
 ::-webkit-scrollbar-thumb:hover {
     background: #a1a1a1;
+}
+
+/* Custom scrollbar - Dark mode */
+.dark ::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+    background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
 }
 
 /* Hide scrollbar for tab container */
@@ -53,6 +74,21 @@ html, body, #root {
 
 /* Always show filter button when filter is active */
 .ag-theme-balham .ag-header-cell.ag-header-cell-filtered .ag-header-cell-filter-button {
+    opacity: 1;
+}
+
+/* AG Grid dark: Show filter button only on column header hover */
+.ag-theme-balham-dark .ag-header-cell .ag-header-cell-filter-button {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.ag-theme-balham-dark .ag-header-cell:hover .ag-header-cell-filter-button {
+    opacity: 1;
+}
+
+/* Always show filter button when filter is active (dark) */
+.ag-theme-balham-dark .ag-header-cell.ag-header-cell-filtered .ag-header-cell-filter-button {
     opacity: 1;
 }
 

@@ -24,7 +24,7 @@ const MAX_ENTRIES_OPTIONS = [
     { value: 100000, label: '100,000 (All)' },
 ];
 
-export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayout, onImportLayout, onResetLayout }: SettingsPanelProps) {
+export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportLayout, onImportLayout, onResetLayout }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
     const setCurrentUser = useLogStore(state => state.setCurrentUser);
 
@@ -87,10 +87,10 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[450px] max-h-[90vh] overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[450px] max-h-[90vh] overflow-hidden">
                 {/* Header */}
-                <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <h2 className="font-semibold text-slate-700 flex items-center gap-2">
+                <div className="bg-slate-100 dark:bg-slate-700 px-4 py-3 border-b border-slate-200 dark:border-slate-600 flex items-center justify-between">
+                    <h2 className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -99,7 +99,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                     </h2>
                     <button
                         onClick={onClose}
-                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -111,7 +111,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                 <div className="p-4 space-y-5 overflow-y-auto max-h-[calc(90vh-130px)]">
                     {/* Connection Section */}
                     <div>
-                        <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                             </svg>
@@ -119,7 +119,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                         </h3>
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
                                     Server URL (leave empty for auto-detect)
                                 </label>
                                 <input
@@ -127,11 +127,11 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                     value={formState.serverUrl}
                                     onChange={(e) => setFormState(prev => ({ ...prev, serverUrl: e.target.value }))}
                                     placeholder={getServerUrl()}
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
                                     Auth Token (optional)
                                 </label>
                                 <div className="relative">
@@ -140,12 +140,12 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                         value={formState.authToken || ''}
                                         onChange={(e) => setFormState(prev => ({ ...prev, authToken: e.target.value || null }))}
                                         placeholder="Enter auth token..."
-                                        className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowToken(!showToken)}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                                     >
                                         {showToken ? (
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +161,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
                                     Username (for per-user settings)
                                 </label>
                                 <input
@@ -169,9 +169,9 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                     value={formState.username}
                                     onChange={(e) => setFormState(prev => ({ ...prev, username: e.target.value || 'default' }))}
                                     placeholder="default"
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                 />
-                                <p className="text-xs text-slate-400 mt-1">
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     Settings like filters and views are saved per user per room.
                                 </p>
                             </div>
@@ -180,7 +180,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
 
                     {/* Display Section */}
                     <div>
-                        <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
                             </svg>
@@ -188,19 +188,19 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                         </h3>
                         <div className="space-y-3">
                             <div>
-                                <label className="block text-xs text-slate-500 mb-1">
+                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
                                     Max entries to display in browser
                                 </label>
                                 <select
                                     value={formState.maxDisplayEntries}
                                     onChange={(e) => setFormState(prev => ({ ...prev, maxDisplayEntries: parseInt(e.target.value) }))}
-                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                 >
                                     {MAX_ENTRIES_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                 </select>
-                                <p className="text-xs text-slate-400 mt-1">
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     Limits memory usage in browser. Older entries are dropped when limit is reached.
                                 </p>
                             </div>
@@ -209,7 +209,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
 
                     {/* Layout Section */}
                     <div>
-                        <h3 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+                        <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                             </svg>
@@ -218,7 +218,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                         <div className="flex gap-2">
                             <button
                                 onClick={() => { onExportLayout?.(); onClose(); }}
-                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -227,7 +227,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                             </button>
                             <button
                                 onClick={() => { onImportLayout?.(); onClose(); }}
-                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -236,7 +236,7 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                             </button>
                             <button
                                 onClick={() => { onResetLayout?.(); onClose(); }}
-                                className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
+                                className="flex-1 px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -244,24 +244,24 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange, onExportLayo
                                 Reset
                             </button>
                         </div>
-                        <p className="text-xs text-slate-400 mt-2">
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
                             Export/import column widths, order, and panel sizes.
                         </p>
                     </div>
                 </div>
 
                 {/* Footer */}
-                <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex justify-between">
+                <div className="bg-slate-50 dark:bg-slate-700 px-4 py-3 border-t border-slate-200 dark:border-slate-600 flex justify-between">
                     <button
                         onClick={handleReset}
-                        className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors"
+                        className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100 transition-colors"
                     >
                         Reset to Defaults
                     </button>
                     <div className="flex gap-2">
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 text-sm bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors"
+                            className="px-4 py-2 text-sm bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded hover:bg-slate-50 dark:hover:bg-slate-500 transition-colors dark:text-slate-200"
                         >
                             Cancel
                         </button>

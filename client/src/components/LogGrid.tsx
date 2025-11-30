@@ -165,7 +165,7 @@ const getRowId = (params: GetRowIdParams<LogEntry>) => String(params.data.id);
 export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProps) {
     const gridRef = useRef<AgGridReact>(null);
     const gridApiRef = useRef<GridApi | null>(null);
-    const { entries, autoScroll, paused, setSelectedEntryId, filter, globalHighlightRules, views, activeViewId, entriesVersion } = useLogStore();
+    const { entries, autoScroll, paused, setSelectedEntryId, filter, globalHighlightRules, views, activeViewId, entriesVersion, theme } = useLogStore();
 
     // Get active view's highlight rules combined with global (if enabled)
     const activeHighlightRules = useMemo(() => {
@@ -489,7 +489,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     }, [filteredEntries.length, autoScroll, paused, entriesVersion]);
 
     return (
-        <div className="ag-theme-balham h-full w-full" style={{ fontSize: '13px' }}>
+        <div className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }}>
             <AgGridReact
                 ref={gridRef}
                 theme="legacy"

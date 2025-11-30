@@ -180,10 +180,10 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
     };
 
     return (
-        <div className="p-2 bg-white w-[170px]" style={{ fontFamily: 'inherit' }}>
+        <div className="p-2 bg-white dark:bg-slate-800 w-[170px]" style={{ fontFamily: 'inherit' }}>
             {/* Quick Presets */}
             <div className="mb-2">
-                <div className="text-xs font-medium text-slate-500 mb-1">Quick</div>
+                <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Quick</div>
                 <div className="flex flex-wrap gap-1">
                     {PRESETS.map(p => (
                         <button
@@ -192,7 +192,7 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
                             className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
                                 state.preset === p.value
                                     ? 'bg-blue-500 text-white'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
                             }`}
                         >
                             {p.label}
@@ -202,7 +202,7 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
             </div>
 
             {/* Divider */}
-            <div className="border-t border-slate-200 my-2" />
+            <div className="border-t border-slate-200 dark:border-slate-600 my-2" />
 
             {/* Mode Selection */}
             <div className="mb-2">
@@ -218,7 +218,7 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
                             className={`px-2 py-0.5 text-xs rounded transition-colors ${
                                 state.mode === mode
                                     ? 'bg-blue-500 text-white'
-                                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
                             }`}
                         >
                             {label}
@@ -231,12 +231,12 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
             {(state.mode === 'after' || state.mode === 'between') && (
                 <div className="mb-2">
                     <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-slate-500">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                             {state.mode === 'between' ? 'From' : 'After'}
                         </span>
                         <button
                             onClick={() => handleSetNow('after')}
-                            className="text-[10px] text-blue-600 hover:text-blue-700"
+                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                         >
                             Now
                         </button>
@@ -246,14 +246,14 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
                             type="date"
                             value={state.afterDate}
                             onChange={(e) => setState(prev => ({ ...prev, afterDate: e.target.value }))}
-                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         />
                         <input
                             type="text"
                             value={state.afterTime}
                             onChange={(e) => setState(prev => ({ ...prev, afterTime: e.target.value }))}
                             placeholder="HH:mm:ss"
-                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         />
                     </div>
                 </div>
@@ -262,12 +262,12 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
             {(state.mode === 'before' || state.mode === 'between') && (
                 <div className="mb-2">
                     <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-slate-500">
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                             {state.mode === 'between' ? 'To' : 'Before'}
                         </span>
                         <button
                             onClick={() => handleSetNow('before')}
-                            className="text-[10px] text-blue-600 hover:text-blue-700"
+                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                         >
                             Now
                         </button>
@@ -277,14 +277,14 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
                             type="date"
                             value={state.beforeDate}
                             onChange={(e) => setState(prev => ({ ...prev, beforeDate: e.target.value }))}
-                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         />
                         <input
                             type="text"
                             value={state.beforeTime}
                             onChange={(e) => setState(prev => ({ ...prev, beforeTime: e.target.value }))}
                             placeholder="HH:mm:ss"
-                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            className="w-full px-1.5 py-0.5 text-xs border border-slate-200 dark:border-slate-600 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                         />
                     </div>
                 </div>
@@ -292,10 +292,10 @@ export const TimestampFilter = forwardRef((props: IFilterParams, ref) => {
 
             {/* Clear Button */}
             {state.mode !== 'none' && (
-                <div className="pt-1.5 border-t border-slate-200">
+                <div className="pt-1.5 border-t border-slate-200 dark:border-slate-600">
                     <button
                         onClick={handleClear}
-                        className="w-full px-2 py-1 text-xs font-medium text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+                        className="w-full px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                     >
                         Clear
                     </button>

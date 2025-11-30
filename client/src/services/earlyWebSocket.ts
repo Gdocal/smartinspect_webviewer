@@ -289,6 +289,7 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             const { channel, entry } = message as { channel: string; entry: { data: string; timestamp: string } };
             if (channel && entry) {
                 store.addStreamEntry(channel, {
+                    channel,
                     data: entry.data,
                     timestamp: entry.timestamp
                 });

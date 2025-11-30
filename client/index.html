@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SmartInspect Web Viewer</title>
+    <script>
+      // Apply dark mode immediately to prevent flash
+      (function() {
+        const theme = localStorage.getItem('si-theme');
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

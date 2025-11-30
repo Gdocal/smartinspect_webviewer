@@ -3,7 +3,7 @@
  * Layout: Grid on top, Details below (resizable), Watches on right (collapsible)
  */
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useLayout } from './hooks/useLayout';
 import { useViewsSync } from './hooks/useViewsSync';
@@ -32,8 +32,32 @@ export function App() {
         setShowWatchPanel,
         isStreamsMode,
         selectedStreamEntryId,
-        setSelectedStreamEntryId
+        setSelectedStreamEntryId,
+        theme
     } = useLogStore();
+
+    // Apply dark class to document element (both html and body for full coverage)
+    useEffect(() => {
+        console.log('[Theme] Applying theme:', theme);
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.body.classList.add('dark');
+            console.log('[Theme] Added dark class. HTML classes:', document.documentElement.className);
+        } else {
+            document.documentElement.classList.remove('dark');
+            document.body.classList.remove('dark');
+            console.log('[Theme] Removed dark class. HTML classes:', document.documentElement.className);
+        }
+    }, [theme]);
+
+    // Apply theme on initial mount (in case localStorage had a value)
+    useEffect(() => {
+        const savedTheme = localStorage.getItem('si-theme');
+        if (savedTheme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.body.classList.add('dark');
+        }
+    }, []);
 
     // Selected stream entry for detail panel
     const [selectedStreamEntry, setSelectedStreamEntry] = useState<StreamEntry | null>(null);
@@ -112,7 +136,7 @@ export function App() {
     }, [detailHeight, watchWidth]);
 
     return (
-        <div className="h-screen flex flex-col bg-gray-100">
+        <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
             {/* Header - Clean, minimal */}
             <header className="bg-gradient-to-r from-slate-800 to-slate-700 text-white px-4 py-2 flex items-center shadow-md">
                 {/* Logo and title */}
@@ -223,7 +247,7 @@ export function App() {
 
                     {/* Stream Panel (if visible, only in logs mode) */}
                     {!isStreamsMode && showStreamPanel && (
-                        <div className="h-48 border-t border-slate-300 flex-shrink-0">
+                        <div className="h-48 border-t border-slate-300 dark:border-slate-700 flex-shrink-0">
                             <StreamPanel />
                         </div>
                     )}
@@ -233,13 +257,13 @@ export function App() {
                         <>
                             {/* Resize handle */}
                             <div
-                                className="h-1.5 bg-slate-200 hover:bg-blue-400 cursor-ns-resize flex-shrink-0 flex items-center justify-center group"
+                                className="h-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 cursor-ns-resize flex-shrink-0 flex items-center justify-center group"
                                 onMouseDown={(e) => startResize('detail', e)}
                             >
-                                <div className="w-8 h-0.5 bg-slate-400 group-hover:bg-blue-600 rounded" />
+                                <div className="w-8 h-0.5 bg-slate-400 dark:bg-slate-500 group-hover:bg-blue-600 rounded" />
                             </div>
                             <div
-                                className="flex-shrink-0 bg-white border-t border-slate-200 overflow-hidden"
+                                className="flex-shrink-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 overflow-hidden"
                                 style={{ height: detailHeight }}
                             >
                                 {isStreamsMode ? (
@@ -257,13 +281,13 @@ export function App() {
                     <>
                         {/* Resize handle */}
                         <div
-                            className="w-1.5 bg-slate-200 hover:bg-blue-400 cursor-ew-resize flex-shrink-0 flex items-center justify-center group"
+                            className="w-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-blue-400 cursor-ew-resize flex-shrink-0 flex items-center justify-center group"
                             onMouseDown={(e) => startResize('watch', e)}
                         >
-                            <div className="h-8 w-0.5 bg-slate-400 group-hover:bg-blue-600 rounded" />
+                            <div className="h-8 w-0.5 bg-slate-400 dark:bg-slate-500 group-hover:bg-blue-600 rounded" />
                         </div>
                         <div
-                            className="flex-shrink-0 bg-white border-l border-slate-200 overflow-hidden"
+                            className="flex-shrink-0 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 overflow-hidden"
                             style={{ width: watchWidth }}
                         >
                             <WatchPanel />

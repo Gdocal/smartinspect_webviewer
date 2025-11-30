@@ -258,6 +258,7 @@ interface LogState {
     showStreamPanel: boolean;
     isStreamsMode: boolean; // True when Streams tab is active
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
+    theme: 'light' | 'dark'; // UI theme
 
     // Actions
     setConnected: (connected: boolean) => void;
@@ -318,6 +319,10 @@ interface LogState {
 
     // View editing
     setEditingViewId: (id: string | null) => void;
+
+    // Theme
+    setTheme: (theme: 'light' | 'dark') => void;
+    toggleTheme: () => void;
 
     // Get selected entry
     getSelectedEntry: () => LogEntry | null;
@@ -402,6 +407,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     showStreamPanel: false,
     isStreamsMode: false,
     editingViewId: null,
+    theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
 
     // Actions
     setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined }),
@@ -629,6 +635,17 @@ export const useLogStore = create<LogState>((set, get) => ({
 
     // View editing
     setEditingViewId: (id) => set({ editingViewId: id }),
+
+    // Theme
+    setTheme: (theme) => {
+        localStorage.setItem('si-theme', theme);
+        set({ theme });
+    },
+    toggleTheme: () => set((state) => {
+        const newTheme = state.theme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('si-theme', newTheme);
+        return { theme: newTheme };
+    }),
 
     // Get selected entry
     getSelectedEntry: () => {

@@ -155,10 +155,10 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-[400px] max-h-[90vh] overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[400px] max-h-[90vh] overflow-hidden">
                 {/* Header */}
-                <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-                    <h2 className="font-semibold text-slate-700 flex items-center gap-2">
+                <div className="bg-slate-100 dark:bg-slate-700 px-4 py-3 border-b border-slate-200 dark:border-slate-600 flex items-center justify-between">
+                    <h2 className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
                         </svg>
@@ -166,7 +166,7 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                     </h2>
                     <button
                         onClick={onClose}
-                        className="text-slate-400 hover:text-slate-600 transition-colors"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -177,11 +177,11 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                 {/* Content */}
                 <div className="p-4 space-y-4">
                     {error ? (
-                        <div className="text-red-500 text-sm bg-red-50 p-3 rounded">
+                        <div className="text-red-500 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/30 p-3 rounded">
                             Error: {error}
                         </div>
                     ) : !stats ? (
-                        <div className="text-slate-500 text-sm text-center py-4">
+                        <div className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">
                             Loading...
                         </div>
                     ) : (
@@ -189,18 +189,18 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                             {/* Memory Usage */}
                             <div>
                                 <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-slate-600 font-medium">Memory Usage</span>
-                                    <span className="text-slate-500">
+                                    <span className="text-slate-600 dark:text-slate-300 font-medium">Memory Usage</span>
+                                    <span className="text-slate-500 dark:text-slate-400">
                                         {formatBytes(stats.memory.heapUsed)} / {formatBytes(stats.memory.heapTotal)}
                                     </span>
                                 </div>
-                                <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="h-3 bg-slate-200 dark:bg-slate-600 rounded-full overflow-hidden">
                                     <div
                                         className="h-full bg-blue-500 transition-all duration-300"
                                         style={{ width: `${Math.min(memoryPercent, 100)}%` }}
                                     />
                                 </div>
-                                <div className="text-xs text-slate-400 mt-1">
+                                <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     RSS: {formatBytes(stats.memory.rss)}
                                 </div>
                             </div>
@@ -208,12 +208,12 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                             {/* Log Buffer */}
                             <div>
                                 <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-slate-600 font-medium">Log Buffer</span>
-                                    <span className="text-slate-500">
+                                    <span className="text-slate-600 dark:text-slate-300 font-medium">Log Buffer</span>
+                                    <span className="text-slate-500 dark:text-slate-400">
                                         {formatNumber(stats.rooms.totalLogs)} / {formatNumber(stats.rooms.maxEntriesPerRoom * stats.rooms.roomCount)}
                                     </span>
                                 </div>
-                                <div className="h-3 bg-slate-200 rounded-full overflow-hidden">
+                                <div className="h-3 bg-slate-200 dark:bg-slate-600 rounded-full overflow-hidden">
                                     <div
                                         className={`h-full transition-all duration-300 ${
                                             bufferPercent > 90 ? 'bg-red-500' :
@@ -222,44 +222,44 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                                         style={{ width: `${Math.min(bufferPercent, 100)}%` }}
                                     />
                                 </div>
-                                <div className="text-xs text-slate-400 mt-1">
+                                <div className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     {bufferPercent.toFixed(1)}% full
                                 </div>
                             </div>
 
                             {/* Stats Grid */}
                             <div className="grid grid-cols-3 gap-3 pt-2">
-                                <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Uptime</div>
-                                    <div className="text-lg font-semibold text-slate-700">
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded p-3">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Uptime</div>
+                                    <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
                                         {formatUptime(stats.uptime)}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Rooms</div>
-                                    <div className="text-lg font-semibold text-slate-700">
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded p-3">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Rooms</div>
+                                    <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
                                         {stats.rooms.roomCount}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Viewers</div>
-                                    <div className="text-lg font-semibold text-slate-700">
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded p-3">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Viewers</div>
+                                    <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
                                         {stats.connections.viewers}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 rounded p-3">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide">Log Sources</div>
-                                    <div className="text-lg font-semibold text-slate-700">
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded p-3">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Log Sources</div>
+                                    <div className="text-lg font-semibold text-slate-700 dark:text-slate-200">
                                         {stats.connections.clients}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 rounded p-3 col-span-2">
-                                    <div className="text-xs text-slate-500 uppercase tracking-wide mb-1">Buffer Size (per room)</div>
+                                <div className="bg-slate-50 dark:bg-slate-700 rounded p-3 col-span-2">
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Buffer Size (per room)</div>
                                     <select
                                         value={stats.rooms.maxEntriesPerRoom}
                                         onChange={(e) => handleBufferSizeChange(parseInt(e.target.value))}
                                         disabled={changingBuffer}
-                                        className="w-full text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50"
+                                        className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:opacity-50"
                                     >
                                         {BUFFER_SIZE_OPTIONS.map(opt => (
                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -272,10 +272,10 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                 </div>
 
                 {/* Footer */}
-                <div className="bg-slate-50 px-4 py-3 border-t border-slate-200 flex gap-2">
+                <div className="bg-slate-50 dark:bg-slate-700 px-4 py-3 border-t border-slate-200 dark:border-slate-600 flex gap-2">
                     <button
                         onClick={handleClearLogs}
-                        className="flex-1 px-3 py-2 text-sm bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200 rounded hover:bg-slate-50 dark:hover:bg-slate-500 transition-colors flex items-center justify-center gap-1"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -284,7 +284,7 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                     </button>
                     <button
                         onClick={handleClearWatches}
-                        className="flex-1 px-3 py-2 text-sm bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors flex items-center justify-center gap-1"
+                        className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-600 border border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200 rounded hover:bg-slate-50 dark:hover:bg-slate-500 transition-colors flex items-center justify-center gap-1"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
