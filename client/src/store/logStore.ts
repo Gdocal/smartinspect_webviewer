@@ -96,6 +96,7 @@ export interface TextFilter {
     value: string;
     operator: 'contains' | 'equals' | 'regex';
     inverse: boolean;
+    caseSensitive: boolean;
 }
 
 // Combined list + text filter - can use EITHER list selection OR text matching
@@ -149,7 +150,7 @@ export const defaultHighlightFilter: HighlightFilter = {
     entryTypesInverse: false,
     processId: null,
     processIdInverse: false,
-    titleFilter: { value: '', operator: 'contains', inverse: false }
+    titleFilter: { value: '', operator: 'contains', inverse: false, caseSensitive: false }
 };
 
 // Highlight style with optional dark theme variants
@@ -691,9 +692,12 @@ export function getLevelColor(level: number): string {
 const regexCache = new Map<string, RegExp | null>();
 const MAX_REGEX_CACHE_SIZE = 300;
 
-function getCachedRegex(pattern: string): RegExp | null {
-    if (regexCache.has(pattern)) {
-        return regexCache.get(pattern)!;
+function getCachedRegex(pattern: string, caseSensitive: boolean = false): RegExp | null {
+    // Include case sensitivity in cache key
+    const cacheKey = caseSensitive ? pattern : `i:${pattern}`;
+
+    if (regexCache.has(cacheKey)) {
+        return regexCache.get(cacheKey)!;
     }
 
     // Evict old entries if cache is full
@@ -703,11 +707,12 @@ function getCachedRegex(pattern: string): RegExp | null {
     }
 
     try {
-        const regex = new RegExp(pattern, 'i');
-        regexCache.set(pattern, regex);
+        const flags = caseSensitive ? '' : 'i';
+        const regex = new RegExp(pattern, flags);
+        regexCache.set(cacheKey, regex);
         return regex;
     } catch {
-        regexCache.set(pattern, null); // Cache invalid patterns too
+        regexCache.set(cacheKey, null); // Cache invalid patterns too
         return null;
     }
 }
@@ -721,13 +726,17 @@ function matchText(value: string | undefined, filter: TextFilter): boolean {
 
     switch (filter.operator) {
         case 'equals':
-            matches = text.toLowerCase() === filter.value.toLowerCase();
+            matches = filter.caseSensitive
+                ? text === filter.value
+                : text.toLowerCase() === filter.value.toLowerCase();
             break;
         case 'contains':
-            matches = text.toLowerCase().includes(filter.value.toLowerCase());
+            matches = filter.caseSensitive
+                ? text.includes(filter.value)
+                : text.toLowerCase().includes(filter.value.toLowerCase());
             break;
         case 'regex': {
-            const regex = getCachedRegex(filter.value);
+            const regex = getCachedRegex(filter.value, filter.caseSensitive);
             matches = regex ? regex.test(text) : false;
             break;
         }

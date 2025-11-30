@@ -1,7 +1,12 @@
 /**
- * HighlightRuleEditor - Unified component for editing highlight rules
- * Supports dual-mode filters (list selection OR text matching) for string fields
- * Supports dual-theme colors with auto-adapt or manual mode
+ * HighlightRuleEditor - Tabbed component for editing highlight rules
+ * Inspired by SmartInspect desktop app but with modern UI and dual-theme support
+ *
+ * Tabs:
+ * 1. General - Name, Enabled, Priority
+ * 2. Filters - Session, App, Host, Level, Entry Types, Process ID
+ * 3. Title - Title pattern matching
+ * 4. Style - Colors, presets, dual-theme
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -76,12 +81,44 @@ function validateRegex(pattern: string): { valid: boolean; error?: string } {
     }
 }
 
+// Custom checkbox component that works properly in dark mode
+interface CheckboxProps {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    className?: string;
+}
+
+function Checkbox({ checked, onChange, className = '' }: CheckboxProps) {
+    return (
+        <button
+            type="button"
+            role="checkbox"
+            aria-checked={checked}
+            onClick={() => onChange(!checked)}
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                checked
+                    ? 'bg-blue-500 border-blue-500'
+                    : 'bg-slate-100 dark:bg-slate-600 border-slate-300 dark:border-slate-500'
+            } ${className}`}
+        >
+            {checked && (
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+            )}
+        </button>
+    );
+}
+
+// Tab type
+type TabId = 'general' | 'filters' | 'title' | 'style';
+
 // Dual-mode filter component: Select from list OR use text filter
 interface ListTextFilterInputProps {
     label: string;
     filter: ListTextFilter;
     onChange: (filter: ListTextFilter) => void;
-    availableOptions: string[]; // Options from current logs
+    availableOptions: string[];
 }
 
 function ListTextFilterInput({ label, filter, onChange, availableOptions }: ListTextFilterInputProps) {
@@ -90,7 +127,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
     const [manualValue, setManualValue] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Close dropdown on outside click
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -101,7 +137,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Combine available options with selected values that might not be in current logs
     const allOptions = useMemo(() => {
         const set = new Set([...availableOptions, ...filter.values]);
         return Array.from(set).sort();
@@ -136,57 +171,46 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
 
     return (
         <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                    {label}
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                    <input
-                        type="checkbox"
-                        checked={filter.inverse}
-                        onChange={(e) => onChange({ ...filter, inverse: e.target.checked })}
-                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
-                    />
-                    Exclude
-                </label>
-            </div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                {label}
+            </label>
 
-            {/* Mode toggle */}
-            <div className="flex gap-1 mb-2">
+            {/* Mode toggle - subtle styling */}
+            <div className="flex gap-0.5 mb-2 p-0.5 bg-slate-100 dark:bg-slate-700 rounded-md w-fit">
                 <button
                     type="button"
                     onClick={() => onChange({ ...filter, mode: 'list' })}
-                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
                         filter.mode === 'list'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            ? 'bg-white dark:bg-slate-600 text-slate-700 dark:text-slate-200 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                 >
-                    Select from list
+                    List
                 </button>
                 <button
                     type="button"
                     onClick={() => onChange({ ...filter, mode: 'text' })}
-                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${
+                    className={`px-2.5 py-1 text-xs rounded transition-colors ${
                         filter.mode === 'text'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            ? 'bg-white dark:bg-slate-600 text-slate-700 dark:text-slate-200 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                     }`}
                 >
-                    Text filter
+                    Text
                 </button>
             </div>
 
             {filter.mode === 'list' ? (
-                /* List mode */
-                <div ref={dropdownRef} className="relative">
-                    <button
-                        type="button"
-                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                        className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between ${
-                            filter.inverse && filter.values.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
-                        }`}
-                    >
+                <div className="flex items-center gap-2">
+                    <div ref={dropdownRef} className="relative flex-1">
+                        <button
+                            type="button"
+                            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between ${
+                                filter.inverse && filter.values.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
+                            }`}
+                        >
                         <span className={filter.values.length === 0 ? 'text-slate-400' : filter.inverse ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}>
                             {filter.values.length === 0
                                 ? `All ${label.toLowerCase()}`
@@ -203,7 +227,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
 
                     {isDropdownOpen && (
                         <div className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-72 overflow-hidden">
-                            {/* Search input */}
                             <div className="p-2 border-b border-slate-100 dark:border-slate-600">
                                 <input
                                     type="text"
@@ -215,7 +238,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                 />
                             </div>
 
-                            {/* Quick actions */}
                             <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-2">
                                 <button type="button" onClick={() => onChange({ ...filter, values: [...allOptions] })} className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
                                     Select All
@@ -225,7 +247,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                 </button>
                             </div>
 
-                            {/* Add manual value */}
                             <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-1">
                                 <input
                                     type="text"
@@ -245,18 +266,16 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                 </button>
                             </div>
 
-                            {/* Options list */}
                             <div className="overflow-auto max-h-40">
                                 {filteredOptions.length === 0 ? (
                                     <div className="px-3 py-2 text-sm text-slate-400">No matches</div>
                                 ) : (
                                     filteredOptions.map(option => (
                                         <label key={option} className="flex items-center px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer">
-                                            <input
-                                                type="checkbox"
+                                            <Checkbox
                                                 checked={filter.values.includes(option)}
                                                 onChange={() => toggleOption(option)}
-                                                className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 mr-2"
+                                                className="mr-2"
                                             />
                                             <span className={`text-sm truncate ${!availableOptions.includes(option) ? 'text-slate-400 italic' : 'text-slate-700 dark:text-slate-200'}`}>
                                                 {option}
@@ -267,7 +286,6 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                 )}
                             </div>
 
-                            {/* Selected tags */}
                             {filter.values.length > 0 && (
                                 <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-600 flex flex-wrap gap-1 max-h-20 overflow-auto">
                                     {filter.values.map(v => (
@@ -284,11 +302,17 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                             )}
                         </div>
                     )}
+                    </div>
+                    <div title="Inverse">
+                        <Checkbox
+                            checked={filter.inverse}
+                            onChange={(checked) => onChange({ ...filter, inverse: checked })}
+                        />
+                    </div>
                 </div>
             ) : (
-                /* Text mode */
                 <div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                         <select
                             value={filter.textOperator}
                             onChange={(e) => onChange({ ...filter, textOperator: e.target.value as ListTextFilter['textOperator'] })}
@@ -307,6 +331,12 @@ function ListTextFilterInput({ label, filter, onChange, availableOptions }: List
                                 regexError ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : filter.inverse && filter.textValue ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                             }`}
                         />
+                        <div title="Inverse">
+                            <Checkbox
+                                checked={filter.inverse}
+                                onChange={(checked) => onChange({ ...filter, inverse: checked })}
+                            />
+                        </div>
                     </div>
                     {regexError && (
                         <p className="mt-1 text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
@@ -339,23 +369,17 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
         }
     };
 
+    const allLevels = levelOptions.map(l => l.value);
+    const selectAll = () => onChange([...allLevels]);
+    const clearAll = () => onChange([]);
+
     return (
         <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                    Levels
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                    <input
-                        type="checkbox"
-                        checked={inverse}
-                        onChange={(e) => onInverseChange(e.target.checked)}
-                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
-                    />
-                    Exclude
-                </label>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                Levels
+            </label>
+            <div className="flex items-center gap-2 mb-1.5">
+                <div className="flex flex-wrap gap-1.5 flex-1">
                 {levelOptions.map(({ value, label }) => (
                     <button
                         key={value}
@@ -372,6 +396,21 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
                         {label}
                     </button>
                 ))}
+                </div>
+                <div title="Inverse">
+                    <Checkbox
+                        checked={inverse}
+                        onChange={onInverseChange}
+                    />
+                </div>
+            </div>
+            <div className="flex gap-2">
+                <button type="button" onClick={selectAll} className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
+                    Select All
+                </button>
+                <button type="button" onClick={clearAll} className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                    Clear
+                </button>
             </div>
             {selected.length === 0 && (
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All levels when none selected</p>
@@ -404,38 +443,35 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
 
     return (
         <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                    Entry Types
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                    <input
-                        type="checkbox"
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                Entry Types
+            </label>
+            <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => setExpanded(!expanded)}
+                    className={`flex-1 px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 flex items-center justify-between ${
+                        inverse && selected.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
+                    }`}
+                >
+                    <span className={selected.length === 0 ? 'text-slate-400' : inverse ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}>
+                        {selected.length === 0
+                            ? 'All entry types'
+                            : inverse
+                                ? `Excluding ${selected.length} type${selected.length > 1 ? 's' : ''}`
+                                : `${selected.length} type${selected.length > 1 ? 's' : ''} selected`}
+                    </span>
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                <div title="Inverse">
+                    <Checkbox
                         checked={inverse}
-                        onChange={(e) => onInverseChange(e.target.checked)}
-                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
+                        onChange={onInverseChange}
                     />
-                    Exclude
-                </label>
+                </div>
             </div>
-            <button
-                type="button"
-                onClick={() => setExpanded(!expanded)}
-                className={`w-full px-3 py-2 border rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 flex items-center justify-between ${
-                    inverse && selected.length > 0 ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
-                }`}
-            >
-                <span className={selected.length === 0 ? 'text-slate-400' : inverse ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200'}>
-                    {selected.length === 0
-                        ? 'All entry types'
-                        : inverse
-                            ? `Excluding ${selected.length} type${selected.length > 1 ? 's' : ''}`
-                            : `${selected.length} type${selected.length > 1 ? 's' : ''} selected`}
-                </span>
-                <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-            </button>
             {expanded && (
                 <div className="mt-2 border border-slate-200 dark:border-slate-600 rounded-lg p-2 max-h-48 overflow-auto">
                     {Object.entries(entryTypeGroups).map(([group, types]) => (
@@ -492,21 +528,10 @@ function TextFilterInput({ label, filter, onChange }: TextFilterInputProps) {
 
     return (
         <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                    {label}
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                    <input
-                        type="checkbox"
-                        checked={filter.inverse}
-                        onChange={(e) => onChange({ ...filter, inverse: e.target.checked })}
-                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
-                    />
-                    Exclude
-                </label>
-            </div>
-            <div className="flex gap-2">
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                {label}
+            </label>
+            <div className="flex gap-2 items-center">
                 <select
                     value={filter.operator}
                     onChange={(e) => onChange({ ...filter, operator: e.target.value as TextFilter['operator'] })}
@@ -525,6 +550,24 @@ function TextFilterInput({ label, filter, onChange }: TextFilterInputProps) {
                         regexError ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : filter.inverse && filter.value ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
                     }`}
                 />
+                <button
+                    type="button"
+                    onClick={() => onChange({ ...filter, caseSensitive: !filter.caseSensitive })}
+                    title="Case Sensitive"
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg border text-sm font-bold transition-colors ${
+                        filter.caseSensitive
+                            ? 'bg-blue-500 border-blue-500 text-white'
+                            : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-slate-300 dark:hover:border-slate-500'
+                    }`}
+                >
+                    Aa
+                </button>
+                <div title="Inverse">
+                    <Checkbox
+                        checked={filter.inverse}
+                        onChange={(checked) => onChange({ ...filter, inverse: checked })}
+                    />
+                </div>
             </div>
             {regexError && (
                 <p className="mt-1 text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
@@ -556,10 +599,12 @@ export function HighlightRuleEditor({
     availableAppNames = [],
     availableHostNames = []
 }: HighlightRuleEditorProps) {
+    const [activeTab, setActiveTab] = useState<TabId>('general');
     const [name, setName] = useState(rule?.name || 'New Rule');
     const [enabled, setEnabled] = useState(rule?.enabled ?? true);
     const [priority, setPriority] = useState(rule?.priority ?? 1);
     const [filter, setFilter] = useState<HighlightFilter>(rule?.filter || { ...defaultHighlightFilter });
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
     // Color state - light theme colors
     const [bgColor, setBgColor] = useState(rule?.style.backgroundColor || '#eff6ff');
@@ -585,26 +630,21 @@ export function HighlightRuleEditor({
         if (colorMode === 'manual' && textColorDark !== undefined) {
             return textColorDark;
         }
-        // Auto-adapt text color, ensuring good contrast with dark background
         const adaptedBg = adaptColorForTheme(bgColor, 'dark');
         return adaptTextColor(textColor, adaptedBg, 'dark');
     }, [colorMode, textColorDark, textColor, bgColor]);
 
     // Check if filter is valid (no regex errors)
     const isValid = useMemo(() => {
-        // Check title filter
         if (filter.titleFilter.operator === 'regex' && filter.titleFilter.value) {
             if (!validateRegex(filter.titleFilter.value).valid) return false;
         }
-        // Check session filter in text mode
         if (filter.sessionFilter.mode === 'text' && filter.sessionFilter.textOperator === 'regex' && filter.sessionFilter.textValue) {
             if (!validateRegex(filter.sessionFilter.textValue).valid) return false;
         }
-        // Check app name filter in text mode
         if (filter.appNameFilter.mode === 'text' && filter.appNameFilter.textOperator === 'regex' && filter.appNameFilter.textValue) {
             if (!validateRegex(filter.appNameFilter.textValue).valid) return false;
         }
-        // Check host name filter in text mode
         if (filter.hostNameFilter.mode === 'text' && filter.hostNameFilter.textOperator === 'regex' && filter.hostNameFilter.textValue) {
             if (!validateRegex(filter.hostNameFilter.textValue).valid) return false;
         }
@@ -622,7 +662,6 @@ export function HighlightRuleEditor({
                 backgroundColor: bgColor,
                 textColor,
                 fontWeight,
-                // Only save dark colors if in manual mode (auto = undefined = recalculate)
                 backgroundColorDark: colorMode === 'manual' ? effectiveBgColorDark : undefined,
                 textColorDark: colorMode === 'manual' ? effectiveTextColorDark : undefined
             }
@@ -632,17 +671,14 @@ export function HighlightRuleEditor({
     const applyPreset = (preset: typeof colorPresets[0]) => {
         setBgColor(preset.bg);
         setTextColor(preset.text);
-        // If in manual mode, also set dark colors from preset
         if (colorMode === 'manual') {
             setBgColorDark(preset.bgDark);
             setTextColorDark(preset.textDark);
         }
     };
 
-    // Handler for switching to manual mode
     const handleSwitchToManual = () => {
         setColorMode('manual');
-        // Initialize dark colors with current auto-adapted values
         setBgColorDark(effectiveBgColorDark);
         setTextColorDark(effectiveTextColorDark);
     };
@@ -651,146 +687,276 @@ export function HighlightRuleEditor({
         setFilter(f => ({ ...f, [key]: value }));
     };
 
+    const tabs: { id: TabId; label: string; icon: JSX.Element }[] = [
+        {
+            id: 'general',
+            label: 'General',
+            icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            )
+        },
+        {
+            id: 'filters',
+            label: 'Filters',
+            icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                </svg>
+            )
+        },
+        {
+            id: 'title',
+            label: 'Title',
+            icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+            )
+        },
+        {
+            id: 'style',
+            label: 'Style',
+            icon: (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                </svg>
+            )
+        }
+    ];
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[600px] h-[700px] flex flex-col overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-[520px] max-h-[85vh] flex flex-col overflow-hidden">
+                {/* Header */}
                 <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex-shrink-0">
                     <h3 className="font-semibold text-slate-800 dark:text-slate-200">
                         {rule ? 'Edit Highlight Rule' : 'Create Highlight Rule'}
                     </h3>
                 </div>
 
-                <div className="p-4 overflow-auto flex-1 min-h-0">
-                    {/* Name */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                            Rule Name
-                        </label>
-                        <input
-                            type="text"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                        />
-                    </div>
+                {/* Tabs */}
+                <div className="flex border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex-shrink-0">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                                activeTab === tab.id
+                                    ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800'
+                                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            {tab.icon}
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
 
-                    {/* Enabled & Priority */}
-                    <div className="flex gap-4 mb-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={enabled}
-                                onChange={(e) => setEnabled(e.target.checked)}
-                                className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
-                            />
-                            <span className="text-sm text-slate-700 dark:text-slate-200">Enabled</span>
-                        </label>
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm text-slate-600 dark:text-slate-400">Priority:</label>
-                            <input
-                                type="number"
-                                value={priority}
-                                onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
-                                className="w-16 px-2 py-1 border border-slate-200 dark:border-slate-600 rounded text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
-                                min={1}
-                                max={100}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="border-t border-slate-200 dark:border-slate-600 pt-4 mt-4">
-                        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">Filter Conditions</h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                            Log entries must match ALL conditions to be highlighted. Empty filters match everything.
-                        </p>
-
-                        {/* Sessions - dual mode */}
-                        <ListTextFilterInput
-                            label="Sessions"
-                            filter={filter.sessionFilter}
-                            onChange={(v) => updateFilter('sessionFilter', v)}
-                            availableOptions={availableSessions}
-                        />
-
-                        {/* Levels */}
-                        <LevelSelect
-                            selected={filter.levels}
-                            onChange={(v) => updateFilter('levels', v)}
-                            inverse={filter.levelsInverse}
-                            onInverseChange={(v) => updateFilter('levelsInverse', v)}
-                        />
-
-                        {/* App Names - dual mode */}
-                        <ListTextFilterInput
-                            label="Application Names"
-                            filter={filter.appNameFilter}
-                            onChange={(v) => updateFilter('appNameFilter', v)}
-                            availableOptions={availableAppNames}
-                        />
-
-                        {/* Host Names - dual mode */}
-                        <ListTextFilterInput
-                            label="Host Names"
-                            filter={filter.hostNameFilter}
-                            onChange={(v) => updateFilter('hostNameFilter', v)}
-                            availableOptions={availableHostNames}
-                        />
-
-                        {/* Entry Types */}
-                        <EntryTypeSelect
-                            selected={filter.entryTypes}
-                            onChange={(v) => updateFilter('entryTypes', v)}
-                            inverse={filter.entryTypesInverse}
-                            onInverseChange={(v) => updateFilter('entryTypesInverse', v)}
-                        />
-
-                        {/* Process ID */}
-                        <div className="mb-4">
-                            <div className="flex items-center justify-between mb-1.5">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                                    Process ID
+                {/* Tab Content - fixed height prevents size jumping between tabs */}
+                <div className="p-4 overflow-auto h-[340px]">
+                    {/* General Tab */}
+                    {activeTab === 'general' && (
+                        <div>
+                            <div className="mb-4">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Rule Name
                                 </label>
-                                <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={filter.processIdInverse}
-                                        onChange={(e) => updateFilter('processIdInverse', e.target.checked)}
-                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5"
-                                    />
-                                    Exclude
-                                </label>
+                                <input
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                    autoFocus
+                                />
                             </div>
-                            <input
-                                type="number"
-                                value={filter.processId ?? ''}
-                                onChange={(e) => updateFilter('processId', e.target.value ? parseInt(e.target.value) : null)}
-                                placeholder="Any process"
-                                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100 ${
-                                    filter.processIdInverse && filter.processId !== null ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
-                                }`}
-                            />
+
+                            <div className="flex gap-6 mb-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <Checkbox
+                                        checked={enabled}
+                                        onChange={setEnabled}
+                                    />
+                                    <span className="text-sm text-slate-700 dark:text-slate-200">Enabled</span>
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-sm text-slate-600 dark:text-slate-400">Priority:</label>
+                                    <input
+                                        type="number"
+                                        value={priority}
+                                        onChange={(e) => setPriority(parseInt(e.target.value) || 1)}
+                                        className="w-16 px-2 py-1.5 border border-slate-200 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-slate-100"
+                                        min={1}
+                                        max={100}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-sm text-slate-600 dark:text-slate-400">
+                                <p className="flex items-start gap-2">
+                                    <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Enter a descriptive name for this rule. Higher priority rules are applied first when multiple rules match.
+                                </p>
+                            </div>
                         </div>
+                    )}
 
-                        {/* Title Filter */}
-                        <TextFilterInput
-                            label="Title"
-                            filter={filter.titleFilter}
-                            onChange={(v) => updateFilter('titleFilter', v)}
-                        />
-                    </div>
+                    {/* Filters Tab */}
+                    {activeTab === 'filters' && (
+                        <div>
+                            <ListTextFilterInput
+                                label="Sessions"
+                                filter={filter.sessionFilter}
+                                onChange={(v) => updateFilter('sessionFilter', v)}
+                                availableOptions={availableSessions}
+                            />
 
-                    {/* Style Section */}
-                    <div className="border-t border-slate-200 dark:border-slate-600 pt-4 mt-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Style</h4>
+                            <LevelSelect
+                                selected={filter.levels}
+                                onChange={(v) => updateFilter('levels', v)}
+                                inverse={filter.levelsInverse}
+                                onInverseChange={(v) => updateFilter('levelsInverse', v)}
+                            />
+
+                            {/* Advanced Filters Section */}
+                            <div className="mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                                    className="flex items-center gap-2 w-full text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                >
+                                    <svg
+                                        className={`w-4 h-4 transition-transform ${showAdvancedFilters ? 'rotate-90' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    Advanced Filters
+                                </button>
+
+                                {showAdvancedFilters && (
+                                    <div className="mt-3">
+                                        <ListTextFilterInput
+                                            label="Application Names"
+                                            filter={filter.appNameFilter}
+                                            onChange={(v) => updateFilter('appNameFilter', v)}
+                                            availableOptions={availableAppNames}
+                                        />
+
+                                        <ListTextFilterInput
+                                            label="Host Names"
+                                            filter={filter.hostNameFilter}
+                                            onChange={(v) => updateFilter('hostNameFilter', v)}
+                                            availableOptions={availableHostNames}
+                                        />
+
+                                        <EntryTypeSelect
+                                            selected={filter.entryTypes}
+                                            onChange={(v) => updateFilter('entryTypes', v)}
+                                            inverse={filter.entryTypesInverse}
+                                            onInverseChange={(v) => updateFilter('entryTypesInverse', v)}
+                                        />
+
+                                        <div className="mb-4">
+                                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                                Process ID
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="number"
+                                                    value={filter.processId ?? ''}
+                                                    onChange={(e) => updateFilter('processId', e.target.value ? parseInt(e.target.value) : null)}
+                                                    placeholder="Any process"
+                                                    className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100 ${
+                                                        filter.processIdInverse && filter.processId !== null ? 'border-red-300 bg-red-50 dark:bg-red-900/30' : 'border-slate-200 dark:border-slate-600'
+                                                    }`}
+                                                />
+                                                <div title="Inverse">
+                                                    <Checkbox
+                                                        checked={filter.processIdInverse}
+                                                        onChange={(checked) => updateFilter('processIdInverse', checked)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Title Tab */}
+                    {activeTab === 'title' && (
+                        <div>
+                            <TextFilterInput
+                                label="Title Pattern"
+                                filter={filter.titleFilter}
+                                onChange={(v) => updateFilter('titleFilter', v)}
+                            />
+
+                            <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-sm text-slate-600 dark:text-slate-400">
+                                <p className="mb-2 font-medium text-slate-700 dark:text-slate-300">Pattern Matching Tips:</p>
+                                <ul className="space-y-1 text-xs">
+                                    <li><strong>Contains:</strong> Simple text search (case-insensitive)</li>
+                                    <li><strong>Equals:</strong> Exact match required</li>
+                                    <li><strong>Regex:</strong> Full regular expression support</li>
+                                </ul>
+                                <p className="mt-2 text-xs">Use the "Exclude" option to match entries that do NOT contain the pattern.</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Style Tab */}
+                    {activeTab === 'style' && (
+                        <div>
+                            {/* Presets */}
+                            <div className="mb-4">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
+                                    Quick Presets
+                                </label>
+                                <div className="flex gap-2">
+                                    {colorPresets.map(preset => (
+                                        <button
+                                            key={preset.name}
+                                            type="button"
+                                            onClick={() => applyPreset(preset)}
+                                            className="w-10 h-10 rounded-lg border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors relative group shadow-sm"
+                                            style={{
+                                                background: `linear-gradient(135deg, ${preset.bg} 50%, ${preset.bgDark} 50%)`
+                                            }}
+                                            title={preset.name}
+                                        >
+                                            <span
+                                                className="absolute inset-0 flex items-center justify-center text-sm font-bold"
+                                                style={{
+                                                    background: `linear-gradient(135deg, ${preset.text} 50%, ${preset.textDark} 50%)`,
+                                                    WebkitBackgroundClip: 'text',
+                                                    WebkitTextFillColor: 'transparent',
+                                                    backgroundClip: 'text'
+                                                }}
+                                            >
+                                                A
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
                             {/* Auto/Manual toggle */}
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-500 dark:text-slate-400">Dark theme colors:</span>
+                            <div className="mb-4 flex items-center justify-between">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                                    Dark Theme Colors
+                                </label>
                                 <div className="flex gap-1">
                                     <button
                                         type="button"
                                         onClick={() => setColorMode('auto')}
-                                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${
                                             colorMode === 'auto'
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -801,7 +967,7 @@ export function HighlightRuleEditor({
                                     <button
                                         type="button"
                                         onClick={handleSwitchToManual}
-                                        className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${
                                             colorMode === 'manual'
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -811,160 +977,117 @@ export function HighlightRuleEditor({
                                     </button>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Presets */}
-                        <div className="mb-3">
-                            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Quick Presets</label>
-                            <div className="flex gap-1.5">
-                                {colorPresets.map(preset => (
-                                    <button
-                                        key={preset.name}
-                                        type="button"
-                                        onClick={() => applyPreset(preset)}
-                                        className="w-8 h-8 rounded border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors relative group"
-                                        style={{
-                                            background: `linear-gradient(135deg, ${preset.bg} 50%, ${preset.bgDark} 50%)`
-                                        }}
-                                        title={preset.name}
-                                    >
-                                        <span
-                                            className="absolute inset-0 flex items-center justify-center text-xs font-bold"
-                                            style={{
-                                                background: `linear-gradient(135deg, ${preset.text} 50%, ${preset.textDark} 50%)`,
-                                                WebkitBackgroundClip: 'text',
-                                                WebkitTextFillColor: 'transparent',
-                                                backgroundClip: 'text'
-                                            }}
-                                        >
-                                            A
-                                        </span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Color pickers - Light theme (always shown) */}
-                        <div className="mb-3">
-                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                                </svg>
-                                Light Theme
-                            </label>
-                            <div className="flex gap-3 items-center">
-                                <div>
-                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
-                                    <input
-                                        type="color"
-                                        value={bgColor}
-                                        onChange={(e) => setBgColor(e.target.value)}
-                                        className="w-14 h-7 rounded cursor-pointer"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
-                                    <input
-                                        type="color"
-                                        value={textColor}
-                                        onChange={(e) => setTextColor(e.target.value)}
-                                        className="w-14 h-7 rounded cursor-pointer"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
-                                    <select
-                                        value={fontWeight}
-                                        onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
-                                        className="px-2 py-1 border border-slate-200 dark:border-slate-600 rounded text-xs bg-white dark:bg-slate-700 dark:text-slate-200"
-                                    >
-                                        <option value="normal">Normal</option>
-                                        <option value="bold">Bold</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Color pickers - Dark theme (only in manual mode) */}
-                        {colorMode === 'manual' && (
-                            <div className="mb-3">
-                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-                                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                            {/* Color pickers - Light theme */}
+                            <div className="mb-4 p-3 bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg">
+                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
                                     </svg>
-                                    Dark Theme
+                                    Light Theme
                                 </label>
-                                <div className="flex gap-3 items-center">
+                                <div className="flex gap-4 items-center">
                                     <div>
                                         <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
                                         <input
                                             type="color"
-                                            value={bgColorDark || effectiveBgColorDark}
-                                            onChange={(e) => setBgColorDark(e.target.value)}
-                                            className="w-14 h-7 rounded cursor-pointer"
+                                            value={bgColor}
+                                            onChange={(e) => setBgColor(e.target.value)}
+                                            className="w-16 h-8 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
                                         <input
                                             type="color"
-                                            value={textColorDark || effectiveTextColorDark}
-                                            onChange={(e) => setTextColorDark(e.target.value)}
-                                            className="w-14 h-7 rounded cursor-pointer"
+                                            value={textColor}
+                                            onChange={(e) => setTextColor(e.target.value)}
+                                            className="w-16 h-8 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
                                         />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
+                                        <select
+                                            value={fontWeight}
+                                            onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
+                                            className="px-2 py-1.5 border border-slate-200 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 dark:text-slate-200"
+                                        >
+                                            <option value="normal">Normal</option>
+                                            <option value="bold">Bold</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Preview</label>
+                                        <div
+                                            className="px-3 py-1.5 rounded border border-slate-200 text-sm"
+                                            style={{
+                                                backgroundColor: bgColor,
+                                                color: textColor,
+                                                fontWeight
+                                            }}
+                                        >
+                                            Sample log entry
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Dual Preview - side by side */}
-                        <div>
-                            <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1.5">Preview</label>
-                            <div className="flex gap-2">
-                                {/* Light theme preview */}
-                                <div className="flex-1">
-                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mb-0.5 flex items-center gap-1">
-                                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                                        </svg>
-                                        Light
-                                    </div>
-                                    <div
-                                        className="px-2 py-1.5 rounded border border-slate-200 text-xs"
-                                        style={{
-                                            backgroundColor: bgColor,
-                                            color: textColor,
-                                            fontWeight
-                                        }}
-                                    >
-                                        Sample log entry
-                                    </div>
-                                </div>
-                                {/* Dark theme preview */}
-                                <div className="flex-1">
-                                    <div className="text-[10px] text-slate-400 dark:text-slate-500 mb-0.5 flex items-center gap-1">
-                                        <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                                        </svg>
-                                        Dark
-                                        {colorMode === 'auto' && <span className="text-blue-500">(auto)</span>}
-                                    </div>
-                                    <div
-                                        className="px-2 py-1.5 rounded border border-slate-600 text-xs"
-                                        style={{
-                                            backgroundColor: effectiveBgColorDark,
-                                            color: effectiveTextColorDark,
-                                            fontWeight
-                                        }}
-                                    >
-                                        Sample log entry
+                            {/* Color pickers - Dark theme */}
+                            <div className="mb-4 p-3 bg-slate-800 border border-slate-600 rounded-lg">
+                                <label className="block text-xs font-medium text-slate-300 mb-2 flex items-center gap-1.5">
+                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                                    </svg>
+                                    Dark Theme
+                                    {colorMode === 'auto' && <span className="text-blue-400 text-[10px]">(auto-calculated)</span>}
+                                </label>
+                                <div className="flex gap-4 items-center">
+                                    {colorMode === 'manual' ? (
+                                        <>
+                                            <div>
+                                                <label className="block text-xs text-slate-400 mb-1">Background</label>
+                                                <input
+                                                    type="color"
+                                                    value={bgColorDark || effectiveBgColorDark}
+                                                    onChange={(e) => setBgColorDark(e.target.value)}
+                                                    className="w-16 h-8 rounded cursor-pointer border border-slate-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-400 mb-1">Text</label>
+                                                <input
+                                                    type="color"
+                                                    value={textColorDark || effectiveTextColorDark}
+                                                    onChange={(e) => setTextColorDark(e.target.value)}
+                                                    className="w-16 h-8 rounded cursor-pointer border border-slate-600"
+                                                />
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="text-xs text-slate-400">
+                                            Colors are automatically calculated from light theme
+                                        </div>
+                                    )}
+                                    <div className="flex-1">
+                                        <label className="block text-xs text-slate-400 mb-1">Preview</label>
+                                        <div
+                                            className="px-3 py-1.5 rounded border border-slate-600 text-sm"
+                                            style={{
+                                                backgroundColor: effectiveBgColorDark,
+                                                color: effectiveTextColorDark,
+                                                fontWeight
+                                            }}
+                                        >
+                                            Sample log entry
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
+                {/* Footer */}
                 <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex justify-end gap-2 flex-shrink-0">
                     <button
                         onClick={onCancel}

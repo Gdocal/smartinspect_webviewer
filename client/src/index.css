@@ -136,6 +136,17 @@ html, body, #root {
     padding: 0;
 }
 
+/* Dark mode checkbox styling */
+.dark input[type="checkbox"] {
+    accent-color: #3b82f6; /* blue-500 */
+}
+
+/* Ensure checkboxes have proper background in dark mode */
+.dark input[type="checkbox"]:not(:checked) {
+    background-color: #334155; /* slate-700 */
+    border-color: #475569; /* slate-600 */
+}
+
 /* Custom scrollbar - Light mode */
 ::-webkit-scrollbar {
     width: 8px;
