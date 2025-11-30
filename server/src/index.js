@@ -438,6 +438,163 @@ app.delete('/api/settings', (req, res) => {
     });
 });
 
+// ==================== Layout Presets API ====================
+
+/**
+ * GET /api/presets - List user's presets + shared presets in room
+ */
+app.get('/api/presets', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    const presets = settingsDB.listPresets(roomId, userId);
+    res.json({
+        room: roomId,
+        user: userId,
+        presets
+    });
+});
+
+/**
+ * GET /api/presets/default - Get the user's default preset
+ */
+app.get('/api/presets/default', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    const preset = settingsDB.getDefaultPreset(roomId, userId);
+    res.json({
+        room: roomId,
+        user: userId,
+        preset
+    });
+});
+
+/**
+ * GET /api/presets/:id - Get a specific preset
+ */
+app.get('/api/presets/:id', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+
+    const preset = settingsDB.getPreset(roomId, userId, id);
+    if (!preset) {
+        return res.status(404).json({ error: 'Preset not found' });
+    }
+    res.json({
+        room: roomId,
+        user: userId,
+        preset
+    });
+});
+
+/**
+ * POST /api/presets - Create a new preset
+ */
+app.post('/api/presets', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const presetData = req.body;
+
+    if (!presetData.name) {
+        return res.status(400).json({ error: 'name is required' });
+    }
+
+    try {
+        const preset = settingsDB.createPreset(roomId, userId, presetData);
+        res.json({
+            success: true,
+            room: roomId,
+            user: userId,
+            preset
+        });
+    } catch (err) {
+        console.error('[Presets] Create error:', err.message);
+        res.status(500).json({ error: 'Failed to create preset' });
+    }
+});
+
+/**
+ * PUT /api/presets/:id - Update a preset (owner only)
+ */
+app.put('/api/presets/:id', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+    const updates = req.body;
+
+    const preset = settingsDB.updatePreset(roomId, userId, id, updates);
+    if (!preset) {
+        return res.status(404).json({ error: 'Preset not found or access denied' });
+    }
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId,
+        preset
+    });
+});
+
+/**
+ * DELETE /api/presets/:id - Delete a preset (owner only)
+ */
+app.delete('/api/presets/:id', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+
+    const deleted = settingsDB.deletePreset(roomId, userId, id);
+    if (!deleted) {
+        return res.status(404).json({ error: 'Preset not found or access denied' });
+    }
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId
+    });
+});
+
+/**
+ * POST /api/presets/:id/copy - Copy a shared preset to own collection
+ */
+app.post('/api/presets/:id/copy', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+    const { name } = req.body;
+
+    const newPreset = settingsDB.copyPreset(roomId, userId, id, name);
+    if (!newPreset) {
+        return res.status(404).json({ error: 'Source preset not found' });
+    }
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId,
+        preset: newPreset
+    });
+});
+
+/**
+ * PUT /api/presets/:id/default - Set as default preset
+ */
+app.put('/api/presets/:id/default', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+
+    const success = settingsDB.setDefaultPreset(roomId, userId, id);
+    if (!success) {
+        return res.status(404).json({ error: 'Preset not found' });
+    }
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId
+    });
+});
+
 // ==================== Auth API (for optional authentication) ====================
 
 /**

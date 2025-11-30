@@ -6,6 +6,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useLayout } from './hooks/useLayout';
+import { useLayoutPresets } from './hooks/useLayoutPresets';
 import { useViewsSync } from './hooks/useViewsSync';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { useLogStore, StreamEntry } from './store/logStore';
@@ -20,10 +21,38 @@ import { StatusBar } from './components/StatusBar';
 import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
 import { SettingsPanel } from './components/SettingsPanel';
+import { LayoutPresetDropdown } from './components/LayoutPresetDropdown';
 import { ColumnState } from 'ag-grid-community';
 
 export function App() {
-    const { layout, saveLayout, resetLayout, exportLayout, importLayout } = useLayout();
+    const {
+        layout,
+        saveLayout,
+        resetLayout,
+        exportLayout,
+        importLayout,
+        getDetailPanelHeightPx,
+        getWatchPanelWidthPx,
+        updateDetailPanelHeightFromPx,
+        updateWatchPanelWidthFromPx
+    } = useLayout();
+
+    // Layout presets management
+    const {
+        activePreset,
+        ownPresets,
+        sharedPresets,
+        loading: presetsLoading,
+        loadPreset,
+        saveAsNewPreset,
+        updateActivePreset,
+        deletePreset,
+        copyPreset,
+        setAsDefault,
+        updatePresetMetadata,
+        updateColumnState
+    } = useLayoutPresets();
+
     const {
         showDetailPanel,
         showWatchPanel,
@@ -73,9 +102,7 @@ export function App() {
     // PWA install
     const { canInstall, install, showInstallHint, installInfo, dismissHint } = usePWAInstall();
 
-    // Resizable panel heights/widths
-    const [detailHeight, setDetailHeight] = useState(250);
-    const [watchWidth, setWatchWidth] = useState(320);
+    // Resizable panel heights/widths - now percentage-based
     const resizingRef = useRef<'detail' | 'watch' | null>(null);
     const startPosRef = useRef(0);
     const startSizeRef = useRef(0);
@@ -86,9 +113,10 @@ export function App() {
     // Sync views and highlights with server
     useViewsSync();
 
-    const handleColumnStateChange = (state: ColumnState[]) => {
+    const handleColumnStateChange = useCallback((state: ColumnState[]) => {
         saveLayout({ columnState: state });
-    };
+        updateColumnState(state);
+    }, [saveLayout, updateColumnState]);
 
     const handleImportClick = () => {
         fileInputRef.current?.click();
@@ -102,12 +130,12 @@ export function App() {
         e.target.value = '';
     };
 
-    // Resize handlers
+    // Resize handlers - now update percentage-based sizes
     const startResize = useCallback((type: 'detail' | 'watch', e: React.MouseEvent) => {
         e.preventDefault();
         resizingRef.current = type;
         startPosRef.current = type === 'detail' ? e.clientY : e.clientX;
-        startSizeRef.current = type === 'detail' ? detailHeight : watchWidth;
+        startSizeRef.current = type === 'detail' ? getDetailPanelHeightPx() : getWatchPanelWidthPx();
 
         const handleMouseMove = (e: MouseEvent) => {
             if (!resizingRef.current) return;
@@ -115,11 +143,11 @@ export function App() {
             if (resizingRef.current === 'detail') {
                 const delta = startPosRef.current - e.clientY;
                 const newHeight = Math.max(100, Math.min(600, startSizeRef.current + delta));
-                setDetailHeight(newHeight);
+                updateDetailPanelHeightFromPx(newHeight);
             } else {
                 const delta = startPosRef.current - e.clientX;
                 const newWidth = Math.max(200, Math.min(600, startSizeRef.current + delta));
-                setWatchWidth(newWidth);
+                updateWatchPanelWidthFromPx(newWidth);
             }
         };
 
@@ -135,7 +163,7 @@ export function App() {
         document.addEventListener('mouseup', handleMouseUp);
         document.body.style.cursor = type === 'detail' ? 'ns-resize' : 'ew-resize';
         document.body.style.userSelect = 'none';
-    }, [detailHeight, watchWidth]);
+    }, [getDetailPanelHeightPx, getWatchPanelWidthPx, updateDetailPanelHeightFromPx, updateWatchPanelWidthFromPx]);
 
     return (
         <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
@@ -152,6 +180,21 @@ export function App() {
                         <h1 className="text-sm font-semibold tracking-tight text-white">SmartInspect</h1>
                         <span className="text-xs text-slate-500 font-normal">Web Viewer</span>
                     </div>
+                </div>
+
+                {/* Layout preset dropdown */}
+                <div className="ml-4">
+                    <LayoutPresetDropdown
+                        activePreset={activePreset}
+                        ownPresets={ownPresets}
+                        sharedPresets={sharedPresets}
+                        loading={presetsLoading}
+                        onSelectPreset={loadPreset}
+                        onSaveNew={saveAsNewPreset}
+                        onCopyPreset={copyPreset}
+                        onSetDefault={setAsDefault}
+                        onOpenSettings={() => setShowSettings(true)}
+                    />
                 </div>
 
                 <div className="flex-1" />
@@ -293,7 +336,7 @@ export function App() {
                             </div>
                             <div
                                 className="flex-shrink-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 overflow-hidden"
-                                style={{ height: detailHeight }}
+                                style={{ height: getDetailPanelHeightPx() }}
                             >
                                 {isStreamsMode ? (
                                     <StreamDetailPanel entry={selectedStreamEntry} />
@@ -317,7 +360,7 @@ export function App() {
                         </div>
                         <div
                             className="flex-shrink-0 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 overflow-hidden"
-                            style={{ width: watchWidth }}
+                            style={{ width: getWatchPanelWidthPx() }}
                         >
                             <WatchPanel />
                         </div>
@@ -344,6 +387,19 @@ export function App() {
                 onExportLayout={exportLayout}
                 onImportLayout={handleImportClick}
                 onResetLayout={resetLayout}
+                // Preset management props
+                activePreset={activePreset}
+                ownPresets={ownPresets}
+                sharedPresets={sharedPresets}
+                presetsLoading={presetsLoading}
+                onLoadPreset={loadPreset}
+                onSavePreset={updateActivePreset}
+                onSaveAsNewPreset={saveAsNewPreset}
+                onDeletePreset={deletePreset}
+                onRenamePreset={async (id, name) => updatePresetMetadata(id, { name })}
+                onSetDefaultPreset={setAsDefault}
+                onToggleShared={async (id, isShared) => updatePresetMetadata(id, { isShared })}
+                onCopyPreset={copyPreset}
             />
         </div>
     );

@@ -62,6 +62,23 @@ class SettingsDB {
             CREATE INDEX IF NOT EXISTS idx_settings_room ON settings(room);
             CREATE INDEX IF NOT EXISTS idx_settings_user ON settings(user);
 
+            -- Layout presets table
+            CREATE TABLE IF NOT EXISTS layout_presets (
+                id TEXT PRIMARY KEY,
+                room TEXT NOT NULL,
+                user TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                is_default INTEGER DEFAULT 0,
+                is_shared INTEGER DEFAULT 0,
+                preset_data TEXT NOT NULL,
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_presets_room ON layout_presets(room);
+            CREATE INDEX IF NOT EXISTS idx_presets_user ON layout_presets(room, user);
+            CREATE INDEX IF NOT EXISTS idx_presets_shared ON layout_presets(room, is_shared);
+
             -- Insert default user if not exists
             INSERT OR IGNORE INTO users (username, password_hash, salt)
             VALUES ('default', NULL, NULL);
@@ -349,6 +366,273 @@ class SettingsDB {
         return result.changes > 0;
     }
 
+    // ==================== Layout Presets ====================
+
+    /**
+     * List presets for user (own + shared in room)
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     * @returns {Object[]} Array of preset summaries
+     */
+    listPresets(room, user) {
+        const stmt = this.db.prepare(`
+            SELECT id, name, user as createdBy, is_default as isDefault,
+                   is_shared as isShared, created_at as createdAt, description
+            FROM layout_presets
+            WHERE room = ? AND (user = ? OR is_shared = 1)
+            ORDER BY is_default DESC, updated_at DESC
+        `);
+        return stmt.all(room, user).map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            createdBy: row.createdBy,
+            isDefault: !!row.isDefault,
+            isShared: !!row.isShared,
+            createdAt: new Date(row.createdAt * 1000).toISOString()
+        }));
+    }
+
+    /**
+     * Get a specific preset by ID
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (for access control)
+     * @param {string} id - Preset ID
+     * @returns {Object|null} Preset data or null
+     */
+    getPreset(room, user, id) {
+        const stmt = this.db.prepare(`
+            SELECT * FROM layout_presets
+            WHERE room = ? AND id = ? AND (user = ? OR is_shared = 1)
+        `);
+        const row = stmt.get(room, id, user);
+        if (!row) return null;
+
+        try {
+            const presetData = JSON.parse(row.preset_data);
+            return {
+                ...presetData,
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                createdBy: row.user,
+                isDefault: !!row.is_default,
+                isShared: !!row.is_shared,
+                createdAt: new Date(row.created_at * 1000).toISOString(),
+                updatedAt: new Date(row.updated_at * 1000).toISOString()
+            };
+        } catch (e) {
+            console.error('[SettingsDB] Failed to parse preset data:', e.message);
+            return null;
+        }
+    }
+
+    /**
+     * Create a new preset
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (owner)
+     * @param {Object} presetData - Preset configuration
+     * @returns {Object} Created preset
+     */
+    createPreset(room, user, presetData) {
+        const id = crypto.randomUUID();
+        const now = Math.floor(Date.now() / 1000);
+
+        const stmt = this.db.prepare(`
+            INSERT INTO layout_presets
+            (id, room, user, name, description, is_shared, preset_data, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const fullPreset = {
+            layout: presetData.layout || {},
+            views: presetData.views || [],
+            globalHighlightRules: presetData.globalHighlightRules || [],
+            activeViewId: presetData.activeViewId || null,
+            maxDisplayEntries: presetData.maxDisplayEntries || 10000,
+            theme: presetData.theme || 'dark'
+        };
+
+        stmt.run(
+            id, room, user,
+            presetData.name,
+            presetData.description || null,
+            presetData.isShared ? 1 : 0,
+            JSON.stringify(fullPreset),
+            now, now
+        );
+
+        return {
+            id,
+            name: presetData.name,
+            description: presetData.description || null,
+            createdBy: user,
+            isDefault: false,
+            isShared: !!presetData.isShared,
+            createdAt: new Date(now * 1000).toISOString(),
+            updatedAt: new Date(now * 1000).toISOString(),
+            ...fullPreset
+        };
+    }
+
+    /**
+     * Update a preset (only owner can update)
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (must be owner)
+     * @param {string} id - Preset ID
+     * @param {Object} updates - Fields to update
+     * @returns {Object|null} Updated preset or null if not found/not owner
+     */
+    updatePreset(room, user, id, updates) {
+        // First check ownership
+        const check = this.db.prepare(`
+            SELECT * FROM layout_presets WHERE id = ? AND room = ? AND user = ?
+        `);
+        const existing = check.get(id, room, user);
+        if (!existing) return null;
+
+        const now = Math.floor(Date.now() / 1000);
+        let existingData = {};
+        try {
+            existingData = JSON.parse(existing.preset_data);
+        } catch (e) {}
+
+        const updatedData = {
+            layout: updates.layout || existingData.layout || {},
+            views: updates.views || existingData.views || [],
+            globalHighlightRules: updates.globalHighlightRules || existingData.globalHighlightRules || [],
+            activeViewId: updates.activeViewId !== undefined ? updates.activeViewId : existingData.activeViewId,
+            maxDisplayEntries: updates.maxDisplayEntries || existingData.maxDisplayEntries || 10000,
+            theme: updates.theme || existingData.theme || 'dark'
+        };
+
+        const stmt = this.db.prepare(`
+            UPDATE layout_presets
+            SET name = ?, description = ?, is_shared = ?, preset_data = ?, updated_at = ?
+            WHERE id = ? AND room = ? AND user = ?
+        `);
+
+        stmt.run(
+            updates.name || existing.name,
+            updates.description !== undefined ? updates.description : existing.description,
+            updates.isShared !== undefined ? (updates.isShared ? 1 : 0) : existing.is_shared,
+            JSON.stringify(updatedData),
+            now,
+            id, room, user
+        );
+
+        return {
+            id,
+            name: updates.name || existing.name,
+            description: updates.description !== undefined ? updates.description : existing.description,
+            createdBy: user,
+            isDefault: !!existing.is_default,
+            isShared: updates.isShared !== undefined ? !!updates.isShared : !!existing.is_shared,
+            createdAt: new Date(existing.created_at * 1000).toISOString(),
+            updatedAt: new Date(now * 1000).toISOString(),
+            ...updatedData
+        };
+    }
+
+    /**
+     * Delete a preset (only owner can delete)
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (must be owner)
+     * @param {string} id - Preset ID
+     * @returns {boolean} True if deleted
+     */
+    deletePreset(room, user, id) {
+        const stmt = this.db.prepare(`
+            DELETE FROM layout_presets WHERE id = ? AND room = ? AND user = ?
+        `);
+        const result = stmt.run(id, room, user);
+        return result.changes > 0;
+    }
+
+    /**
+     * Copy a preset to own collection
+     * @param {string} room - Room ID
+     * @param {string} user - User ID (new owner)
+     * @param {string} sourceId - Source preset ID
+     * @param {string} newName - Name for the copy (optional)
+     * @returns {Object|null} New preset or null if source not found
+     */
+    copyPreset(room, user, sourceId, newName) {
+        const source = this.getPreset(room, user, sourceId);
+        if (!source) return null;
+
+        return this.createPreset(room, user, {
+            name: newName || `${source.name} (Copy)`,
+            description: source.description,
+            isShared: false,
+            layout: source.layout,
+            views: source.views,
+            globalHighlightRules: source.globalHighlightRules,
+            activeViewId: source.activeViewId,
+            maxDisplayEntries: source.maxDisplayEntries,
+            theme: source.theme
+        });
+    }
+
+    /**
+     * Set a preset as the default (clears other defaults for this user)
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     * @param {string} id - Preset ID to make default
+     * @returns {boolean} True if successful
+     */
+    setDefaultPreset(room, user, id) {
+        const transaction = this.db.transaction(() => {
+            // Clear existing defaults for this user in this room
+            this.db.prepare(`
+                UPDATE layout_presets SET is_default = 0
+                WHERE room = ? AND user = ?
+            `).run(room, user);
+
+            // Set new default (must be owned by user)
+            const result = this.db.prepare(`
+                UPDATE layout_presets SET is_default = 1
+                WHERE id = ? AND room = ? AND user = ?
+            `).run(id, room, user);
+
+            return result.changes > 0;
+        });
+
+        return transaction();
+    }
+
+    /**
+     * Get the default preset for a user
+     * @param {string} room - Room ID
+     * @param {string} user - User ID
+     * @returns {Object|null} Default preset or null
+     */
+    getDefaultPreset(room, user) {
+        const stmt = this.db.prepare(`
+            SELECT * FROM layout_presets
+            WHERE room = ? AND user = ? AND is_default = 1
+        `);
+        const row = stmt.get(room, user);
+        if (!row) return null;
+
+        try {
+            const presetData = JSON.parse(row.preset_data);
+            return {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+                createdBy: row.user,
+                isDefault: true,
+                isShared: !!row.is_shared,
+                createdAt: new Date(row.created_at * 1000).toISOString(),
+                updatedAt: new Date(row.updated_at * 1000).toISOString(),
+                ...presetData
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
     // ==================== Utility Methods ====================
 
     /**
@@ -359,10 +643,12 @@ class SettingsDB {
         const settingsCount = this.db.prepare('SELECT COUNT(*) as count FROM settings').get();
         const usersCount = this.db.prepare('SELECT COUNT(*) as count FROM users').get();
         const roomsQuery = this.db.prepare('SELECT DISTINCT room FROM settings').all();
+        const presetsCount = this.db.prepare('SELECT COUNT(*) as count FROM layout_presets').get();
 
         return {
             totalSettings: settingsCount.count,
             totalUsers: usersCount.count,
+            totalPresets: presetsCount.count,
             rooms: roomsQuery.map(r => r.room)
         };
     }

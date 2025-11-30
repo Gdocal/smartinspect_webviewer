@@ -2,9 +2,9 @@
  * SettingsPanel - Client settings configuration modal with tabs
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
-import { useLogStore, HighlightRule } from '../store/logStore';
+import { useLogStore, HighlightRule, PresetSummary } from '../store/logStore';
 import { reconnect } from '../services/earlyWebSocket';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
 
@@ -95,6 +95,19 @@ interface SettingsPanelProps {
     onExportLayout?: () => void;
     onImportLayout?: () => void;
     onResetLayout?: () => void;
+    // Preset management props
+    activePreset?: PresetSummary | null;
+    ownPresets?: PresetSummary[];
+    sharedPresets?: PresetSummary[];
+    presetsLoading?: boolean;
+    onLoadPreset?: (presetId: string) => void;
+    onSavePreset?: () => void;  // Save current state to active preset
+    onSaveAsNewPreset?: (name: string, description?: string, isShared?: boolean) => void;
+    onDeletePreset?: (presetId: string) => Promise<boolean>;
+    onRenamePreset?: (presetId: string, newName: string) => Promise<boolean>;
+    onSetDefaultPreset?: (presetId: string) => Promise<boolean>;
+    onToggleShared?: (presetId: string, isShared: boolean) => Promise<boolean>;
+    onCopyPreset?: (presetId: string, newName: string) => void;
 }
 
 const MAX_ENTRIES_OPTIONS = [
@@ -105,7 +118,27 @@ const MAX_ENTRIES_OPTIONS = [
     { value: 100000, label: '100,000 (All)' },
 ];
 
-export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportLayout, onImportLayout, onResetLayout }: SettingsPanelProps) {
+export function SettingsPanel({
+    isOpen,
+    onClose,
+    onServerUrlChange: _,
+    onExportLayout,
+    onImportLayout,
+    onResetLayout,
+    // Preset management props
+    activePreset,
+    ownPresets = [],
+    sharedPresets = [],
+    presetsLoading = false,
+    onLoadPreset,
+    onSavePreset,
+    onSaveAsNewPreset,
+    onDeletePreset,
+    onRenamePreset,
+    onSetDefaultPreset,
+    onToggleShared,
+    onCopyPreset
+}: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
     const setCurrentUser = useLogStore(state => state.setCurrentUser);
     const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames } = useLogStore();
@@ -118,6 +151,14 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportL
     // Highlight rule editor state
     const [showRuleEditor, setShowRuleEditor] = useState(false);
     const [editingRule, setEditingRule] = useState<HighlightRule | undefined>(undefined);
+
+    // Preset management state
+    const [showSavePresetModal, setShowSavePresetModal] = useState(false);
+    const [showRenameModal, setShowRenameModal] = useState<PresetSummary | null>(null);
+    const [showCopyModal, setShowCopyModal] = useState<PresetSummary | null>(null);
+    const [newPresetName, setNewPresetName] = useState('');
+    const [newPresetDescription, setNewPresetDescription] = useState('');
+    const [newPresetShared, setNewPresetShared] = useState(false);
 
     // Get available values for dropdowns from store
     const availableSessions = Object.keys(sessions);
@@ -153,6 +194,61 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportL
     const handleToggleRule = (rule: HighlightRule) => {
         updateHighlightRule(rule.id, { enabled: !rule.enabled });
     };
+
+    // Preset handlers
+    const handleSaveNewPreset = useCallback(() => {
+        if (newPresetName.trim() && onSaveAsNewPreset) {
+            onSaveAsNewPreset(newPresetName.trim(), newPresetDescription.trim() || undefined, newPresetShared);
+            setNewPresetName('');
+            setNewPresetDescription('');
+            setNewPresetShared(false);
+            setShowSavePresetModal(false);
+        }
+    }, [newPresetName, newPresetDescription, newPresetShared, onSaveAsNewPreset]);
+
+    const handleRenamePreset = useCallback(async () => {
+        if (showRenameModal && newPresetName.trim() && onRenamePreset) {
+            await onRenamePreset(showRenameModal.id, newPresetName.trim());
+            setNewPresetName('');
+            setShowRenameModal(null);
+        }
+    }, [showRenameModal, newPresetName, onRenamePreset]);
+
+    const handleCopyPreset = useCallback(() => {
+        if (showCopyModal && newPresetName.trim() && onCopyPreset) {
+            onCopyPreset(showCopyModal.id, newPresetName.trim());
+            setNewPresetName('');
+            setShowCopyModal(null);
+        }
+    }, [showCopyModal, newPresetName, onCopyPreset]);
+
+    const handleDeletePreset = useCallback(async (preset: PresetSummary) => {
+        if (onDeletePreset && confirm(`Delete "${preset.name}"? This cannot be undone.`)) {
+            await onDeletePreset(preset.id);
+        }
+    }, [onDeletePreset]);
+
+    const handleSetDefault = useCallback(async (preset: PresetSummary) => {
+        if (onSetDefaultPreset) {
+            await onSetDefaultPreset(preset.id);
+        }
+    }, [onSetDefaultPreset]);
+
+    const handleToggleShared = useCallback(async (preset: PresetSummary) => {
+        if (onToggleShared) {
+            await onToggleShared(preset.id, !preset.isShared);
+        }
+    }, [onToggleShared]);
+
+    const openRenameModal = useCallback((preset: PresetSummary) => {
+        setShowRenameModal(preset);
+        setNewPresetName(preset.name);
+    }, []);
+
+    const openCopyModal = useCallback((preset: PresetSummary) => {
+        setShowCopyModal(preset);
+        setNewPresetName(`${preset.name} (Copy)`);
+    }, []);
 
     // Reset form when modal opens
     useEffect(() => {
@@ -379,38 +475,212 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportL
 
                     {activeTab === 'layout' && (
                         <div className="space-y-4">
-                            <p className="text-sm text-slate-600 dark:text-slate-300">
-                                Export and import your column widths, order, and panel sizes.
-                            </p>
+                            {/* Active preset info */}
+                            {activePreset && (
+                                <div className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800">
+                                    <div className="flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span className="text-sm text-blue-700 dark:text-blue-300">
+                                            Active: <strong>{activePreset.name}</strong>
+                                        </span>
+                                        {activePreset.isDefault && (
+                                            <span className="text-xs px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 rounded">
+                                                Default
+                                            </span>
+                                        )}
+                                    </div>
+                                    {onSavePreset && (
+                                        <button
+                                            onClick={onSavePreset}
+                                            disabled={presetsLoading}
+                                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
+                                        >
+                                            Save Changes
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Action buttons */}
                             <div className="flex gap-2">
                                 <button
-                                    onClick={() => { onExportLayout?.(); onClose(); }}
-                                    className="flex-1 px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
+                                    onClick={() => setShowSavePresetModal(true)}
+                                    disabled={presetsLoading}
+                                    className="flex-1 px-3 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-400 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    Save As New
+                                </button>
+                                <button
+                                    onClick={() => { onExportLayout?.(); }}
+                                    className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors dark:text-slate-200"
+                                    title="Export to file"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                     </svg>
-                                    Export Layout
                                 </button>
                                 <button
-                                    onClick={() => { onImportLayout?.(); onClose(); }}
-                                    className="flex-1 px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
+                                    onClick={() => { onImportLayout?.(); }}
+                                    className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors dark:text-slate-200"
+                                    title="Import from file"
                                 >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                     </svg>
-                                    Import Layout
+                                </button>
+                                <button
+                                    onClick={() => { onResetLayout?.(); }}
+                                    className="px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors dark:text-slate-200"
+                                    title="Reset to defaults"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
                                 </button>
                             </div>
-                            <button
-                                onClick={() => { onResetLayout?.(); onClose(); }}
-                                className="w-full px-3 py-2.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-1.5 dark:text-slate-200"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Reset to Default Layout
-                            </button>
+
+                            {/* My Presets */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                                        My Layouts ({ownPresets.length})
+                                    </label>
+                                </div>
+                                {ownPresets.length === 0 ? (
+                                    <div className="text-center py-4 border border-dashed border-slate-200 dark:border-slate-600 rounded-lg">
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm">No saved layouts yet</p>
+                                        <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">Click "Save As New" to create one</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                                        {ownPresets.map(preset => (
+                                            <div
+                                                key={preset.id}
+                                                className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                                                    activePreset?.id === preset.id
+                                                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                                                        : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                                                }`}
+                                            >
+                                                {/* Load button / name */}
+                                                <button
+                                                    onClick={() => onLoadPreset?.(preset.id)}
+                                                    disabled={presetsLoading || activePreset?.id === preset.id}
+                                                    className="flex-1 text-left"
+                                                >
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={`font-medium text-sm ${activePreset?.id === preset.id ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                            {preset.name}
+                                                        </span>
+                                                        {preset.isDefault && (
+                                                            <span className="text-amber-500" title="Default">*</span>
+                                                        )}
+                                                        {preset.isShared && (
+                                                            <span title="Shared">
+                                                                <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                                                </svg>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                                {/* Action buttons */}
+                                                <div className="flex items-center gap-0.5">
+                                                    {!preset.isDefault && (
+                                                        <button
+                                                            onClick={() => handleSetDefault(preset)}
+                                                            className="p-1 text-slate-400 hover:text-amber-500 transition-colors"
+                                                            title="Set as default"
+                                                        >
+                                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleToggleShared(preset)}
+                                                        className={`p-1 transition-colors ${preset.isShared ? 'text-blue-500 hover:text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}
+                                                        title={preset.isShared ? "Stop sharing" : "Share with room"}
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openRenameModal(preset)}
+                                                        className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
+                                                        title="Rename"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeletePreset(preset)}
+                                                        className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Shared Presets */}
+                            {sharedPresets.length > 0 && (
+                                <div>
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                        <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                        </svg>
+                                        <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                                            Shared ({sharedPresets.length})
+                                        </label>
+                                    </div>
+                                    <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                                        {sharedPresets.map(preset => (
+                                            <div
+                                                key={preset.id}
+                                                className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                                                    activePreset?.id === preset.id
+                                                        ? 'border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20'
+                                                        : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                                                }`}
+                                            >
+                                                <button
+                                                    onClick={() => onLoadPreset?.(preset.id)}
+                                                    disabled={presetsLoading || activePreset?.id === preset.id}
+                                                    className="flex-1 text-left"
+                                                >
+                                                    <span className={`font-medium text-sm ${activePreset?.id === preset.id ? 'text-blue-700 dark:text-blue-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                                                        {preset.name}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 ml-1.5">by {preset.createdBy}</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => openCopyModal(preset)}
+                                                    className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
+                                                    title="Copy to my layouts"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -526,6 +796,131 @@ export function SettingsPanel({ isOpen, onClose, onServerUrlChange: _, onExportL
                     availableAppNames={availableAppNames}
                     availableHostNames={availableHostNames}
                 />
+            )}
+
+            {/* Save as new preset modal */}
+            {showSavePresetModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl w-80 p-4">
+                        <h3 className="text-slate-800 dark:text-white font-semibold mb-3">Save Layout Preset</h3>
+                        <input
+                            type="text"
+                            value={newPresetName}
+                            onChange={e => setNewPresetName(e.target.value)}
+                            placeholder="Preset name"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white text-sm mb-2 focus:outline-none focus:border-blue-500"
+                            autoFocus
+                            onKeyDown={e => e.key === 'Enter' && handleSaveNewPreset()}
+                        />
+                        <input
+                            type="text"
+                            value={newPresetDescription}
+                            onChange={e => setNewPresetDescription(e.target.value)}
+                            placeholder="Description (optional)"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white text-sm mb-3 focus:outline-none focus:border-blue-500"
+                            onKeyDown={e => e.key === 'Enter' && handleSaveNewPreset()}
+                        />
+                        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-4">
+                            <Checkbox checked={newPresetShared} onChange={setNewPresetShared} />
+                            Share with others in this room
+                        </label>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setShowSavePresetModal(false);
+                                    setNewPresetName('');
+                                    setNewPresetDescription('');
+                                    setNewPresetShared(false);
+                                }}
+                                className="px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveNewPreset}
+                                disabled={!newPresetName.trim()}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-400 text-white rounded text-sm"
+                            >
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Rename preset modal */}
+            {showRenameModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl w-80 p-4">
+                        <h3 className="text-slate-800 dark:text-white font-semibold mb-3">Rename Layout</h3>
+                        <input
+                            type="text"
+                            value={newPresetName}
+                            onChange={e => setNewPresetName(e.target.value)}
+                            placeholder="New name"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white text-sm mb-3 focus:outline-none focus:border-blue-500"
+                            autoFocus
+                            onKeyDown={e => e.key === 'Enter' && handleRenamePreset()}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setShowRenameModal(null);
+                                    setNewPresetName('');
+                                }}
+                                className="px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRenamePreset}
+                                disabled={!newPresetName.trim()}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-400 text-white rounded text-sm"
+                            >
+                                Rename
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Copy preset modal */}
+            {showCopyModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+                    <div className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl w-80 p-4">
+                        <h3 className="text-slate-800 dark:text-white font-semibold mb-3">Copy Layout</h3>
+                        <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">
+                            Copy "{showCopyModal.name}" to your layouts
+                        </p>
+                        <input
+                            type="text"
+                            value={newPresetName}
+                            onChange={e => setNewPresetName(e.target.value)}
+                            placeholder="New layout name"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white text-sm mb-3 focus:outline-none focus:border-blue-500"
+                            autoFocus
+                            onKeyDown={e => e.key === 'Enter' && handleCopyPreset()}
+                        />
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => {
+                                    setShowCopyModal(null);
+                                    setNewPresetName('');
+                                }}
+                                className="px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCopyPreset}
+                                disabled={!newPresetName.trim()}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-400 text-white rounded text-sm"
+                            >
+                                Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

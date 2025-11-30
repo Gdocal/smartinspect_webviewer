@@ -3,7 +3,7 @@
  * OPTIMIZED: Memoized renderers, debounced filtering, efficient updates
  */
 
-import { useMemo, useRef, useCallback, useEffect, memo, useState } from 'react';
+import { useMemo, useRef, useCallback, useEffect, memo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import {
     ColDef,

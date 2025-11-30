@@ -202,6 +202,30 @@ export interface StreamEntry {
     sessionName?: string;
 }
 
+// Layout preset summary (lightweight for listing)
+export interface PresetSummary {
+    id: string;
+    name: string;
+    description?: string;
+    createdBy: string;
+    createdAt: string;
+    isDefault: boolean;
+    isShared: boolean;
+}
+
+// Layout sizes stored as percentages (0-100)
+export interface LayoutSizes {
+    detailPanelHeightPercent: number;
+    watchPanelWidthPercent: number;
+}
+
+// Panel visibility state
+export interface PanelVisibility {
+    showDetailPanel: boolean;
+    showWatchPanel: boolean;
+    showStreamPanel: boolean;
+}
+
 interface LogState {
     // Connection
     connected: boolean;
@@ -267,6 +291,14 @@ interface LogState {
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
 
+    // Layout presets
+    layoutPresets: PresetSummary[];
+    activePresetId: string | null;
+
+    // Percentage-based panel sizes (0-100)
+    detailPanelHeightPercent: number;
+    watchPanelWidthPercent: number;
+
     // Actions
     setConnected: (connected: boolean) => void;
     setConnecting: (connecting: boolean) => void;
@@ -330,6 +362,12 @@ interface LogState {
     // Theme
     setTheme: (theme: 'light' | 'dark') => void;
     toggleTheme: () => void;
+
+    // Layout preset actions
+    setLayoutPresets: (presets: PresetSummary[]) => void;
+    setActivePresetId: (id: string | null) => void;
+    setDetailPanelHeightPercent: (percent: number) => void;
+    setWatchPanelWidthPercent: (percent: number) => void;
 
     // Get selected entry
     getSelectedEntry: () => LogEntry | null;
@@ -415,6 +453,14 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
     editingViewId: null,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
+
+    // Layout presets
+    layoutPresets: [],
+    activePresetId: null,
+
+    // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
+    detailPanelHeightPercent: 25,
+    watchPanelWidthPercent: 20,
 
     // Actions
     setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined }),
@@ -664,6 +710,16 @@ export const useLogStore = create<LogState>((set, get) => ({
         const newTheme = state.theme === 'light' ? 'dark' : 'light';
         localStorage.setItem('si-theme', newTheme);
         return { theme: newTheme };
+    }),
+
+    // Layout preset actions
+    setLayoutPresets: (layoutPresets) => set({ layoutPresets }),
+    setActivePresetId: (activePresetId) => set({ activePresetId }),
+    setDetailPanelHeightPercent: (percent) => set({
+        detailPanelHeightPercent: Math.max(10, Math.min(60, percent)) // Clamp 10-60%
+    }),
+    setWatchPanelWidthPercent: (percent) => set({
+        watchPanelWidthPercent: Math.max(10, Math.min(40, percent)) // Clamp 10-40%
     }),
 
     // Get selected entry
