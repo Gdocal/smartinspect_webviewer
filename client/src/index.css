@@ -10,12 +10,47 @@
     --ag-list-item-height: 24px;
 }
 
-/* AG Grid dark theme customizations */
+/* AG Grid dark theme customizations - using slate colors to match app theme */
 .ag-theme-balham-dark {
     --ag-header-height: 32px;
     --ag-row-height: 28px;
     --ag-font-size: 13px;
     --ag-list-item-height: 24px;
+
+    /* Background colors - slate palette */
+    --ag-background-color: #1e293b; /* slate-800 */
+    --ag-header-background-color: #334155; /* slate-700 */
+    --ag-odd-row-background-color: #1e293b; /* slate-800 */
+    --ag-row-hover-color: #334155; /* slate-700 */
+    --ag-selected-row-background-color: #475569; /* slate-600 */
+    --ag-range-selection-background-color: rgba(71, 85, 105, 0.4); /* slate-600 with opacity */
+
+    /* Border colors */
+    --ag-border-color: #475569; /* slate-600 */
+    --ag-secondary-border-color: #334155; /* slate-700 */
+    --ag-header-column-separator-color: #475569; /* slate-600 */
+    --ag-row-border-color: #334155; /* slate-700 */
+
+    /* Text colors */
+    --ag-foreground-color: #e2e8f0; /* slate-200 */
+    --ag-header-foreground-color: #f1f5f9; /* slate-100 */
+    --ag-secondary-foreground-color: #94a3b8; /* slate-400 */
+    --ag-disabled-foreground-color: #64748b; /* slate-500 */
+
+    /* Input and controls */
+    --ag-input-focus-border-color: #60a5fa; /* blue-400 */
+    --ag-checkbox-checked-color: #60a5fa; /* blue-400 */
+    --ag-checkbox-unchecked-color: #64748b; /* slate-500 */
+    --ag-checkbox-background-color: #1e293b; /* slate-800 */
+
+    /* Menu and popups */
+    --ag-modal-overlay-background-color: rgba(15, 23, 42, 0.8); /* slate-900 with opacity */
+    --ag-popup-background-color: #1e293b; /* slate-800 */
+
+    /* Misc */
+    --ag-chip-background-color: #334155; /* slate-700 */
+    --ag-invalid-color: #f87171; /* red-400 */
+    --ag-icon-font-color: #94a3b8; /* slate-400 */
 }
 
 /* Ensure proper height */
