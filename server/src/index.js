@@ -438,163 +438,6 @@ app.delete('/api/settings', (req, res) => {
     });
 });
 
-// ==================== Layout Presets API ====================
-
-/**
- * GET /api/presets - List user's presets + shared presets in room
- */
-app.get('/api/presets', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-
-    const presets = settingsDB.listPresets(roomId, userId);
-    res.json({
-        room: roomId,
-        user: userId,
-        presets
-    });
-});
-
-/**
- * GET /api/presets/default - Get the user's default preset
- */
-app.get('/api/presets/default', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-
-    const preset = settingsDB.getDefaultPreset(roomId, userId);
-    res.json({
-        room: roomId,
-        user: userId,
-        preset
-    });
-});
-
-/**
- * GET /api/presets/:id - Get a specific preset
- */
-app.get('/api/presets/:id', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-
-    const preset = settingsDB.getPreset(roomId, userId, id);
-    if (!preset) {
-        return res.status(404).json({ error: 'Preset not found' });
-    }
-    res.json({
-        room: roomId,
-        user: userId,
-        preset
-    });
-});
-
-/**
- * POST /api/presets - Create a new preset
- */
-app.post('/api/presets', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const presetData = req.body;
-
-    if (!presetData.name) {
-        return res.status(400).json({ error: 'name is required' });
-    }
-
-    try {
-        const preset = settingsDB.createPreset(roomId, userId, presetData);
-        res.json({
-            success: true,
-            room: roomId,
-            user: userId,
-            preset
-        });
-    } catch (err) {
-        console.error('[Presets] Create error:', err.message);
-        res.status(500).json({ error: 'Failed to create preset' });
-    }
-});
-
-/**
- * PUT /api/presets/:id - Update a preset (owner only)
- */
-app.put('/api/presets/:id', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-    const updates = req.body;
-
-    const preset = settingsDB.updatePreset(roomId, userId, id, updates);
-    if (!preset) {
-        return res.status(404).json({ error: 'Preset not found or access denied' });
-    }
-    res.json({
-        success: true,
-        room: roomId,
-        user: userId,
-        preset
-    });
-});
-
-/**
- * DELETE /api/presets/:id - Delete a preset (owner only)
- */
-app.delete('/api/presets/:id', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-
-    const deleted = settingsDB.deletePreset(roomId, userId, id);
-    if (!deleted) {
-        return res.status(404).json({ error: 'Preset not found or access denied' });
-    }
-    res.json({
-        success: true,
-        room: roomId,
-        user: userId
-    });
-});
-
-/**
- * POST /api/presets/:id/copy - Copy a shared preset to own collection
- */
-app.post('/api/presets/:id/copy', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-    const { name } = req.body;
-
-    const newPreset = settingsDB.copyPreset(roomId, userId, id, name);
-    if (!newPreset) {
-        return res.status(404).json({ error: 'Source preset not found' });
-    }
-    res.json({
-        success: true,
-        room: roomId,
-        user: userId,
-        preset: newPreset
-    });
-});
-
-/**
- * PUT /api/presets/:id/default - Set as default preset
- */
-app.put('/api/presets/:id/default', (req, res) => {
-    const roomId = getRoomFromRequest(req);
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-
-    const success = settingsDB.setDefaultPreset(roomId, userId, id);
-    if (!success) {
-        return res.status(404).json({ error: 'Preset not found' });
-    }
-    res.json({
-        success: true,
-        room: roomId,
-        user: userId
-    });
-});
-
 // ==================== Auth API (for optional authentication) ====================
 
 /**
@@ -656,6 +499,208 @@ app.post('/api/auth/register', (req, res) => {
 app.get('/api/auth/users', (req, res) => {
     const users = settingsDB.listUsers();
     res.json({ users });
+});
+
+// ==================== Projects API ====================
+
+/**
+ * GET /api/projects/working - Get the working project for room+user
+ * NOTE: This must be before /api/projects/:id to avoid being caught by :id param
+ */
+app.get('/api/projects/working', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    const working = settingsDB.getWorkingProject(roomId, userId);
+    res.json({
+        room: roomId,
+        user: userId,
+        working
+    });
+});
+
+/**
+ * PUT /api/projects/working - Save the working project for room+user
+ * NOTE: This must be before /api/projects/:id to avoid being caught by :id param
+ */
+app.put('/api/projects/working', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+    const { projectData } = req.body;
+
+    if (!projectData) {
+        return res.status(400).json({ error: 'projectData required' });
+    }
+
+    settingsDB.setWorkingProject(roomId, userId, projectData);
+    res.json({
+        success: true,
+        room: roomId,
+        user: userId
+    });
+});
+
+/**
+ * GET /api/projects - List projects for room+user (includes shared)
+ */
+app.get('/api/projects', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    const projects = settingsDB.listProjects(roomId, userId);
+    res.json({
+        room: roomId,
+        user: userId,
+        projects
+    });
+});
+
+/**
+ * GET /api/projects/:id - Get a specific project
+ */
+app.get('/api/projects/:id', (req, res) => {
+    const { id } = req.params;
+    const project = settingsDB.getProject(id);
+
+    if (!project) {
+        return res.status(404).json({ error: 'Project not found' });
+    }
+
+    res.json(project);
+});
+
+/**
+ * POST /api/projects - Create a new project
+ */
+app.post('/api/projects', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const userId = getUserFromRequest(req);
+
+    // Support both formats: { name, projectData } and { project: { name, ... } }
+    let name, projectData, description, isShared;
+
+    if (req.body.project) {
+        // Client sends { project: { name, views, ... } }
+        const project = req.body.project;
+        name = project.name;
+        description = project.description;
+        isShared = project.isShared;
+        // Extract project data (everything except metadata)
+        const { name: _n, description: _d, createdBy: _c, isShared: _s, ...data } = project;
+        projectData = data;
+    } else {
+        // Legacy format: { name, projectData }
+        ({ name, projectData, description, isShared } = req.body);
+    }
+
+    if (!name || !projectData) {
+        return res.status(400).json({ error: 'name and projectData required' });
+    }
+
+    const id = settingsDB.createProject(roomId, userId, name, projectData, description || '', isShared || false);
+
+    // Return full project data for client
+    const savedProject = {
+        id,
+        name,
+        description: description || '',
+        createdBy: userId,
+        isShared: isShared || false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        ...projectData
+    };
+
+    res.json({
+        success: true,
+        project: savedProject
+    });
+});
+
+/**
+ * PUT /api/projects/:id - Update an existing project (owner only)
+ */
+app.put('/api/projects/:id', (req, res) => {
+    const { id } = req.params;
+    const userId = getUserFromRequest(req);
+
+    // Support both formats: { name, projectData } and { project: { ... } }
+    let name, projectData, description, isShared;
+
+    if (req.body.project) {
+        // Client sends { project: { views, activeViewId, ... } }
+        const project = req.body.project;
+        name = project.name;
+        description = project.description;
+        isShared = project.isShared;
+        // For updates, client may send partial data (just view state)
+        const { name: _n, description: _d, createdBy: _c, isShared: _s, id: _id, createdAt: _ca, updatedAt: _ua, ...data } = project;
+        projectData = data;
+
+        // If client didn't send name, we need to get it from existing project
+        if (!name) {
+            const existing = settingsDB.getProject(id, userId);
+            if (existing) {
+                name = existing.name;
+                if (description === undefined) description = existing.description;
+            }
+        }
+    } else {
+        // Legacy format: { name, projectData }
+        ({ name, projectData, description, isShared } = req.body);
+    }
+
+    if (!name || !projectData || Object.keys(projectData).length === 0) {
+        return res.status(400).json({ error: 'name and projectData required' });
+    }
+
+    const updated = settingsDB.updateProject(id, userId, name, projectData, description || '', isShared || false);
+    if (updated) {
+        // Return full project data
+        const savedProject = {
+            id,
+            name,
+            description: description || '',
+            createdBy: userId,
+            isShared: isShared || false,
+            updatedAt: new Date().toISOString(),
+            ...projectData
+        };
+        res.json({ success: true, project: savedProject });
+    } else {
+        res.status(404).json({ error: 'Project not found or not owner' });
+    }
+});
+
+/**
+ * DELETE /api/projects/:id - Delete a project (owner only)
+ */
+app.delete('/api/projects/:id', (req, res) => {
+    const { id } = req.params;
+    const userId = getUserFromRequest(req);
+
+    const deleted = settingsDB.deleteProject(id, userId);
+    if (deleted) {
+        res.json({ success: true, id });
+    } else {
+        res.status(404).json({ error: 'Project not found or not owner' });
+    }
+});
+
+/**
+ * POST /api/projects/:id/copy - Copy a project to own collection
+ */
+app.post('/api/projects/:id/copy', (req, res) => {
+    const { id } = req.params;
+    const userId = getUserFromRequest(req);
+    const { name } = req.body;
+
+    const newId = settingsDB.copyProject(id, userId, name);
+    if (newId) {
+        res.json({ success: true, id: newId });
+    } else {
+        res.status(404).json({ error: 'Source project not found' });
+    }
 });
 
 // ==================== Room-Aware Query API ====================

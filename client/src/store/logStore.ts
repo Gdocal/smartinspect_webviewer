@@ -200,6 +200,57 @@ export interface View {
     autoScroll: boolean;
 }
 
+// Extended view with per-view grid state (for Projects system)
+export interface ViewWithGridState extends View {
+    gridFilterModel: Record<string, unknown>;  // AG Grid user-applied column filters
+    scrollPosition: { top: number };           // Scroll position to restore
+}
+
+// Project data structure
+export interface Project {
+    id: string;
+    name: string;
+    description?: string;
+    createdBy: string;
+    createdAt: string;
+    updatedAt: string;
+    isShared: boolean;
+
+    // Project data
+    views: ViewWithGridState[];
+    activeViewId: string | null;
+    panelSizes: {
+        detailHeightPercent: number;
+        watchWidthPercent: number;
+    };
+    panelVisibility: {
+        showDetailPanel: boolean;
+        showWatchPanel: boolean;
+        showStreamPanel: boolean;
+    };
+    maxDisplayEntries: number;
+    theme: 'light' | 'dark';
+}
+
+// Project summary (without full project data, for listing)
+export interface ProjectSummary {
+    id: string;
+    name: string;
+    description?: string;
+    room: string;
+    user: string;
+    isShared: boolean;
+    createdAt: string;
+    updatedAt: string;
+}
+
+// Working project state in localStorage
+export interface WorkingProjectState {
+    project: Project;
+    loadedProjectId: string | null;  // Which named project was loaded (null = fresh)
+    loadedProjectDirty: boolean;     // Has working project diverged from loaded?
+}
+
 // Stream entry for high-frequency data
 export interface StreamEntry {
     id: number;
@@ -207,17 +258,6 @@ export interface StreamEntry {
     data: string;
     timestamp: string;
     sessionName?: string;
-}
-
-// Layout preset summary (lightweight for listing)
-export interface PresetSummary {
-    id: string;
-    name: string;
-    description?: string;
-    createdBy: string;
-    createdAt: string;
-    isDefault: boolean;
-    isShared: boolean;
 }
 
 // Layout sizes stored as percentages (0-100)
@@ -298,10 +338,6 @@ interface LogState {
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
 
-    // Layout presets
-    layoutPresets: PresetSummary[];
-    activePresetId: string | null;
-
     // Percentage-based panel sizes (0-100)
     detailPanelHeightPercent: number;
     watchPanelWidthPercent: number;
@@ -370,9 +406,7 @@ interface LogState {
     setTheme: (theme: 'light' | 'dark') => void;
     toggleTheme: () => void;
 
-    // Layout preset actions
-    setLayoutPresets: (presets: PresetSummary[]) => void;
-    setActivePresetId: (id: string | null) => void;
+    // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
     setWatchPanelWidthPercent: (percent: number) => void;
 
@@ -460,10 +494,6 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
     editingViewId: null,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
-
-    // Layout presets
-    layoutPresets: [],
-    activePresetId: null,
 
     // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
     detailPanelHeightPercent: 25,
@@ -724,9 +754,7 @@ export const useLogStore = create<LogState>((set, get) => ({
         return { theme: newTheme };
     }),
 
-    // Layout preset actions
-    setLayoutPresets: (layoutPresets) => set({ layoutPresets }),
-    setActivePresetId: (activePresetId) => set({ activePresetId }),
+    // Layout size actions
     setDetailPanelHeightPercent: (percent) => set({
         detailPanelHeightPercent: Math.max(10, Math.min(60, percent)) // Clamp 10-60%
     }),

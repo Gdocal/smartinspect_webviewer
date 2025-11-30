@@ -1,9 +1,14 @@
 /**
- * LogGrid - Main log entries grid using AG Grid Enterprise
- * OPTIMIZED: Memoized renderers, debounced filtering, efficient updates
+ * ViewGrid - Per-view AG Grid wrapper
+ *
+ * Each view gets its own ViewGrid component that:
+ * - Applies the view's filter to entries before passing to AG Grid
+ * - Maintains its own AG Grid column filter state (gridFilterModel)
+ * - Preserves scroll position when switching tabs
+ * - Stays mounted but hidden when not active (CSS visibility)
  */
 
-import { useMemo, useRef, useCallback, useEffect, memo } from 'react';
+import { useMemo, useRef, useCallback, useEffect } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import {
     ColDef,
@@ -15,14 +20,16 @@ import {
     GetRowIdParams,
     ICellRendererParams,
     ModuleRegistry,
-    AllCommunityModule
+    AllCommunityModule,
+    FilterModel
 } from 'ag-grid-community';
 import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
+import { memo } from 'react';
 
 // Register AG Grid modules (required for v34+)
 ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
-import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, Filter, ListTextFilter, TextFilter } from '../store/logStore';
+import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, View, Filter, ListTextFilter, TextFilter } from '../store/logStore';
 import { TimestampFilter } from './TimestampFilter';
 import { format } from 'date-fns';
 import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
@@ -64,7 +71,7 @@ const levelConfig: Record<number, { bg: string; text: string; label: string }> =
     [Level.Fatal]: { bg: '#dc2626', text: '#ffffff', label: 'FTL' },
 };
 
-// MEMOIZED Icon cell renderer - prevents re-creation on each render
+// MEMOIZED Icon cell renderer
 const IconCellRenderer = memo(function IconCellRenderer(props: ICellRendererParams<LogEntry>) {
     const entry = props.data;
     if (!entry) return null;
@@ -109,7 +116,7 @@ const LevelCellRenderer = memo(function LevelCellRenderer(props: ICellRendererPa
     );
 });
 
-// Timestamp formatter - cached Date objects for performance
+// Timestamp formatter caches
 const timestampCache = new Map<string, string>();
 const fullTimestampCache = new Map<string, string>();
 const CACHE_MAX_SIZE = 5000;
@@ -126,7 +133,6 @@ function formatTimestamp(date: string): string {
         cached = date;
     }
 
-    // Limit cache size
     if (timestampCache.size > CACHE_MAX_SIZE) {
         const firstKey = timestampCache.keys().next().value;
         if (firstKey) timestampCache.delete(firstKey);
@@ -155,44 +161,17 @@ function formatFullTimestamp(date: string): string {
     return cached;
 }
 
-interface LogGridProps {
-    onColumnStateChange?: (state: ColumnState[]) => void;
-    initialColumnState?: ColumnState[];
-}
-
-// Stable getRowId function - defined outside component
+// Stable getRowId function
 const getRowId = (params: GetRowIdParams<LogEntry>) => String(params.data.id);
-
-// Create a stable key from filter values for cache comparison
-function getFilterKey(filter: Filter): string {
-    return JSON.stringify({
-        sessions: filter.sessions.slice().sort(),
-        levels: filter.levels.slice().sort(),
-        titlePattern: filter.titlePattern,
-        messagePattern: filter.messagePattern,
-        inverseMatch: filter.inverseMatch,
-        appNames: filter.appNames.slice().sort(),
-        hostNames: filter.hostNames.slice().sort(),
-        entryTypes: filter.entryTypes.slice().sort(),
-        // Include extended filters for cache invalidation
-        sessionFilter: filter.sessionFilter,
-        appNameFilter: filter.appNameFilter,
-        hostNameFilter: filter.hostNameFilter,
-        titleFilter: filter.titleFilter,
-        levelsInverse: filter.levelsInverse,
-        entryTypesInverse: filter.entryTypesInverse,
-    });
-}
 
 // Helper to match a string value against a ListTextFilter
 function matchesListTextFilter(value: string | undefined, filter: ListTextFilter | undefined): boolean {
-    if (!filter) return true; // No filter = match all
+    if (!filter) return true;
 
-    // Check if filter is active
     const hasListValues = filter.mode === 'list' && filter.values.length > 0;
     const hasTextValue = filter.mode === 'text' && filter.textValue;
 
-    if (!hasListValues && !hasTextValue) return true; // Empty filter = match all
+    if (!hasListValues && !hasTextValue) return true;
 
     const val = value || '';
     let matches = false;
@@ -200,7 +179,6 @@ function matchesListTextFilter(value: string | undefined, filter: ListTextFilter
     if (filter.mode === 'list') {
         matches = filter.values.includes(val);
     } else {
-        // Text mode
         const textVal = filter.textValue.toLowerCase();
         const valLower = val.toLowerCase();
 
@@ -223,7 +201,7 @@ function matchesListTextFilter(value: string | undefined, filter: ListTextFilter
 
 // Helper to match a string value against a TextFilter
 function matchesTextFilter(value: string | undefined, filter: TextFilter | undefined): boolean {
-    if (!filter || !filter.value) return true; // No filter = match all
+    if (!filter || !filter.value) return true;
 
     const val = value || '';
     let matches = false;
@@ -248,199 +226,180 @@ function matchesTextFilter(value: string | undefined, filter: TextFilter | undef
     return filter.inverse ? !matches : matches;
 }
 
-// Cache for filtered entries per view - stores { filterKey, entriesVersion, result }
-interface FilterCache {
-    filterKey: string;
-    entriesVersion: number;
-    entriesLength: number;
-    result: LogEntry[];
-}
-const filterCacheByView = new Map<string, FilterCache>();
+// Apply view filter to entries
+function filterEntriesForView(entries: LogEntry[], filter: Filter): LogEntry[] {
+    const hasExtendedSessionFilter = filter.sessionFilter && (
+        (filter.sessionFilter.mode === 'list' && filter.sessionFilter.values.length > 0) ||
+        (filter.sessionFilter.mode === 'text' && filter.sessionFilter.textValue)
+    );
+    const hasExtendedAppNameFilter = filter.appNameFilter && (
+        (filter.appNameFilter.mode === 'list' && filter.appNameFilter.values.length > 0) ||
+        (filter.appNameFilter.mode === 'text' && filter.appNameFilter.textValue)
+    );
+    const hasExtendedHostNameFilter = filter.hostNameFilter && (
+        (filter.hostNameFilter.mode === 'list' && filter.hostNameFilter.values.length > 0) ||
+        (filter.hostNameFilter.mode === 'text' && filter.hostNameFilter.textValue)
+    );
+    const hasExtendedTitleFilter = filter.titleFilter && filter.titleFilter.value;
 
-export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProps) {
+    const hasSessionFilter = hasExtendedSessionFilter || filter.sessions.length > 0;
+    const hasLevelFilter = filter.levels.length > 0;
+    const hasTitleFilter = hasExtendedTitleFilter || !!filter.titlePattern;
+    const hasMessageFilter = !!filter.messagePattern;
+    const hasAppNameFilter = hasExtendedAppNameFilter || filter.appNames.length > 0;
+    const hasHostNameFilter = hasExtendedHostNameFilter || filter.hostNames.length > 0;
+    const hasEntryTypeFilter = filter.entryTypes.length > 0;
+
+    // Fast path: no filters active
+    if (!hasSessionFilter && !hasLevelFilter && !hasTitleFilter && !hasMessageFilter &&
+        !hasAppNameFilter && !hasHostNameFilter && !hasEntryTypeFilter) {
+        return entries;
+    }
+
+    // Pre-compile regex patterns for legacy filters
+    let titleRegex: RegExp | null = null;
+    let messageRegex: RegExp | null = null;
+
+    if (filter.titlePattern && !hasExtendedTitleFilter) {
+        try {
+            titleRegex = new RegExp(filter.titlePattern, 'i');
+        } catch {
+            // Invalid regex
+        }
+    }
+
+    if (hasMessageFilter) {
+        try {
+            messageRegex = new RegExp(filter.messagePattern, 'i');
+        } catch {
+            // Invalid regex
+        }
+    }
+
+    // Pre-create Sets for O(1) lookup (legacy filters)
+    const sessionSet = (!hasExtendedSessionFilter && filter.sessions.length > 0) ? new Set(filter.sessions) : null;
+    const levelSet = hasLevelFilter ? new Set(filter.levels) : null;
+    const appNameSet = (!hasExtendedAppNameFilter && filter.appNames.length > 0) ? new Set(filter.appNames) : null;
+    const hostNameSet = (!hasExtendedHostNameFilter && filter.hostNames.length > 0) ? new Set(filter.hostNames) : null;
+    const entryTypeSet = hasEntryTypeFilter ? new Set(filter.entryTypes) : null;
+
+    return entries.filter(e => {
+        // Session filter
+        if (hasExtendedSessionFilter) {
+            if (!matchesListTextFilter(e.sessionName, filter.sessionFilter)) {
+                return false;
+            }
+        } else if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
+            return false;
+        }
+
+        // Level filter
+        if (levelSet) {
+            const matches = e.level !== undefined && levelSet.has(e.level);
+            const result = filter.levelsInverse ? !matches : matches;
+            if (!result) return false;
+        }
+
+        // Title filter
+        if (hasExtendedTitleFilter) {
+            if (!matchesTextFilter(e.title, filter.titleFilter)) {
+                return false;
+            }
+        } else if (titleRegex) {
+            const matches = titleRegex.test(e.title || '');
+            if (filter.inverseMatch ? matches : !matches) {
+                return false;
+            }
+        }
+
+        // Message pattern filter
+        if (messageRegex) {
+            const titleMatch = messageRegex.test(e.title || '');
+            const dataMatch = messageRegex.test(e.data || '');
+            const matches = titleMatch || dataMatch;
+            if (filter.inverseMatch ? matches : !matches) {
+                return false;
+            }
+        }
+
+        // App name filter
+        if (hasExtendedAppNameFilter) {
+            if (!matchesListTextFilter(e.appName, filter.appNameFilter)) {
+                return false;
+            }
+        } else if (appNameSet && (!e.appName || !appNameSet.has(e.appName))) {
+            return false;
+        }
+
+        // Host name filter
+        if (hasExtendedHostNameFilter) {
+            if (!matchesListTextFilter(e.hostName, filter.hostNameFilter)) {
+                return false;
+            }
+        } else if (hostNameSet && (!e.hostName || !hostNameSet.has(e.hostName))) {
+            return false;
+        }
+
+        // Entry type filter
+        if (entryTypeSet) {
+            const matches = e.logEntryType !== undefined && entryTypeSet.has(e.logEntryType);
+            const result = filter.entryTypesInverse ? !matches : matches;
+            if (!result) return false;
+        }
+
+        return true;
+    });
+}
+
+interface ViewGridProps {
+    view: View;
+    isActive: boolean;
+    onColumnStateChange?: (viewId: string, state: ColumnState[]) => void;
+    onFilterModelChange?: (viewId: string, model: FilterModel) => void;
+    onScrollChange?: (viewId: string, scrollTop: number) => void;
+}
+
+export function ViewGrid({
+    view,
+    isActive,
+    onColumnStateChange,
+    onFilterModelChange,
+    onScrollChange
+}: ViewGridProps) {
     const gridRef = useRef<AgGridReact>(null);
     const gridApiRef = useRef<GridApi | null>(null);
-    const { entries, autoScroll, paused, setSelectedEntryId, filter, globalHighlightRules, views, activeViewId, entriesVersion, theme } = useLogStore();
+    const scrollTopRef = useRef(0);
+    const hasRestoredStateRef = useRef(false);
 
-    // Get active view's highlight rules combined with global (if enabled)
-    const activeHighlightRules = useMemo(() => {
-        const activeView = views.find(v => v.id === activeViewId);
-        if (!activeView) return globalHighlightRules;
+    const {
+        entries,
+        paused,
+        setSelectedEntryId,
+        globalHighlightRules,
+        entriesVersion,
+        theme
+    } = useLogStore();
 
-        const viewRules = activeView.highlightRules || [];
-        if (activeView.useGlobalHighlights) {
+    // Get combined highlight rules for this view
+    const highlightRules = useMemo(() => {
+        const viewRules = view.highlightRules || [];
+        if (view.useGlobalHighlights) {
             return [...viewRules, ...globalHighlightRules];
         }
         return viewRules;
-    }, [views, activeViewId, globalHighlightRules]);
+    }, [view.highlightRules, view.useGlobalHighlights, globalHighlightRules]);
 
-    // Simple static overlay - connection status is shown in footer
+    // Filter entries based on view filter
+    const filteredEntries = useMemo(() => {
+        return filterEntriesForView(entries, view.filter);
+    }, [entries, view.filter, entriesVersion]);
+
+    const lastEntryCountRef = useRef(0);
+    const lastEntriesVersionRef = useRef(0);
+
     const overlayNoRowsTemplate = '<span class="text-slate-400">No log entries</span>';
 
-    // OPTIMIZED: Cached filter computation per view
-    // Uses a cache to avoid re-filtering when switching tabs if filter values are unchanged
-    const filteredEntries = useMemo(() => {
-        const viewId = activeViewId || 'default';
-        const filterKey = getFilterKey(filter);
-        const cached = filterCacheByView.get(viewId);
-
-        // Check if we can use cached result
-        if (cached &&
-            cached.filterKey === filterKey &&
-            cached.entriesVersion === entriesVersion &&
-            cached.entriesLength === entries.length) {
-            return cached.result;
-        }
-
-        // Check if any filter is active (including extended filters)
-        const hasExtendedSessionFilter = filter.sessionFilter && (
-            (filter.sessionFilter.mode === 'list' && filter.sessionFilter.values.length > 0) ||
-            (filter.sessionFilter.mode === 'text' && filter.sessionFilter.textValue)
-        );
-        const hasExtendedAppNameFilter = filter.appNameFilter && (
-            (filter.appNameFilter.mode === 'list' && filter.appNameFilter.values.length > 0) ||
-            (filter.appNameFilter.mode === 'text' && filter.appNameFilter.textValue)
-        );
-        const hasExtendedHostNameFilter = filter.hostNameFilter && (
-            (filter.hostNameFilter.mode === 'list' && filter.hostNameFilter.values.length > 0) ||
-            (filter.hostNameFilter.mode === 'text' && filter.hostNameFilter.textValue)
-        );
-        const hasExtendedTitleFilter = filter.titleFilter && filter.titleFilter.value;
-
-        // Fall back to legacy filters if extended not present
-        const hasSessionFilter = hasExtendedSessionFilter || filter.sessions.length > 0;
-        const hasLevelFilter = filter.levels.length > 0;
-        const hasTitleFilter = hasExtendedTitleFilter || !!filter.titlePattern;
-        const hasMessageFilter = !!filter.messagePattern;
-        const hasAppNameFilter = hasExtendedAppNameFilter || filter.appNames.length > 0;
-        const hasHostNameFilter = hasExtendedHostNameFilter || filter.hostNames.length > 0;
-        const hasEntryTypeFilter = filter.entryTypes.length > 0;
-
-        let result: LogEntry[];
-
-        // Fast path: no filters active
-        if (!hasSessionFilter && !hasLevelFilter && !hasTitleFilter && !hasMessageFilter &&
-            !hasAppNameFilter && !hasHostNameFilter && !hasEntryTypeFilter) {
-            result = entries;
-        } else {
-            // Pre-compile regex patterns for legacy filters
-            let titleRegex: RegExp | null = null;
-            let messageRegex: RegExp | null = null;
-
-            if (filter.titlePattern && !hasExtendedTitleFilter) {
-                try {
-                    titleRegex = new RegExp(filter.titlePattern, 'i');
-                } catch {
-                    // Invalid regex
-                }
-            }
-
-            if (hasMessageFilter) {
-                try {
-                    messageRegex = new RegExp(filter.messagePattern, 'i');
-                } catch {
-                    // Invalid regex
-                }
-            }
-
-            // Pre-create Sets for O(1) lookup (legacy filters)
-            const sessionSet = (!hasExtendedSessionFilter && filter.sessions.length > 0) ? new Set(filter.sessions) : null;
-            const levelSet = hasLevelFilter ? new Set(filter.levels) : null;
-            const appNameSet = (!hasExtendedAppNameFilter && filter.appNames.length > 0) ? new Set(filter.appNames) : null;
-            const hostNameSet = (!hasExtendedHostNameFilter && filter.hostNames.length > 0) ? new Set(filter.hostNames) : null;
-            const entryTypeSet = hasEntryTypeFilter ? new Set(filter.entryTypes) : null;
-
-            // Single-pass filtering
-            result = entries.filter(e => {
-                // Session filter - prefer extended filter if available
-                if (hasExtendedSessionFilter) {
-                    if (!matchesListTextFilter(e.sessionName, filter.sessionFilter)) {
-                        return false;
-                    }
-                } else if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
-                    return false;
-                }
-
-                // Level filter (with inverse support)
-                if (levelSet) {
-                    const matches = e.level !== undefined && levelSet.has(e.level);
-                    const result = filter.levelsInverse ? !matches : matches;
-                    if (!result) return false;
-                }
-
-                // Title filter - prefer extended filter if available
-                if (hasExtendedTitleFilter) {
-                    if (!matchesTextFilter(e.title, filter.titleFilter)) {
-                        return false;
-                    }
-                } else if (titleRegex) {
-                    const matches = titleRegex.test(e.title || '');
-                    if (filter.inverseMatch ? matches : !matches) {
-                        return false;
-                    }
-                }
-
-                // Message pattern filter (legacy)
-                if (messageRegex) {
-                    const titleMatch = messageRegex.test(e.title || '');
-                    const dataMatch = messageRegex.test(e.data || '');
-                    const matches = titleMatch || dataMatch;
-                    if (filter.inverseMatch ? matches : !matches) {
-                        return false;
-                    }
-                }
-
-                // App name filter - prefer extended filter if available
-                if (hasExtendedAppNameFilter) {
-                    if (!matchesListTextFilter(e.appName, filter.appNameFilter)) {
-                        return false;
-                    }
-                } else if (appNameSet && (!e.appName || !appNameSet.has(e.appName))) {
-                    return false;
-                }
-
-                // Host name filter - prefer extended filter if available
-                if (hasExtendedHostNameFilter) {
-                    if (!matchesListTextFilter(e.hostName, filter.hostNameFilter)) {
-                        return false;
-                    }
-                } else if (hostNameSet && (!e.hostName || !hostNameSet.has(e.hostName))) {
-                    return false;
-                }
-
-                // Entry type filter (with inverse support)
-                if (entryTypeSet) {
-                    const matches = e.logEntryType !== undefined && entryTypeSet.has(e.logEntryType);
-                    const result = filter.entryTypesInverse ? !matches : matches;
-                    if (!result) return false;
-                }
-
-                return true;
-            });
-        }
-
-        // Update cache for this view
-        filterCacheByView.set(viewId, {
-            filterKey,
-            entriesVersion,
-            entriesLength: entries.length,
-            result
-        });
-
-        // Limit cache size to prevent memory bloat (keep max 10 views)
-        if (filterCacheByView.size > 10) {
-            const firstKey = filterCacheByView.keys().next().value;
-            if (firstKey && firstKey !== viewId) {
-                filterCacheByView.delete(firstKey);
-            }
-        }
-
-        return result;
-    }, [entries, filter, entriesVersion, activeViewId]);
-
-
-    // Column definitions with all columns
-    // Order: Icon (pinned), Title, Level, Session, Application, Host, Process, Thread, Data, Time
+    // Column definitions
     const columnDefs = useMemo<ColDef<LogEntry>[]>(() => [
         {
             headerName: '',
@@ -565,7 +524,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         },
     ], []);
 
-    // Default column definition - filter icons show on hover (via CSS)
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
         sortable: true,
@@ -573,7 +531,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         suppressHeaderMenuButton: true,
     }), []);
 
-    // Sidebar with column tool panel
     const sideBar = useMemo<SideBarDef>(() => ({
         toolPanels: [
             {
@@ -600,24 +557,20 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         defaultToolPanel: '',
     }), []);
 
-    // Row styling based on user-defined highlight rules (no auto-styling)
-    // Uses theme-appropriate colors: dark colors for dark theme, light colors for light theme
+    // Row styling based on highlight rules
     const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string | number> | undefined => {
         const entry = params.data;
         if (!entry) return undefined;
 
-        // Apply user-defined highlight rules (sorted by priority, highest first)
-        const sortedRules = [...activeHighlightRules].sort((a, b) => b.priority - a.priority);
+        const sortedRules = [...highlightRules].sort((a, b) => b.priority - a.priority);
         for (const rule of sortedRules) {
             if (matchesHighlightRule(entry, rule)) {
                 const style: Record<string, string | number> = {};
 
-                // Get base colors (light theme values)
                 const baseBgColor = rule.style.backgroundColor;
                 const baseTextColor = rule.style.textColor;
 
                 if (theme === 'dark') {
-                    // Dark theme: use dark colors if available, otherwise auto-adapt
                     if (baseBgColor) {
                         style.backgroundColor = rule.style.backgroundColorDark
                             || adaptColorForTheme(baseBgColor, 'dark');
@@ -626,7 +579,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                         if (rule.style.textColorDark) {
                             style.color = rule.style.textColorDark;
                         } else if (baseBgColor) {
-                            // Auto-adapt text color with contrast against dark background
                             const darkBg = rule.style.backgroundColorDark
                                 || adaptColorForTheme(baseBgColor, 'dark');
                             style.color = adaptTextColor(baseTextColor, darkBg, 'dark');
@@ -635,7 +587,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                         }
                     }
                 } else {
-                    // Light theme: use original colors directly
                     if (baseBgColor) style.backgroundColor = baseBgColor;
                     if (baseTextColor) style.color = baseTextColor;
                 }
@@ -646,46 +597,102 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             }
         }
 
-        // No auto-styling - user controls all highlighting via rules
         return undefined;
-    }, [activeHighlightRules, theme]);
+    }, [highlightRules, theme]);
 
     // Handle grid ready
     const onGridReady = useCallback((params: GridReadyEvent) => {
         gridApiRef.current = params.api;
 
         // Apply initial column state if provided
-        if (initialColumnState && initialColumnState.length > 0) {
-            params.api.applyColumnState({ state: initialColumnState });
+        if (view.columnState && view.columnState.length > 0) {
+            params.api.applyColumnState({ state: view.columnState });
         }
-    }, [initialColumnState]);
+
+        // Restore scroll position if we have one saved
+        // Note: This will be called when the grid first mounts
+        hasRestoredStateRef.current = false;
+    }, [view.columnState]);
 
     // Handle column state change
-    const onColumnStateChanged = useCallback(() => {
+    const handleColumnStateChanged = useCallback(() => {
         if (gridApiRef.current && onColumnStateChange) {
             const state = gridApiRef.current.getColumnState();
-            onColumnStateChange(state);
+            onColumnStateChange(view.id, state);
         }
-    }, [onColumnStateChange]);
+    }, [onColumnStateChange, view.id]);
+
+    // Handle filter change
+    const handleFilterChanged = useCallback(() => {
+        if (gridApiRef.current && onFilterModelChange) {
+            const model = gridApiRef.current.getFilterModel();
+            onFilterModelChange(view.id, model);
+        }
+    }, [onFilterModelChange, view.id]);
+
+    // Handle scroll
+    const handleBodyScroll = useCallback(() => {
+        if (gridApiRef.current) {
+            const scrollTop = gridApiRef.current.getVerticalPixelRange().top;
+            scrollTopRef.current = scrollTop;
+
+            // Debounce scroll change callback
+            if (onScrollChange) {
+                onScrollChange(view.id, scrollTop);
+            }
+        }
+    }, [onScrollChange, view.id]);
 
     // Handle row selection
     const onRowClicked = useCallback((event: { data?: LogEntry }) => {
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
-    // Auto-scroll handler - called when grid finishes updating row data
-    const onRowDataUpdated = useCallback(() => {
-        // Don't auto-scroll when paused or disabled
-        if (paused || !autoScroll || !gridApiRef.current) return;
+    // Auto-scroll to bottom when new entries arrive (only for active view with autoScroll)
+    useEffect(() => {
+        if (paused || !isActive || !view.autoScroll) return;
 
-        const rowCount = gridApiRef.current.getDisplayedRowCount();
-        if (rowCount > 0) {
-            gridApiRef.current.ensureIndexVisible(rowCount - 1, 'bottom');
+        if (gridApiRef.current && filteredEntries.length > 0) {
+            const hasNewEntries = filteredEntries.length > lastEntryCountRef.current ||
+                entriesVersion > lastEntriesVersionRef.current;
+
+            if (hasNewEntries) {
+                setTimeout(() => {
+                    if (gridApiRef.current) {
+                        const rowCount = gridApiRef.current.getDisplayedRowCount();
+                        if (rowCount > 0) {
+                            gridApiRef.current.ensureIndexVisible(rowCount - 1, 'bottom');
+                        }
+                    }
+                }, 100);
+            }
         }
-    }, [autoScroll, paused]);
+        lastEntryCountRef.current = filteredEntries.length;
+        lastEntriesVersionRef.current = entriesVersion;
+    }, [filteredEntries.length, isActive, view.autoScroll, paused, entriesVersion]);
+
+    // Restore scroll position when becoming active (but not on initial mount during auto-scroll)
+    useEffect(() => {
+        if (isActive && gridApiRef.current && !view.autoScroll && hasRestoredStateRef.current === false) {
+            // If the view has a saved scroll position, restore it
+            // (Scroll position is stored in the view via onScrollChange callback)
+            hasRestoredStateRef.current = true;
+        }
+    }, [isActive, view.autoScroll]);
 
     return (
-        <div className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }}>
+        <div
+            className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`}
+            style={{
+                fontSize: '13px',
+                visibility: isActive ? 'visible' : 'hidden',
+                position: isActive ? 'relative' : 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+            }}
+        >
             <AgGridReact
                 ref={gridRef}
                 theme="legacy"
@@ -696,26 +703,21 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 getRowStyle={getRowStyle}
                 onGridReady={onGridReady}
                 onRowClicked={onRowClicked}
-                onColumnMoved={onColumnStateChanged}
-                onColumnResized={onColumnStateChanged}
-                onColumnVisible={onColumnStateChanged}
-                onRowDataUpdated={onRowDataUpdated}
-                // PERFORMANCE OPTIMIZATIONS
+                onColumnMoved={handleColumnStateChanged}
+                onColumnResized={handleColumnStateChanged}
+                onColumnVisible={handleColumnStateChanged}
+                onFilterChanged={handleFilterChanged}
+                onBodyScroll={handleBodyScroll}
                 animateRows={false}
                 rowSelection={{ mode: 'singleRow', enableClickSelection: true, hideDisabledCheckboxes: true, checkboxes: false }}
                 sideBar={sideBar}
                 cellSelection={true}
                 suppressCellFocus={true}
-                // Increased row buffer for smoother scrolling
                 rowBuffer={50}
-                // Disable expensive features
                 suppressColumnVirtualisation={false}
                 suppressRowVirtualisation={false}
-                // Debounce resize events
                 debounceVerticalScrollbar={true}
-                // Reduce DOM operations
                 suppressAnimationFrame={false}
-                // Async transactions for bulk updates
                 asyncTransactionWaitMillis={50}
                 tooltipShowDelay={500}
                 overlayNoRowsTemplate={overlayNoRowsTemplate}

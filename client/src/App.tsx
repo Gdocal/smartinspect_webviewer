@@ -6,52 +6,31 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useLayout } from './hooks/useLayout';
-import { useLayoutPresets } from './hooks/useLayoutPresets';
 import { useViewsSync } from './hooks/useViewsSync';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { useProjectPersistence } from './hooks/useProjectPersistence';
 import { useLogStore, StreamEntry } from './store/logStore';
-import { LogGrid } from './components/LogGrid';
 import { FilterBar } from './components/FilterBar';
 import { WatchPanel } from './components/WatchPanel';
 import { StreamPanel } from './components/StreamPanel';
 import { DetailPanel } from './components/DetailPanel';
 import { StreamDetailPanel } from './components/StreamDetailPanel';
-import { ViewTabs } from './components/ViewTabs';
+import { ViewTabs, ViewGridContainer } from './components/ViewTabs';
 import { StatusBar } from './components/StatusBar';
 import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
 import { SettingsPanel } from './components/SettingsPanel';
-import { LayoutPresetDropdown } from './components/LayoutPresetDropdown';
-import { ColumnState } from 'ag-grid-community';
+import { ProjectDropdown } from './components/ProjectDropdown';
+import { ColumnState, FilterModel } from 'ag-grid-community';
 
 export function App() {
     const {
-        layout,
         saveLayout,
-        resetLayout,
-        exportLayout,
-        importLayout,
         getDetailPanelHeightPx,
         getWatchPanelWidthPx,
         updateDetailPanelHeightFromPx,
         updateWatchPanelWidthFromPx
     } = useLayout();
-
-    // Layout presets management
-    const {
-        activePreset,
-        ownPresets,
-        sharedPresets,
-        loading: presetsLoading,
-        loadPreset,
-        saveAsNewPreset,
-        updateActivePreset,
-        deletePreset,
-        copyPreset,
-        setAsDefault,
-        updatePresetMetadata,
-        updateColumnState
-    } = useLayoutPresets();
 
     const {
         showDetailPanel,
@@ -95,7 +74,6 @@ export function App() {
         setSelectedStreamEntry(entry);
         setSelectedStreamEntryId(entry?.id || null);
     }, [setSelectedStreamEntryId]);
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const [showServerInfo, setShowServerInfo] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
 
@@ -113,22 +91,26 @@ export function App() {
     // Sync views and highlights with server
     useViewsSync();
 
-    const handleColumnStateChange = useCallback((state: ColumnState[]) => {
+    // Project persistence (auto-saves working project to localStorage)
+    useProjectPersistence();
+
+    // Per-view grid state handlers
+    const handleViewColumnStateChange = useCallback((_viewId: string, state: ColumnState[]) => {
+        // For now, we save to the global layout (backward compatibility)
+        // In Phase 5, this will be saved per-view in the project
         saveLayout({ columnState: state });
-        updateColumnState(state);
-    }, [saveLayout, updateColumnState]);
+    }, [saveLayout]);
 
-    const handleImportClick = () => {
-        fileInputRef.current?.click();
-    };
+    const handleViewFilterModelChange = useCallback((_viewId: string, _model: FilterModel) => {
+        // Per-view filter model will be saved in Phase 5
+        // For now, just log for debugging
+        // console.log('[ViewGrid] Filter model changed for view:', viewId, model);
+    }, []);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            importLayout(file);
-        }
-        e.target.value = '';
-    };
+    const handleViewScrollChange = useCallback((_viewId: string, _scrollTop: number) => {
+        // Per-view scroll position will be saved in Phase 5
+        // For now, just ignore
+    }, []);
 
     // Resize handlers - now update percentage-based sizes
     const startResize = useCallback((type: 'detail' | 'watch', e: React.MouseEvent) => {
@@ -182,20 +164,8 @@ export function App() {
                     </div>
                 </div>
 
-                {/* Layout preset dropdown */}
-                <div className="ml-4">
-                    <LayoutPresetDropdown
-                        activePreset={activePreset}
-                        ownPresets={ownPresets}
-                        sharedPresets={sharedPresets}
-                        loading={presetsLoading}
-                        onSelectPreset={loadPreset}
-                        onSaveNew={saveAsNewPreset}
-                        onCopyPreset={copyPreset}
-                        onSetDefault={setAsDefault}
-                        onOpenSettings={() => setShowSettings(true)}
-                    />
-                </div>
+                {/* Project selector */}
+                <ProjectDropdown className="ml-4" />
 
                 <div className="flex-1" />
 
@@ -260,14 +230,6 @@ export function App() {
                     </button>
                 </div>
 
-                {/* Hidden file input for layout import */}
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".json"
-                    onChange={handleFileChange}
-                    className="hidden"
-                />
             </header>
 
             {/* Install hint banner - shown on IP access */}
@@ -310,9 +272,10 @@ export function App() {
                             />
                         </div>
                         <div className={`absolute inset-0 ${isStreamsMode ? 'invisible' : ''}`}>
-                            <LogGrid
-                                onColumnStateChange={handleColumnStateChange}
-                                initialColumnState={layout.columnState}
+                            <ViewGridContainer
+                                onColumnStateChange={handleViewColumnStateChange}
+                                onFilterModelChange={handleViewFilterModelChange}
+                                onScrollChange={handleViewScrollChange}
                             />
                         </div>
                     </div>
@@ -384,22 +347,6 @@ export function App() {
             <SettingsPanel
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
-                onExportLayout={exportLayout}
-                onImportLayout={handleImportClick}
-                onResetLayout={resetLayout}
-                // Preset management props
-                activePreset={activePreset}
-                ownPresets={ownPresets}
-                sharedPresets={sharedPresets}
-                presetsLoading={presetsLoading}
-                onLoadPreset={loadPreset}
-                onSavePreset={updateActivePreset}
-                onSaveAsNewPreset={saveAsNewPreset}
-                onDeletePreset={deletePreset}
-                onRenamePreset={async (id, name) => updatePresetMetadata(id, { name })}
-                onSetDefaultPreset={setAsDefault}
-                onToggleShared={async (id, isShared) => updatePresetMetadata(id, { isShared })}
-                onCopyPreset={copyPreset}
             />
         </div>
     );

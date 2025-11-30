@@ -6,6 +6,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
+import { ViewGrid } from './ViewGrid';
+import { ColumnState, FilterModel } from 'ag-grid-community';
 
 // Checkbox is imported from HighlightRuleEditor
 
@@ -765,5 +767,77 @@ export function ViewTabs() {
                 />
             )}
         </>
+    );
+}
+
+/**
+ * ViewGridContainer - Renders all view grids, each in its own tab panel
+ *
+ * Each view gets its own ViewGrid component that:
+ * - Stays mounted but hidden when not active (CSS visibility)
+ * - Maintains its own AG Grid column filter state
+ * - Preserves scroll position when switching tabs
+ */
+interface ViewGridContainerProps {
+    onColumnStateChange?: (viewId: string, state: ColumnState[]) => void;
+    onFilterModelChange?: (viewId: string, model: FilterModel) => void;
+    onScrollChange?: (viewId: string, scrollTop: number) => void;
+}
+
+export function ViewGridContainer({
+    onColumnStateChange,
+    onFilterModelChange,
+    onScrollChange
+}: ViewGridContainerProps) {
+    const { views, activeViewId, isStreamsMode } = useLogStore();
+    const [mountedViews, setMountedViews] = useState<Set<string>>(new Set());
+
+    // Track which views have been mounted (lazy mounting)
+    useEffect(() => {
+        if (activeViewId && !isStreamsMode && !mountedViews.has(activeViewId)) {
+            setMountedViews(prev => new Set([...prev, activeViewId]));
+        }
+    }, [activeViewId, isStreamsMode, mountedViews]);
+
+    // When in streams mode, don't render any grids as active
+    if (isStreamsMode) {
+        // Still render mounted views but all hidden
+        return (
+            <div className="relative h-full w-full">
+                {views.filter(view => mountedViews.has(view.id)).map(view => (
+                    <ViewGrid
+                        key={view.id}
+                        view={view}
+                        isActive={false}
+                        onColumnStateChange={onColumnStateChange}
+                        onFilterModelChange={onFilterModelChange}
+                        onScrollChange={onScrollChange}
+                    />
+                ))}
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative h-full w-full">
+            {views.map(view => {
+                const isMounted = mountedViews.has(view.id);
+                const isActive = view.id === activeViewId;
+
+                // Only render if mounted (lazy loading)
+                if (!isMounted) return null;
+
+                return (
+                    <ViewGrid
+                        key={view.id}
+                        view={view}
+                        isActive={isActive}
+                        onColumnStateChange={onColumnStateChange}
+                        onFilterModelChange={onFilterModelChange}
+                        onScrollChange={onScrollChange}
+                    />
+                );
+            })}
+        </div>
     );
 }
