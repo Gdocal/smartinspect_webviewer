@@ -3,7 +3,7 @@
  * OPTIMIZED: Memoized renderers, debounced filtering, efficient updates
  */
 
-import { useMemo, useRef, useCallback, useEffect, memo } from 'react';
+import { useMemo, useRef, useCallback, useEffect, memo, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import {
     ColDef,
@@ -22,7 +22,7 @@ import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
 // Register AG Grid modules (required for v34+)
 ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
-import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule } from '../store/logStore';
+import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, Filter } from '../store/logStore';
 import { TimestampFilter } from './TimestampFilter';
 import { format } from 'date-fns';
 import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
@@ -163,6 +163,29 @@ interface LogGridProps {
 // Stable getRowId function - defined outside component
 const getRowId = (params: GetRowIdParams<LogEntry>) => String(params.data.id);
 
+// Create a stable key from filter values for cache comparison
+function getFilterKey(filter: Filter): string {
+    return JSON.stringify({
+        sessions: filter.sessions.slice().sort(),
+        levels: filter.levels.slice().sort(),
+        titlePattern: filter.titlePattern,
+        messagePattern: filter.messagePattern,
+        inverseMatch: filter.inverseMatch,
+        appNames: filter.appNames.slice().sort(),
+        hostNames: filter.hostNames.slice().sort(),
+        entryTypes: filter.entryTypes.slice().sort(),
+    });
+}
+
+// Cache for filtered entries per view - stores { filterKey, entriesVersion, result }
+interface FilterCache {
+    filterKey: string;
+    entriesVersion: number;
+    entriesLength: number;
+    result: LogEntry[];
+}
+const filterCacheByView = new Map<string, FilterCache>();
+
 export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProps) {
     const gridRef = useRef<AgGridReact>(null);
     const gridApiRef = useRef<GridApi | null>(null);
@@ -185,76 +208,109 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     // Simple static overlay - connection status is shown in footer
     const overlayNoRowsTemplate = '<span class="text-slate-400">No log entries</span>';
 
-    // OPTIMIZED: Debounced filter computation
+    // OPTIMIZED: Cached filter computation per view
+    // Uses a cache to avoid re-filtering when switching tabs if filter values are unchanged
     const filteredEntries = useMemo(() => {
+        const viewId = activeViewId || 'default';
+        const filterKey = getFilterKey(filter);
+        const cached = filterCacheByView.get(viewId);
+
+        // Check if we can use cached result
+        if (cached &&
+            cached.filterKey === filterKey &&
+            cached.entriesVersion === entriesVersion &&
+            cached.entriesLength === entries.length) {
+            return cached.result;
+        }
+
         // Check if any filter is active
         const hasSessionFilter = filter.sessions.length > 0;
         const hasLevelFilter = filter.levels.length > 0;
         const hasTitleFilter = !!filter.titlePattern;
         const hasMessageFilter = !!filter.messagePattern;
 
+        let result: LogEntry[];
+
         // Fast path: no filters active
         if (!hasSessionFilter && !hasLevelFilter && !hasTitleFilter && !hasMessageFilter) {
-            return entries;
-        }
+            result = entries;
+        } else {
+            // Pre-compile regex patterns
+            let titleRegex: RegExp | null = null;
+            let messageRegex: RegExp | null = null;
 
-        // Pre-compile regex patterns
-        let titleRegex: RegExp | null = null;
-        let messageRegex: RegExp | null = null;
-
-        if (hasTitleFilter) {
-            try {
-                titleRegex = new RegExp(filter.titlePattern, 'i');
-            } catch {
-                // Invalid regex
-            }
-        }
-
-        if (hasMessageFilter) {
-            try {
-                messageRegex = new RegExp(filter.messagePattern, 'i');
-            } catch {
-                // Invalid regex
-            }
-        }
-
-        // Pre-create Sets for O(1) lookup
-        const sessionSet = hasSessionFilter ? new Set(filter.sessions) : null;
-        const levelSet = hasLevelFilter ? new Set(filter.levels) : null;
-
-        // Single-pass filtering
-        return entries.filter(e => {
-            // Session filter
-            if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
-                return false;
-            }
-
-            // Level filter
-            if (levelSet && (e.level === undefined || !levelSet.has(e.level))) {
-                return false;
-            }
-
-            // Title pattern filter
-            if (titleRegex) {
-                const matches = titleRegex.test(e.title || '');
-                if (filter.inverseMatch ? matches : !matches) {
-                    return false;
+            if (hasTitleFilter) {
+                try {
+                    titleRegex = new RegExp(filter.titlePattern, 'i');
+                } catch {
+                    // Invalid regex
                 }
             }
 
-            // Message pattern filter
-            if (messageRegex) {
-                const titleMatch = messageRegex.test(e.title || '');
-                const dataMatch = messageRegex.test(e.data || '');
-                const matches = titleMatch || dataMatch;
-                if (filter.inverseMatch ? matches : !matches) {
-                    return false;
+            if (hasMessageFilter) {
+                try {
+                    messageRegex = new RegExp(filter.messagePattern, 'i');
+                } catch {
+                    // Invalid regex
                 }
             }
 
-            return true;
+            // Pre-create Sets for O(1) lookup
+            const sessionSet = hasSessionFilter ? new Set(filter.sessions) : null;
+            const levelSet = hasLevelFilter ? new Set(filter.levels) : null;
+
+            // Single-pass filtering
+            result = entries.filter(e => {
+                // Session filter
+                if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
+                    return false;
+                }
+
+                // Level filter
+                if (levelSet && (e.level === undefined || !levelSet.has(e.level))) {
+                    return false;
+                }
+
+                // Title pattern filter
+                if (titleRegex) {
+                    const matches = titleRegex.test(e.title || '');
+                    if (filter.inverseMatch ? matches : !matches) {
+                        return false;
+                    }
+                }
+
+                // Message pattern filter
+                if (messageRegex) {
+                    const titleMatch = messageRegex.test(e.title || '');
+                    const dataMatch = messageRegex.test(e.data || '');
+                    const matches = titleMatch || dataMatch;
+                    if (filter.inverseMatch ? matches : !matches) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
+        // Update cache for this view
+        filterCacheByView.set(viewId, {
+            filterKey,
+            entriesVersion,
+            entriesLength: entries.length,
+            result
         });
-    }, [entries, filter, entriesVersion]);
+
+        // Limit cache size to prevent memory bloat (keep max 10 views)
+        if (filterCacheByView.size > 10) {
+            const firstKey = filterCacheByView.keys().next().value;
+            if (firstKey && firstKey !== viewId) {
+                filterCacheByView.delete(firstKey);
+            }
+        }
+
+        return result;
+    }, [entries, filter, entriesVersion, activeViewId]);
 
 
     // Column definitions with all columns

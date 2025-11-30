@@ -544,9 +544,21 @@ export const useLogStore = create<LogState>((set, get) => ({
     setAppNames: (appNames) => set({ appNames }),
     setHostNames: (hostNames) => set({ hostNames }),
 
-    setFilter: (filter) => set((state) => ({
-        filter: { ...state.filter, ...filter }
-    })),
+    setFilter: (filterUpdate) => set((state) => {
+        const newFilter = { ...state.filter, ...filterUpdate };
+
+        // Also update the active view's filter so it persists when switching tabs
+        if (state.activeViewId) {
+            const updatedViews = state.views.map(v =>
+                v.id === state.activeViewId
+                    ? { ...v, filter: { ...v.filter, ...filterUpdate } }
+                    : v
+            );
+            return { filter: newFilter, views: updatedViews };
+        }
+
+        return { filter: newFilter };
+    }),
 
     setPaused: (paused) => set({ paused }),
     setAutoScroll: (autoScroll) => set({ autoScroll }),

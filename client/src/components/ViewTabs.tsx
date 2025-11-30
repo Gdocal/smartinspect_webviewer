@@ -7,6 +7,35 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogStore, View, Filter, Level, HighlightRule } from '../store/logStore';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
 
+// Custom checkbox component that works properly in dark mode
+interface CheckboxProps {
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    className?: string;
+}
+
+function Checkbox({ checked, onChange, className = '' }: CheckboxProps) {
+    return (
+        <button
+            type="button"
+            role="checkbox"
+            aria-checked={checked}
+            onClick={() => onChange(!checked)}
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                checked
+                    ? 'bg-blue-500 border-blue-500'
+                    : 'bg-slate-100 dark:bg-slate-600 border-slate-300 dark:border-slate-500'
+            } ${className}`}
+        >
+            {checked && (
+                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+            )}
+        </button>
+    );
+}
+
 // Helper to get a summary of the filter for display
 function getFilterSummary(rule: HighlightRule): string {
     const parts: string[] = [];
@@ -126,7 +155,7 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
                             : `${selected.length} sessions selected`}
                 </span>
                 <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
 
@@ -176,13 +205,11 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
                             filteredOptions.map(option => (
                                 <label
                                     key={option}
-                                    className="flex items-center px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer"
+                                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer"
                                 >
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={selected.includes(option)}
                                         onChange={() => toggleOption(option)}
-                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500 mr-2"
                                     />
                                     <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{option}</span>
                                 </label>
@@ -205,7 +232,7 @@ function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Selec
                                         className="hover:text-blue-900 dark:hover:text-blue-100"
                                     >
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
                                         </svg>
                                     </button>
                                 </span>
@@ -234,7 +261,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const [inverseMatch, setInverseMatch] = useState(view?.filter.inverseMatch || false);
     const [useGlobalHighlights, setUseGlobalHighlights] = useState(view?.useGlobalHighlights ?? true);
     const [highlightRules, setHighlightRules] = useState(view?.highlightRules || []);
-    const [activeTab, setActiveTab] = useState<'filters' | 'highlights'>('filters');
+    const [activeTab, setActiveTab] = useState<'general' | 'filters' | 'highlights'>('general');
     const [showHighlightEditor, setShowHighlightEditor] = useState(false);
     const [editingHighlightRule, setEditingHighlightRule] = useState<HighlightRule | undefined>(undefined);
 
@@ -322,22 +349,22 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                     </h3>
                 </div>
 
-                {/* Name field */}
-                <div className="px-4 pt-4 flex-shrink-0">
-                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                        View Name
-                    </label>
-                    <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                        placeholder="Enter view name..."
-                    />
-                </div>
-
                 {/* Tab bar */}
                 <div className="flex border-b border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 flex-shrink-0">
+                    <button
+                        onClick={() => setActiveTab('general')}
+                        className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                            activeTab === 'general'
+                                ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800'
+                                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        General
+                    </button>
                     <button
                         onClick={() => setActiveTab('filters')}
                         className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
@@ -347,7 +374,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                         }`}
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                         </svg>
                         Filters
                     </button>
@@ -360,7 +387,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                         }`}
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                         </svg>
                         Highlights
                         {highlightRules.length > 0 && (
@@ -372,7 +399,23 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                 </div>
 
                 <div className="p-4 overflow-auto flex-1 min-h-0">
-                    {activeTab === 'filters' ? (
+                    {activeTab === 'general' ? (
+                        <>
+                            {/* View Name */}
+                            <div className="mb-4">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    View Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                    placeholder="Enter view name..."
+                                />
+                            </div>
+                        </>
+                    ) : activeTab === 'filters' ? (
                         <>
                             {/* Session Filter - Searchable Multi-Select */}
                             <div className="mb-4">
@@ -448,11 +491,9 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                             {/* Inverse Match */}
                             <div className="mb-4">
                                 <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={inverseMatch}
-                                        onChange={(e) => setInverseMatch(e.target.checked)}
-                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
+                                        onChange={setInverseMatch}
                                     />
                                     <span className="text-sm text-slate-700 dark:text-slate-200">Inverse match (exclude matching entries)</span>
                                 </label>
@@ -463,11 +504,9 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                             {/* Use Global Highlights */}
                             <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
                                 <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={useGlobalHighlights}
-                                        onChange={(e) => setUseGlobalHighlights(e.target.checked)}
-                                        className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
+                                        onChange={setUseGlobalHighlights}
                                     />
                                     <span className="text-sm text-slate-700 dark:text-slate-200">
                                         Also apply global highlight rules
@@ -491,57 +530,58 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                         className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium flex items-center gap-1"
                                     >
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
                                         </svg>
                                         Add Rule
                                     </button>
                                 </div>
 
                                 {highlightRules.length === 0 ? (
-                                    <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-sm">
-                                        No view-specific highlight rules.
-                                        <br />
-                                        <span className="text-xs">Click "Add Rule" to create one.</span>
+                                    <div className="text-center py-8 border border-dashed border-slate-200 dark:border-slate-600 rounded-lg">
+                                        <svg className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                                        </svg>
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm mb-1">No view-specific highlight rules</p>
+                                        <p className="text-slate-400 dark:text-slate-500 text-xs">Click "Add Rule" to create one</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-2">
                                         {highlightRules.map((rule) => (
                                             <div
                                                 key={rule.id}
-                                                className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
+                                                className="flex items-center gap-2 p-2 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
                                             >
-                                                <input
-                                                    type="checkbox"
+                                                <Checkbox
                                                     checked={rule.enabled}
                                                     onChange={() => handleToggleHighlightRule(rule)}
-                                                    className="rounded border-slate-300 dark:border-slate-500 text-blue-500 focus:ring-blue-500"
                                                 />
                                                 <div
-                                                    className="w-6 h-6 rounded border dark:border-slate-500 flex-shrink-0"
+                                                    className="w-5 h-5 rounded border dark:border-slate-500 flex-shrink-0"
                                                     style={{ backgroundColor: rule.style.backgroundColor }}
                                                 />
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-sm text-slate-800 dark:text-slate-200">{rule.name}</div>
+                                                    <div className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">{rule.name}</div>
                                                     <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                                                         {getFilterSummary(rule)}
                                                     </div>
                                                 </div>
+                                                <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">P{rule.priority}</span>
                                                 <button
                                                     onClick={() => handleEditHighlightRule(rule)}
-                                                    className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
+                                                    className="p-1 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
                                                     title="Edit rule"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                                     </svg>
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteHighlightRule(rule.id)}
-                                                    className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                                                    className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
                                                     title="Delete rule"
                                                 >
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                                     </svg>
                                                 </button>
                                             </div>
@@ -711,7 +751,7 @@ export function ViewTabs() {
                         title="Scroll left"
                     >
                         <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
                 )}
@@ -727,14 +767,14 @@ export function ViewTabs() {
                     {/* Streams tab - pinned first, different styling */}
                     <div
                         onClick={handleStreamsClick}
-                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
+                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
                             isStreamsMode
-                                ? 'bg-gradient-to-b from-purple-500 to-purple-600 text-white border-t border-l border-r border-purple-400 -mb-px shadow-sm'
+                                ? 'bg-purple-500 text-white'
                                 : 'bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300'
                         }`}
                     >
                         <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
                         <span className={`text-sm font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700 dark:text-purple-300'}`}>
                             Streams
@@ -742,7 +782,7 @@ export function ViewTabs() {
                     </div>
 
                     {/* Separator */}
-                    <div className="w-px h-5 bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0" />
+                    <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0" />
 
                     {/* Regular view tabs */}
                     {views.map(view => (
@@ -750,14 +790,14 @@ export function ViewTabs() {
                             key={view.id}
                             onClick={() => handleViewClick(view.id)}
                             onDoubleClick={() => handleEditView(view)}
-                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg cursor-pointer transition-colors ${
+                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
                                 !isStreamsMode && activeViewId === view.id
-                                    ? 'bg-white dark:bg-slate-700 border-t border-l border-r border-slate-200 dark:border-slate-600 -mb-px'
-                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
+                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                             }`}
                             title={view.name}
                         >
-                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium text-slate-800 dark:text-slate-200' : 'text-slate-600 dark:text-slate-400'}`}>
+                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium' : ''}`}>
                                 {view.name}
                             </span>
                             {view.filter.sessions.length > 0 && (
@@ -772,7 +812,7 @@ export function ViewTabs() {
                                     title="Close tab"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
                             )}
@@ -786,7 +826,7 @@ export function ViewTabs() {
                         title="Create new view"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
                         </svg>
                     </button>
                 </div>
@@ -799,7 +839,7 @@ export function ViewTabs() {
                         title="Scroll right"
                     >
                         <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
                         </svg>
                     </button>
                 )}

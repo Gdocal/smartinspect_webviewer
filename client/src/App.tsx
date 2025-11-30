@@ -7,6 +7,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useLayout } from './hooks/useLayout';
 import { useViewsSync } from './hooks/useViewsSync';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { useLogStore, StreamEntry } from './store/logStore';
 import { LogGrid } from './components/LogGrid';
 import { FilterBar } from './components/FilterBar';
@@ -16,7 +17,6 @@ import { DetailPanel } from './components/DetailPanel';
 import { StreamDetailPanel } from './components/StreamDetailPanel';
 import { ViewTabs } from './components/ViewTabs';
 import { StatusBar } from './components/StatusBar';
-import { HighlightRulesPanel } from './components/HighlightRulesPanel';
 import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -67,9 +67,11 @@ export function App() {
         setSelectedStreamEntryId(entry?.id || null);
     }, [setSelectedStreamEntryId]);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [showHighlightRules, setShowHighlightRules] = useState(false);
     const [showServerInfo, setShowServerInfo] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
+
+    // PWA install
+    const { canInstall, install, showInstallHint, installInfo, dismissHint } = usePWAInstall();
 
     // Resizable panel heights/widths
     const [detailHeight, setDetailHeight] = useState(250);
@@ -137,74 +139,80 @@ export function App() {
 
     return (
         <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
-            {/* Header - Clean, minimal */}
-            <header className="bg-gradient-to-r from-slate-800 to-slate-700 text-white px-4 py-2 flex items-center shadow-md">
+            {/* Header - Modern enterprise style */}
+            <header className="bg-slate-900 text-white px-4 py-2 flex items-center border-b border-slate-700/50">
                 {/* Logo and title */}
-                <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                    </svg>
-                    <h1 className="text-base font-semibold tracking-tight">SmartInspect</h1>
-                    <span className="text-xs text-slate-400 font-normal">Web Viewer</span>
+                <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded bg-blue-500 flex items-center justify-center">
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                        </svg>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                        <h1 className="text-sm font-semibold tracking-tight text-white">SmartInspect</h1>
+                        <span className="text-xs text-slate-500 font-normal">Web Viewer</span>
+                    </div>
                 </div>
 
                 <div className="flex-1" />
 
-                {/* Minimal icon buttons */}
-                <div className="flex items-center gap-1">
+                {/* Header actions */}
+                <div className="flex items-center gap-0.5">
                     {/* Detail panel toggle */}
                     <button
                         onClick={() => setShowDetailPanel(!showDetailPanel)}
-                        className={`p-1.5 rounded transition-colors ${
+                        className={`p-1.5 rounded transition-all ${
                             showDetailPanel
-                                ? 'bg-blue-500/20 text-blue-400'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-600'
+                                ? 'bg-blue-500/15 text-blue-400'
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                         }`}
                         title="Toggle detail panel"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                         </svg>
                     </button>
 
                     {/* Watch panel toggle */}
                     <button
                         onClick={() => setShowWatchPanel(!showWatchPanel)}
-                        className={`p-1.5 rounded transition-colors ${
+                        className={`p-1.5 rounded transition-all ${
                             showWatchPanel
-                                ? 'bg-blue-500/20 text-blue-400'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-600'
+                                ? 'bg-blue-500/15 text-blue-400'
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                         }`}
                         title="Toggle watch panel"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                     </button>
 
-                    <div className="w-px h-4 bg-slate-600 mx-1" />
+                    <div className="w-px h-4 bg-slate-700 mx-1.5" />
 
-                    {/* Highlight rules */}
-                    <button
-                        onClick={() => setShowHighlightRules(true)}
-                        className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
-                        title="Highlight rules"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                        </svg>
-                    </button>
+                    {/* Install App button - only show when installable */}
+                    {canInstall && (
+                        <button
+                            onClick={install}
+                            className="p-1.5 rounded text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 transition-all"
+                            title="Install App"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                        </button>
+                    )}
 
                     {/* Settings */}
                     <button
                         onClick={() => setShowSettings(true)}
-                        className="p-1.5 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
+                        className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-all"
                         title="Settings"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                     </button>
                 </div>
@@ -218,6 +226,27 @@ export function App() {
                     className="hidden"
                 />
             </header>
+
+            {/* Install hint banner - shown on IP access */}
+            {showInstallHint && (
+                <div className="bg-blue-600 text-white px-4 py-1.5 flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span>Install as app: <strong>{installInfo.instructions}</strong></span>
+                    </div>
+                    <button
+                        onClick={dismissHint}
+                        className="p-1 hover:bg-blue-500 rounded"
+                        title="Dismiss"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            )}
 
             {/* View tabs */}
             <ViewTabs />
@@ -301,10 +330,6 @@ export function App() {
                 onServerInfoClick={() => setShowServerInfo(true)}
             />
 
-            {/* Highlight rules modal */}
-            {showHighlightRules && (
-                <HighlightRulesPanel onClose={() => setShowHighlightRules(false)} />
-            )}
 
             {/* Server info modal */}
             <ServerInfoModal
