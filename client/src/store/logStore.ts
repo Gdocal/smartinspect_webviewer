@@ -89,6 +89,13 @@ export interface Filter {
     appNames: string[];
     hostNames: string[];
     entryTypes: number[];
+    // Extended filters using ListTextFilter for text mode support
+    sessionFilter?: ListTextFilter;
+    appNameFilter?: ListTextFilter;
+    hostNameFilter?: ListTextFilter;
+    titleFilter?: TextFilter;
+    levelsInverse?: boolean;
+    entryTypesInverse?: boolean;
 }
 
 // Text filter with operator and inverse support
@@ -334,7 +341,7 @@ interface LogState {
     setStreamsMode: (isStreamsMode: boolean) => void;
 
     // View actions
-    addView: (view: Omit<View, 'id'>) => void;
+    addView: (view: Omit<View, 'id'>, setAsActive?: boolean) => void;
     updateView: (id: string, updates: Partial<View>) => void;
     deleteView: (id: string) => void;
     setActiveView: (id: string | null) => void;
@@ -613,9 +620,14 @@ export const useLogStore = create<LogState>((set, get) => ({
     setStreamsMode: (isStreamsMode) => set({ isStreamsMode }),
 
     // View actions
-    addView: (view) => set((state) => ({
-        views: [...state.views, { ...view, id: generateId() }]
-    })),
+    addView: (view, setAsActive = false) => set((state) => {
+        const newId = generateId();
+        const newView = { ...view, id: newId };
+        return {
+            views: [...state.views, newView],
+            ...(setAsActive ? { activeViewId: newId, filter: { ...newView.filter } } : {})
+        };
+    }),
 
     updateView: (id, updates) => set((state) => {
         const newViews = state.views.map(v => v.id === id ? { ...v, ...updates } : v);

@@ -1,40 +1,13 @@
 /**
  * ViewTabs - Tab bar for switching between predefined views
- * With searchable multi-select dropdown for sessions
+ * Uses the same filter components as HighlightRuleEditor for consistency
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useLogStore, View, Filter, Level, HighlightRule } from '../store/logStore';
-import { HighlightRuleEditor } from './HighlightRuleEditor';
+import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
+import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 
-// Custom checkbox component that works properly in dark mode
-interface CheckboxProps {
-    checked: boolean;
-    onChange: (checked: boolean) => void;
-    className?: string;
-}
-
-function Checkbox({ checked, onChange, className = '' }: CheckboxProps) {
-    return (
-        <button
-            type="button"
-            role="checkbox"
-            aria-checked={checked}
-            onClick={() => onChange(!checked)}
-            className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                checked
-                    ? 'bg-blue-500 border-blue-500'
-                    : 'bg-slate-100 dark:bg-slate-600 border-slate-300 dark:border-slate-500'
-            } ${className}`}
-        >
-            {checked && (
-                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-            )}
-        </button>
-    );
-}
+// Checkbox is imported from HighlightRuleEditor
 
 // Helper to get a summary of the filter for display
 function getFilterSummary(rule: HighlightRule): string {
@@ -100,151 +73,6 @@ const defaultFilter: Filter = {
     entryTypes: []
 };
 
-// Searchable multi-select dropdown component
-interface MultiSelectDropdownProps {
-    options: string[];
-    selected: string[];
-    onChange: (selected: string[]) => void;
-    placeholder?: string;
-}
-
-function MultiSelectDropdown({ options, selected, onChange, placeholder = 'Select...' }: MultiSelectDropdownProps) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [search, setSearch] = useState('');
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    // Close on outside click
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    const filteredOptions = options.filter(opt =>
-        opt.toLowerCase().includes(search.toLowerCase())
-    );
-
-    const toggleOption = (option: string) => {
-        if (selected.includes(option)) {
-            onChange(selected.filter(s => s !== option));
-        } else {
-            onChange([...selected, option]);
-        }
-    };
-
-    const selectAll = () => onChange([...options]);
-    const clearAll = () => onChange([]);
-
-    return (
-        <div ref={dropdownRef} className="relative">
-            {/* Trigger button */}
-            <button
-                type="button"
-                onClick={() => setIsOpen(!isOpen)}
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-left bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none flex items-center justify-between"
-            >
-                <span className={selected.length === 0 ? 'text-slate-400' : 'text-slate-700 dark:text-slate-200'}>
-                    {selected.length === 0
-                        ? placeholder
-                        : selected.length === 1
-                            ? selected[0]
-                            : `${selected.length} sessions selected`}
-                </span>
-                <svg className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
-                </svg>
-            </button>
-
-            {/* Dropdown */}
-            {isOpen && (
-                <div className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-64 overflow-hidden">
-                    {/* Search input */}
-                    <div className="p-2 border-b border-slate-100 dark:border-slate-600">
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Search sessions..."
-                            className="w-full px-2.5 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-600 dark:text-slate-100"
-                            autoFocus
-                        />
-                    </div>
-
-                    {/* Quick actions */}
-                    <div className="px-2 py-1.5 border-b border-slate-100 dark:border-slate-600 flex gap-2">
-                        <button
-                            type="button"
-                            onClick={selectAll}
-                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-                        >
-                            Select All
-                        </button>
-                        <button
-                            type="button"
-                            onClick={clearAll}
-                            className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                        >
-                            Clear
-                        </button>
-                        <span className="text-xs text-slate-400 ml-auto">
-                            {options.length} total
-                        </span>
-                    </div>
-
-                    {/* Options list */}
-                    <div className="overflow-auto max-h-40">
-                        {filteredOptions.length === 0 ? (
-                            <div className="px-3 py-2 text-sm text-slate-400">
-                                {options.length === 0 ? 'No sessions available' : 'No matches found'}
-                            </div>
-                        ) : (
-                            filteredOptions.map(option => (
-                                <label
-                                    key={option}
-                                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer"
-                                >
-                                    <Checkbox
-                                        checked={selected.includes(option)}
-                                        onChange={() => toggleOption(option)}
-                                    />
-                                    <span className="text-sm text-slate-700 dark:text-slate-200 truncate">{option}</span>
-                                </label>
-                            ))
-                        )}
-                    </div>
-
-                    {/* Selected tags */}
-                    {selected.length > 0 && (
-                        <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-600 flex flex-wrap gap-1 max-h-20 overflow-auto">
-                            {selected.map(s => (
-                                <span
-                                    key={s}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs rounded"
-                                >
-                                    {s}
-                                    <button
-                                        type="button"
-                                        onClick={() => toggleOption(s)}
-                                        className="hover:text-blue-900 dark:hover:text-blue-100"
-                                    >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-}
-
 interface ViewEditorProps {
     view?: View;
     onSave: (view: Omit<View, 'id'>) => void;
@@ -254,11 +82,91 @@ interface ViewEditorProps {
 function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const { sessions, appNames, hostNames, globalHighlightRules, views } = useLogStore();
     const [name, setName] = useState(view?.name || generateViewName(views));
-    const [filterSessions, setFilterSessions] = useState<string[]>(view?.filter.sessions || []);
+
+    // Session filter state using ListTextFilter (same as HighlightRuleEditor)
+    const [sessionFilter, setSessionFilter] = useState<ListTextFilter>(() => {
+        // Use extended sessionFilter if available
+        if (view?.filter.sessionFilter) {
+            return { ...view.filter.sessionFilter };
+        }
+        // Migrate old sessions array to new ListTextFilter format
+        if (view?.filter.sessions && view.filter.sessions.length > 0) {
+            return {
+                ...defaultListTextFilter,
+                mode: 'list',
+                values: view.filter.sessions,
+                inverse: false
+            };
+        }
+        return { ...defaultListTextFilter };
+    });
+
+    // Level filter state
     const [filterLevels, setFilterLevels] = useState<number[]>(view?.filter.levels || []);
-    const [titlePattern, setTitlePattern] = useState(view?.filter.titlePattern || '');
-    const [messagePattern, setMessagePattern] = useState(view?.filter.messagePattern || '');
-    const [inverseMatch, setInverseMatch] = useState(view?.filter.inverseMatch || false);
+    const [levelsInverse, setLevelsInverse] = useState(view?.filter.levelsInverse || false);
+
+    // Title filter using TextFilter (in Advanced section)
+    const defaultTextFilter: TextFilter = { operator: 'contains', value: '', caseSensitive: false, inverse: false };
+    const [titleFilter, setTitleFilter] = useState<TextFilter>(() => {
+        // Use extended titleFilter if available
+        if (view?.filter.titleFilter) {
+            return { ...view.filter.titleFilter };
+        }
+        // Migrate old titlePattern to new TextFilter format
+        if (view?.filter.titlePattern) {
+            return {
+                ...defaultTextFilter,
+                operator: 'regex',
+                value: view.filter.titlePattern,
+                inverse: view.filter.inverseMatch || false
+            };
+        }
+        return { ...defaultTextFilter };
+    });
+
+    // App Name filter using ListTextFilter
+    const [appNameFilter, setAppNameFilter] = useState<ListTextFilter>(() => {
+        // Use extended appNameFilter if available
+        if (view?.filter.appNameFilter) {
+            return { ...view.filter.appNameFilter };
+        }
+        // Migrate old appNames array to new ListTextFilter format
+        if (view?.filter.appNames && view.filter.appNames.length > 0) {
+            return {
+                ...defaultListTextFilter,
+                mode: 'list',
+                values: view.filter.appNames,
+                inverse: false
+            };
+        }
+        return { ...defaultListTextFilter };
+    });
+
+    // Host Name filter using ListTextFilter
+    const [hostNameFilter, setHostNameFilter] = useState<ListTextFilter>(() => {
+        // Use extended hostNameFilter if available
+        if (view?.filter.hostNameFilter) {
+            return { ...view.filter.hostNameFilter };
+        }
+        // Migrate old hostNames array to new ListTextFilter format
+        if (view?.filter.hostNames && view.filter.hostNames.length > 0) {
+            return {
+                ...defaultListTextFilter,
+                mode: 'list',
+                values: view.filter.hostNames,
+                inverse: false
+            };
+        }
+        return { ...defaultListTextFilter };
+    });
+
+    // Entry Types filter
+    const [entryTypes, setEntryTypes] = useState<number[]>(view?.filter.entryTypes || []);
+    const [entryTypesInverse, setEntryTypesInverse] = useState(view?.filter.entryTypesInverse || false);
+
+    // Advanced filters expanded state
+    const [showAdvanced, setShowAdvanced] = useState(false);
+
     const [useGlobalHighlights, setUseGlobalHighlights] = useState(view?.useGlobalHighlights ?? true);
     const [highlightRules, setHighlightRules] = useState(view?.highlightRules || []);
     const [activeTab, setActiveTab] = useState<'general' | 'filters' | 'highlights'>('general');
@@ -266,15 +174,43 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const [editingHighlightRule, setEditingHighlightRule] = useState<HighlightRule | undefined>(undefined);
 
     const handleSave = () => {
+        // Convert session filter to legacy format for backwards compatibility
+        const sessions = sessionFilter.mode === 'list' ? sessionFilter.values : [];
+        // Convert app name filter to legacy format
+        const appNamesArray = appNameFilter.mode === 'list' ? appNameFilter.values : [];
+        // Convert host name filter to legacy format
+        const hostNamesArray = hostNameFilter.mode === 'list' ? hostNameFilter.values : [];
+        // For title filter, convert operator to regex pattern if needed
+        let titlePattern = '';
+        if (titleFilter.value) {
+            if (titleFilter.operator === 'regex') {
+                titlePattern = titleFilter.value;
+            } else if (titleFilter.operator === 'contains') {
+                titlePattern = titleFilter.value; // Will be used as contains pattern
+            } else if (titleFilter.operator === 'equals') {
+                titlePattern = `^${titleFilter.value}$`;
+            }
+        }
+
         onSave({
             name,
             filter: {
                 ...defaultFilter,
-                sessions: filterSessions,
+                // Legacy format arrays (for backwards compatibility)
+                sessions,
                 levels: filterLevels,
                 titlePattern,
-                messagePattern,
-                inverseMatch
+                inverseMatch: titleFilter.inverse,
+                appNames: appNamesArray,
+                hostNames: hostNamesArray,
+                entryTypes,
+                // Extended filter format (full text mode support)
+                sessionFilter: { ...sessionFilter },
+                appNameFilter: { ...appNameFilter },
+                hostNameFilter: { ...hostNameFilter },
+                titleFilter: { ...titleFilter },
+                levelsInverse,
+                entryTypesInverse
             },
             highlightRules,
             useGlobalHighlights,
@@ -320,25 +256,9 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
         ));
     };
 
-    const toggleLevel = (level: number) => {
-        setFilterLevels(prev =>
-            prev.includes(level)
-                ? prev.filter(l => l !== level)
-                : [...prev, level]
-        );
-    };
-
     const sessionNames = Object.keys(sessions);
     const appNameList = Object.keys(appNames);
     const hostNameList = Object.keys(hostNames);
-    const levels = [
-        { level: Level.Debug, name: 'Debug' },
-        { level: Level.Verbose, name: 'Verbose' },
-        { level: Level.Message, name: 'Info' },
-        { level: Level.Warning, name: 'Warning' },
-        { level: Level.Error, name: 'Error' },
-        { level: Level.Fatal, name: 'Fatal' }
-    ];
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -417,86 +337,74 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                         </>
                     ) : activeTab === 'filters' ? (
                         <>
-                            {/* Session Filter - Searchable Multi-Select */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Filter by Sessions
-                                </label>
-                                <MultiSelectDropdown
-                                    options={sessionNames}
-                                    selected={filterSessions}
-                                    onChange={setFilterSessions}
-                                    placeholder="All sessions (none selected)"
-                                />
-                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                                    {filterSessions.length === 0
-                                        ? 'All sessions shown when none selected'
-                                        : `Showing ${filterSessions.length} of ${sessionNames.length} sessions`}
-                                </p>
-                            </div>
+                            {/* Session Filter - using shared component */}
+                            <ListTextFilterInput
+                                label="Sessions"
+                                filter={sessionFilter}
+                                onChange={setSessionFilter}
+                                availableOptions={sessionNames}
+                            />
 
-                            {/* Level Filter */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Filter by Levels
-                                </label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {levels.map(({ level, name }) => (
-                                        <button
-                                            key={level}
-                                            onClick={() => toggleLevel(level)}
-                                            className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
-                                                filterLevels.includes(level)
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-                                            }`}
-                                        >
-                                            {name}
-                                        </button>
-                                    ))}
-                                </div>
-                                {filterLevels.length === 0 && (
-                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All levels shown when none selected</p>
+                            {/* Level Filter - using shared component */}
+                            <LevelSelect
+                                selected={filterLevels}
+                                onChange={setFilterLevels}
+                                inverse={levelsInverse}
+                                onInverseChange={setLevelsInverse}
+                            />
+
+                            {/* Advanced Filters Section */}
+                            <div className="mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAdvanced(!showAdvanced)}
+                                    className="flex items-center gap-2 w-full text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                >
+                                    <svg
+                                        className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-90' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    Advanced Filters
+                                </button>
+
+                                {showAdvanced && (
+                                    <div className="mt-3">
+                                        {/* Title Filter */}
+                                        <TextFilterInput
+                                            label="Title Pattern"
+                                            filter={titleFilter}
+                                            onChange={setTitleFilter}
+                                        />
+
+                                        {/* App Names Filter */}
+                                        <ListTextFilterInput
+                                            label="Application Names"
+                                            filter={appNameFilter}
+                                            onChange={setAppNameFilter}
+                                            availableOptions={appNameList}
+                                        />
+
+                                        {/* Host Names Filter */}
+                                        <ListTextFilterInput
+                                            label="Host Names"
+                                            filter={hostNameFilter}
+                                            onChange={setHostNameFilter}
+                                            availableOptions={hostNameList}
+                                        />
+
+                                        {/* Entry Types Filter */}
+                                        <EntryTypeSelect
+                                            selected={entryTypes}
+                                            onChange={setEntryTypes}
+                                            inverse={entryTypesInverse}
+                                            onInverseChange={setEntryTypesInverse}
+                                        />
+                                    </div>
                                 )}
-                            </div>
-
-                            {/* Title Pattern */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Title Pattern (regex)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={titlePattern}
-                                    onChange={(e) => setTitlePattern(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                    placeholder="e.g., ^Error.*"
-                                />
-                            </div>
-
-                            {/* Message Pattern */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Message Pattern (regex)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={messagePattern}
-                                    onChange={(e) => setMessagePattern(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                    placeholder="e.g., database|connection"
-                                />
-                            </div>
-
-                            {/* Inverse Match */}
-                            <div className="mb-4">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <Checkbox
-                                        checked={inverseMatch}
-                                        onChange={setInverseMatch}
-                                    />
-                                    <span className="text-sm text-slate-700 dark:text-slate-200">Inverse match (exclude matching entries)</span>
-                                </label>
                             </div>
                         </>
                     ) : (
@@ -717,7 +625,8 @@ export function ViewTabs() {
         if (editingView) {
             updateView(editingView.id, viewData);
         } else {
-            addView(viewData);
+            // When creating a new view, automatically activate it
+            addView(viewData, true);
         }
         setShowEditor(false);
         setEditingView(undefined);

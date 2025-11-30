@@ -22,7 +22,7 @@ import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
 // Register AG Grid modules (required for v34+)
 ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
-import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, Filter } from '../store/logStore';
+import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, Filter, ListTextFilter, TextFilter } from '../store/logStore';
 import { TimestampFilter } from './TimestampFilter';
 import { format } from 'date-fns';
 import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
@@ -174,7 +174,78 @@ function getFilterKey(filter: Filter): string {
         appNames: filter.appNames.slice().sort(),
         hostNames: filter.hostNames.slice().sort(),
         entryTypes: filter.entryTypes.slice().sort(),
+        // Include extended filters for cache invalidation
+        sessionFilter: filter.sessionFilter,
+        appNameFilter: filter.appNameFilter,
+        hostNameFilter: filter.hostNameFilter,
+        titleFilter: filter.titleFilter,
+        levelsInverse: filter.levelsInverse,
+        entryTypesInverse: filter.entryTypesInverse,
     });
+}
+
+// Helper to match a string value against a ListTextFilter
+function matchesListTextFilter(value: string | undefined, filter: ListTextFilter | undefined): boolean {
+    if (!filter) return true; // No filter = match all
+
+    // Check if filter is active
+    const hasListValues = filter.mode === 'list' && filter.values.length > 0;
+    const hasTextValue = filter.mode === 'text' && filter.textValue;
+
+    if (!hasListValues && !hasTextValue) return true; // Empty filter = match all
+
+    const val = value || '';
+    let matches = false;
+
+    if (filter.mode === 'list') {
+        matches = filter.values.includes(val);
+    } else {
+        // Text mode
+        const textVal = filter.textValue.toLowerCase();
+        const valLower = val.toLowerCase();
+
+        if (filter.textOperator === 'contains') {
+            matches = valLower.includes(textVal);
+        } else if (filter.textOperator === 'equals') {
+            matches = valLower === textVal;
+        } else if (filter.textOperator === 'regex') {
+            try {
+                const regex = new RegExp(filter.textValue, 'i');
+                matches = regex.test(val);
+            } catch {
+                matches = false;
+            }
+        }
+    }
+
+    return filter.inverse ? !matches : matches;
+}
+
+// Helper to match a string value against a TextFilter
+function matchesTextFilter(value: string | undefined, filter: TextFilter | undefined): boolean {
+    if (!filter || !filter.value) return true; // No filter = match all
+
+    const val = value || '';
+    let matches = false;
+
+    const compareVal = filter.caseSensitive ? val : val.toLowerCase();
+    const filterVal = filter.caseSensitive ? filter.value : filter.value.toLowerCase();
+
+    if (filter.operator === 'contains') {
+        matches = compareVal.includes(filterVal);
+    } else if (filter.operator === 'equals') {
+        matches = compareVal === filterVal;
+    } else if (filter.operator === 'regex') {
+        try {
+            const flags = filter.caseSensitive ? '' : 'i';
+            const regex = new RegExp(filter.value, flags);
+            matches = regex.test(val);
+        } catch {
+            matches = false;
+        }
+    }
+
+    return filter.inverse ? !matches : matches;
 }
 
 // Cache for filtered entries per view - stores { filterKey, entriesVersion, result }
@@ -223,23 +294,42 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             return cached.result;
         }
 
-        // Check if any filter is active
-        const hasSessionFilter = filter.sessions.length > 0;
+        // Check if any filter is active (including extended filters)
+        const hasExtendedSessionFilter = filter.sessionFilter && (
+            (filter.sessionFilter.mode === 'list' && filter.sessionFilter.values.length > 0) ||
+            (filter.sessionFilter.mode === 'text' && filter.sessionFilter.textValue)
+        );
+        const hasExtendedAppNameFilter = filter.appNameFilter && (
+            (filter.appNameFilter.mode === 'list' && filter.appNameFilter.values.length > 0) ||
+            (filter.appNameFilter.mode === 'text' && filter.appNameFilter.textValue)
+        );
+        const hasExtendedHostNameFilter = filter.hostNameFilter && (
+            (filter.hostNameFilter.mode === 'list' && filter.hostNameFilter.values.length > 0) ||
+            (filter.hostNameFilter.mode === 'text' && filter.hostNameFilter.textValue)
+        );
+        const hasExtendedTitleFilter = filter.titleFilter && filter.titleFilter.value;
+
+        // Fall back to legacy filters if extended not present
+        const hasSessionFilter = hasExtendedSessionFilter || filter.sessions.length > 0;
         const hasLevelFilter = filter.levels.length > 0;
-        const hasTitleFilter = !!filter.titlePattern;
+        const hasTitleFilter = hasExtendedTitleFilter || !!filter.titlePattern;
         const hasMessageFilter = !!filter.messagePattern;
+        const hasAppNameFilter = hasExtendedAppNameFilter || filter.appNames.length > 0;
+        const hasHostNameFilter = hasExtendedHostNameFilter || filter.hostNames.length > 0;
+        const hasEntryTypeFilter = filter.entryTypes.length > 0;
 
         let result: LogEntry[];
 
         // Fast path: no filters active
-        if (!hasSessionFilter && !hasLevelFilter && !hasTitleFilter && !hasMessageFilter) {
+        if (!hasSessionFilter && !hasLevelFilter && !hasTitleFilter && !hasMessageFilter &&
+            !hasAppNameFilter && !hasHostNameFilter && !hasEntryTypeFilter) {
             result = entries;
         } else {
-            // Pre-compile regex patterns
+            // Pre-compile regex patterns for legacy filters
             let titleRegex: RegExp | null = null;
             let messageRegex: RegExp | null = null;
 
-            if (hasTitleFilter) {
+            if (filter.titlePattern && !hasExtendedTitleFilter) {
                 try {
                     titleRegex = new RegExp(filter.titlePattern, 'i');
                 } catch {
@@ -255,31 +345,44 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 }
             }
 
-            // Pre-create Sets for O(1) lookup
-            const sessionSet = hasSessionFilter ? new Set(filter.sessions) : null;
+            // Pre-create Sets for O(1) lookup (legacy filters)
+            const sessionSet = (!hasExtendedSessionFilter && filter.sessions.length > 0) ? new Set(filter.sessions) : null;
             const levelSet = hasLevelFilter ? new Set(filter.levels) : null;
+            const appNameSet = (!hasExtendedAppNameFilter && filter.appNames.length > 0) ? new Set(filter.appNames) : null;
+            const hostNameSet = (!hasExtendedHostNameFilter && filter.hostNames.length > 0) ? new Set(filter.hostNames) : null;
+            const entryTypeSet = hasEntryTypeFilter ? new Set(filter.entryTypes) : null;
 
             // Single-pass filtering
             result = entries.filter(e => {
-                // Session filter
-                if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
+                // Session filter - prefer extended filter if available
+                if (hasExtendedSessionFilter) {
+                    if (!matchesListTextFilter(e.sessionName, filter.sessionFilter)) {
+                        return false;
+                    }
+                } else if (sessionSet && (!e.sessionName || !sessionSet.has(e.sessionName))) {
                     return false;
                 }
 
-                // Level filter
-                if (levelSet && (e.level === undefined || !levelSet.has(e.level))) {
-                    return false;
+                // Level filter (with inverse support)
+                if (levelSet) {
+                    const matches = e.level !== undefined && levelSet.has(e.level);
+                    const result = filter.levelsInverse ? !matches : matches;
+                    if (!result) return false;
                 }
 
-                // Title pattern filter
-                if (titleRegex) {
+                // Title filter - prefer extended filter if available
+                if (hasExtendedTitleFilter) {
+                    if (!matchesTextFilter(e.title, filter.titleFilter)) {
+                        return false;
+                    }
+                } else if (titleRegex) {
                     const matches = titleRegex.test(e.title || '');
                     if (filter.inverseMatch ? matches : !matches) {
                         return false;
                     }
                 }
 
-                // Message pattern filter
+                // Message pattern filter (legacy)
                 if (messageRegex) {
                     const titleMatch = messageRegex.test(e.title || '');
                     const dataMatch = messageRegex.test(e.data || '');
@@ -287,6 +390,31 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                     if (filter.inverseMatch ? matches : !matches) {
                         return false;
                     }
+                }
+
+                // App name filter - prefer extended filter if available
+                if (hasExtendedAppNameFilter) {
+                    if (!matchesListTextFilter(e.appName, filter.appNameFilter)) {
+                        return false;
+                    }
+                } else if (appNameSet && (!e.appName || !appNameSet.has(e.appName))) {
+                    return false;
+                }
+
+                // Host name filter - prefer extended filter if available
+                if (hasExtendedHostNameFilter) {
+                    if (!matchesListTextFilter(e.hostName, filter.hostNameFilter)) {
+                        return false;
+                    }
+                } else if (hostNameSet && (!e.hostName || !hostNameSet.has(e.hostName))) {
+                    return false;
+                }
+
+                // Entry type filter (with inverse support)
+                if (entryTypeSet) {
+                    const matches = e.logEntryType !== undefined && entryTypeSet.has(e.logEntryType);
+                    const result = filter.entryTypesInverse ? !matches : matches;
+                    if (!result) return false;
                 }
 
                 return true;

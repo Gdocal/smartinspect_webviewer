@@ -412,9 +412,10 @@ function LevelSelect({ selected, onChange, inverse, onInverseChange }: LevelSele
                     Clear
                 </button>
             </div>
-            {selected.length === 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All levels when none selected</p>
-            )}
+            {/* Fixed height to prevent layout jumping */}
+            <p className={`text-xs mt-1 h-4 ${selected.length === 0 ? 'text-slate-400 dark:text-slate-500' : 'invisible'}`}>
+                All levels when none selected
+            </p>
         </div>
     );
 }
@@ -440,6 +441,14 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
 
     const allTypes = Object.values(entryTypeGroups).flat();
     const selectedLabels = selected.map(v => allTypes.find(t => t.value === v)?.label || `Type ${v}`);
+
+    const handleSelectAll = () => {
+        onChange(allTypes.map(t => t.value));
+    };
+
+    const handleClearAll = () => {
+        onChange([]);
+    };
 
     return (
         <div className="mb-4">
@@ -474,6 +483,23 @@ function EntryTypeSelect({ selected, onChange, inverse, onInverseChange }: Entry
             </div>
             {expanded && (
                 <div className="mt-2 border border-slate-200 dark:border-slate-600 rounded-lg p-2 max-h-48 overflow-auto">
+                    {/* Select All / Clear All buttons */}
+                    <div className="flex gap-2 mb-2 pb-2 border-b border-slate-200 dark:border-slate-600">
+                        <button
+                            type="button"
+                            onClick={handleSelectAll}
+                            className="px-2 py-0.5 text-xs rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        >
+                            Select All
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleClearAll}
+                            className="px-2 py-0.5 text-xs rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                        >
+                            Clear All
+                        </button>
+                    </div>
                     {Object.entries(entryTypeGroups).map(([group, types]) => (
                         <div key={group} className="mb-2 last:mb-0">
                             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{group}</div>
@@ -1112,5 +1138,5 @@ export function HighlightRuleEditor({
     );
 }
 
-// Export for utility
-export { colorPresets };
+// Export for utility and reuse
+export { colorPresets, Checkbox, ListTextFilterInput, LevelSelect, EntryTypeSelect, TextFilterInput, levelOptions, entryTypeGroups };
