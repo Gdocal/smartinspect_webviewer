@@ -11,12 +11,22 @@ export function FilterBar() {
         setFilter,
         paused,
         setPaused,
-        autoScroll,
-        setAutoScroll,
         clearEntries,
         activeViewId,
-        setEditingViewId
+        setEditingViewId,
+        views,
+        updateView
     } = useLogStore();
+
+    // Get the active view's autoScroll setting
+    const activeView = views.find(v => v.id === activeViewId);
+    const autoScroll = activeView?.autoScroll ?? true;
+
+    const setAutoScroll = (value: boolean) => {
+        if (activeViewId) {
+            updateView(activeViewId, { autoScroll: value });
+        }
+    };
 
     const handleClear = async () => {
         try {
@@ -70,9 +80,10 @@ export function FilterBar() {
                     )}
                 </button>
 
-                {/* AutoScroll button */}
+                {/* AutoScroll button - per view */}
                 <button
                     onClick={() => setAutoScroll(!autoScroll)}
+                    disabled={!activeViewId}
                     className={`p-1.5 rounded transition-colors ${
                         autoScroll
                             ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
