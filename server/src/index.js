@@ -811,7 +811,7 @@ app.get('/api/streams/query', (req, res) => {
     try {
         const filter = parseQueryParams(req.query);
         filter.limit = Math.min(filter.limit || 100, 1000);
-        const result = queryStreams(room.streamStore, channel, filter);
+        const result = queryStreams(room.streamStore.getAll(), channel, filter);
 
         res.json({
             channel,
