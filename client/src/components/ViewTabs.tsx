@@ -356,38 +356,48 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                 />
                             </div>
 
-                            {/* Options */}
-                            <div className="space-y-3 pt-2">
-                                {/* Tab Header Color */}
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="color"
-                                        value={tabColor || '#3b82f6'}
-                                        onChange={(e) => setTabColor(e.target.value)}
-                                        className="w-6 h-6 rounded border border-slate-300 dark:border-slate-500 cursor-pointer flex-shrink-0"
-                                    />
-                                    <span className="text-sm text-slate-700 dark:text-slate-200 flex-1">Tab color</span>
-                                    {tabColor && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setTabColor('')}
-                                            className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                                        >
-                                            Reset
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Alternating Row Colors */}
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <Checkbox
-                                        checked={alternatingRows}
-                                        onChange={setAlternatingRows}
-                                    />
-                                    <span className="text-sm text-slate-700 dark:text-slate-200">
-                                        Alternating row colors
-                                    </span>
+                            {/* Appearance Section */}
+                            <div className="pt-2">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
+                                    Appearance
                                 </label>
+                                <div className="space-y-2">
+                                    {/* Tab Header Color */}
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-500 cursor-pointer flex-shrink-0 relative overflow-hidden"
+                                            style={{ backgroundColor: tabColor || '#808080' }}
+                                        >
+                                            <input
+                                                type="color"
+                                                value={tabColor || '#808080'}
+                                                onChange={(e) => setTabColor(e.target.value)}
+                                                className="absolute inset-0 w-[200%] h-[200%] cursor-pointer opacity-0"
+                                            />
+                                        </div>
+                                        <span className="text-sm text-slate-700 dark:text-slate-200 flex-1">Tab header color</span>
+                                        {tabColor && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setTabColor('')}
+                                                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                            >
+                                                Clear
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Alternating Row Colors */}
+                                    <label className="flex items-center gap-3 cursor-pointer">
+                                        <Checkbox
+                                            checked={alternatingRows}
+                                            onChange={setAlternatingRows}
+                                        />
+                                        <span className="text-sm text-slate-700 dark:text-slate-200">
+                                            Alternating row colors
+                                        </span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     ) : activeTab === 'filters' ? (
@@ -889,23 +899,25 @@ export function ViewTabs() {
                     <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0" />
 
                     {/* Regular view tabs */}
-                    {views.map(view => (
+                    {views.map(view => {
+                        const isActiveTab = !isStreamsMode && activeViewId === view.id;
+                        return (
                         <div
                             key={view.id}
                             onClick={() => handleViewClick(view.id)}
                             onDoubleClick={() => handleEditView(view)}
                             onContextMenu={(e) => handleTabContextMenu(e, view)}
-                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
+                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded-t cursor-pointer transition-all relative ${
                                 view.tabColor
-                                    ? 'text-white'
-                                    : !isStreamsMode && activeViewId === view.id
+                                    ? `text-white ${isActiveTab ? '' : 'opacity-60 hover:opacity-80'}`
+                                    : isActiveTab
                                         ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
                                         : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                             }`}
                             style={view.tabColor ? { backgroundColor: view.tabColor } : undefined}
                             title={view.name}
                         >
-                            <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium' : ''}`}>
+                            <span className={`text-sm whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}>
                                 {view.name}
                             </span>
                             {view.filter.sessions.length > 0 && (
@@ -916,7 +928,7 @@ export function ViewTabs() {
                             {view.id !== 'all' && (
                                 <button
                                     onClick={(e) => handleDeleteView(e, view.id)}
-                                    className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                                    className={`transition-colors ${view.tabColor ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-red-500 dark:hover:text-red-400'}`}
                                     title="Close tab"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -924,8 +936,15 @@ export function ViewTabs() {
                                     </svg>
                                 </button>
                             )}
+                            {/* Active indicator - bottom border */}
+                            {isActiveTab && (
+                                <div
+                                    className={`absolute bottom-0 left-1 right-1 h-0.5 rounded-full ${view.tabColor ? '' : 'bg-blue-500 dark:bg-blue-400'}`}
+                                    style={view.tabColor ? { backgroundColor: 'rgba(255,255,255,0.9)' } : undefined}
+                                />
+                            )}
                         </div>
-                    ))}
+                    );})}
 
                     {/* Add View Button */}
                     <button

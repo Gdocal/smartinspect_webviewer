@@ -598,13 +598,21 @@ export const useLogStore = create<LogState>((set, get) => ({
             result = state.entries.slice(-keepFromCurrent).concat(newEntries);
         }
 
-        // Extract unique appNames and hostNames from new entries
+        // Extract unique sessions, appNames and hostNames from new entries
+        const newSessions = { ...state.sessions };
         const newAppNames = { ...state.appNames };
         const newHostNames = { ...state.hostNames };
+        let sessionsChanged = false;
         let appNamesChanged = false;
         let hostNamesChanged = false;
 
         for (const entry of newEntries) {
+            if (entry.sessionName && !(entry.sessionName in newSessions)) {
+                newSessions[entry.sessionName] = 1;
+                sessionsChanged = true;
+            } else if (entry.sessionName) {
+                newSessions[entry.sessionName]++;
+            }
             if (entry.appName && !(entry.appName in newAppNames)) {
                 newAppNames[entry.appName] = 1;
                 appNamesChanged = true;
@@ -628,6 +636,7 @@ export const useLogStore = create<LogState>((set, get) => ({
                 size: result.length,
                 lastEntryId: newEntries[newEntries.length - 1].id
             },
+            ...(sessionsChanged ? { sessions: newSessions } : {}),
             ...(appNamesChanged ? { appNames: newAppNames } : {}),
             ...(hostNamesChanged ? { hostNames: newHostNames } : {})
         };
