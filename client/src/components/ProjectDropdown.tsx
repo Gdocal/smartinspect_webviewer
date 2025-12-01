@@ -29,7 +29,6 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         listProjects,
         deleteProject,
         resetToDefault,
-        exportProject,
         exportProjectById,
         importProject
     } = useProjectPersistence();
@@ -40,6 +39,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [showSaveDialog, setShowSaveDialog] = useState(false);
+    const [isCreatingNew, setIsCreatingNew] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [saveError, setSaveError] = useState<string | null>(null);
     const [importError, setImportError] = useState<string | null>(null);
@@ -79,7 +79,36 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         };
     }, [isOpen]);
 
+    // Check for unsaved changes before destructive actions
+    const checkUnsavedChanges = useCallback(async (): Promise<'save' | 'discard' | 'cancel'> => {
+        if (!loadedProjectDirty || settings.autoSaveProject) {
+            return 'discard'; // No unsaved changes or auto-save handles it
+        }
+
+        const result = await confirmDialog.confirm({
+            title: 'Unsaved Changes',
+            message: 'You have unsaved changes. What would you like to do?',
+            confirmText: 'Save & Continue',
+            cancelText: 'Discard',
+            danger: false
+        });
+
+        if (result === null) {
+            return 'cancel'; // Dialog was dismissed
+        }
+        return result ? 'save' : 'discard';
+    }, [loadedProjectDirty, settings.autoSaveProject, confirmDialog]);
+
     const handleLoadProject = async (projectId: string) => {
+        // Check for unsaved changes first
+        if (loadedProjectDirty && !settings.autoSaveProject && loadedProjectId) {
+            const action = await checkUnsavedChanges();
+            if (action === 'cancel') return;
+            if (action === 'save') {
+                await updateProject(loadedProjectId);
+            }
+        }
+
         const result = await loadProject(projectId);
         if (result.success) {
             setIsOpen(false);
@@ -103,10 +132,25 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         }
 
         setSaveError(null);
+
+        // If creating new project, check for unsaved changes first
+        if (isCreatingNew && loadedProjectDirty && !settings.autoSaveProject && loadedProjectId) {
+            const action = await checkUnsavedChanges();
+            if (action === 'cancel') return;
+            if (action === 'save') {
+                await updateProject(loadedProjectId);
+            }
+            // Reset to default after handling unsaved changes
+            resetToDefault();
+        } else if (isCreatingNew) {
+            resetToDefault();
+        }
+
         const result = await saveAsNewProject(newProjectName.trim());
         if (result.success) {
             setShowSaveDialog(false);
             setNewProjectName('');
+            setIsCreatingNew(false);
             setIsOpen(false);
         } else {
             setSaveError(result.error || 'Failed to save project');
@@ -126,25 +170,6 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
             await deleteProject(projectId);
             await loadProjectsList();
         }
-    };
-
-    const handleReset = async () => {
-        const confirmed = await confirmDialog.confirm({
-            title: 'Reset to Default',
-            message: 'This will clear your current view configuration.',
-            confirmText: 'OK',
-            cancelText: 'Cancel',
-            danger: true
-        });
-        if (confirmed) {
-            resetToDefault();
-            setIsOpen(false);
-        }
-    };
-
-    const handleExport = () => {
-        exportProject();
-        setIsOpen(false);
     };
 
     const handleExportProject = async (e: React.MouseEvent, projectId: string, projectName: string) => {
@@ -188,13 +213,24 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
                 <span className="max-w-[150px] truncate">{displayName}</span>
-                {loadedProjectDirty && (
-                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full" title="Unsaved changes" />
-                )}
                 <svg className={`w-3 h-3 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
+
+            {/* Save button - only visible when there are unsaved changes */}
+            {loadedProjectDirty && loadedProjectId && !settings.autoSaveProject && (
+                <button
+                    onClick={handleSaveProject}
+                    className="flex items-center gap-1 px-2 py-1 text-sm text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
+                    title="Save unsaved changes"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3v4a1 1 0 001 1h3" />
+                    </svg>
+                </button>
+            )}
 
             {/* Dropdown menu */}
             {isOpen && (
@@ -204,19 +240,6 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                         <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                             Projects
                         </div>
-                    </div>
-
-                    {/* Save as new option */}
-                    <div className="border-b border-slate-200 dark:border-slate-700">
-                        <button
-                            onClick={() => setShowSaveDialog(true)}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                        >
-                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                            </svg>
-                            <span>Save as New Project...</span>
-                        </button>
                     </div>
 
                     {/* Project list - limited height with scroll */}
@@ -264,24 +287,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                         )}
                                     </div>
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        {/* Save button for loaded project when dirty */}
-                                        {loadedProjectId === project.id && loadedProjectDirty && (
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleSaveProject();
-                                                }}
-                                                className="p-1 text-amber-500 hover:text-amber-400 transition-colors flex-shrink-0"
-                                                title="Save changes"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3v4a1 1 0 001 1h3" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 14h10M7 18h10M9 3v4h6V3" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                        {/* Export button - available for all projects */}
+                                        {/* Export button */}
                                         <button
                                             onClick={(e) => handleExportProject(e, project.id, project.name)}
                                             className="p-1 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
@@ -291,7 +297,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                             </svg>
                                         </button>
-                                        {/* Delete button - available for all projects */}
+                                        {/* Delete button */}
                                         <button
                                             onClick={(e) => handleDeleteProject(e, project.id, project.name)}
                                             className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
@@ -309,48 +315,48 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
 
                     {/* Footer actions */}
                     <div className="border-t border-slate-200 dark:border-slate-700">
-                        {/* Auto-save toggle */}
-                        <button
-                            onClick={async () => {
-                                const newAutoSave = !settings.autoSaveProject;
-                                updateSettings({ autoSaveProject: newAutoSave });
-                                // If enabling auto-save and there are unsaved changes, save immediately
-                                if (newAutoSave && loadedProjectId && loadedProjectDirty) {
-                                    await updateProject(loadedProjectId);
-                                }
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                        >
-                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                                settings.autoSaveProject
-                                    ? 'bg-blue-500 border-blue-500'
-                                    : 'bg-slate-100 dark:bg-slate-600 border-slate-300 dark:border-slate-500'
-                            }`}>
-                                {settings.autoSaveProject && (
-                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                )}
+                        {importError && (
+                            <div className="px-3 py-1.5 text-xs text-red-500 bg-red-50 dark:bg-red-900/20">
+                                {importError}
                             </div>
-                            <span>Auto-save changes</span>
-                        </button>
-
-                        {/* Export/Import section */}
-                        <div className="flex border-t border-slate-100 dark:border-slate-600">
+                        )}
+                        {/* Action buttons row */}
+                        <div className="flex">
+                            {/* New Project */}
                             <button
-                                onClick={handleExport}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                                title="Export project to file"
+                                onClick={() => {
+                                    setNewProjectName('');
+                                    setIsCreatingNew(true);
+                                    setShowSaveDialog(true);
+                                }}
+                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                title="Create new empty project"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
                                 </svg>
-                                <span>Export</span>
+                                <span>New</span>
                             </button>
-                            <div className="w-px bg-slate-100 dark:bg-slate-600" />
+                            <div className="w-px bg-slate-200 dark:bg-slate-600" />
+                            {/* Save As */}
+                            <button
+                                onClick={() => {
+                                    setIsCreatingNew(false);
+                                    setShowSaveDialog(true);
+                                }}
+                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                title="Save current configuration as new project"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
+                                </svg>
+                                <span>Save As</span>
+                            </button>
+                            <div className="w-px bg-slate-200 dark:bg-slate-600" />
+                            {/* Import */}
                             <button
                                 onClick={handleImportClick}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                                 title="Import project from file"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -359,12 +365,31 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 <span>Import</span>
                             </button>
                         </div>
-                        {importError && (
-                            <div className="px-3 py-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
-                                {importError}
+                        {/* Auto-save toggle */}
+                        <button
+                            onClick={async () => {
+                                const newAutoSave = !settings.autoSaveProject;
+                                updateSettings({ autoSaveProject: newAutoSave });
+                                if (newAutoSave && loadedProjectId && loadedProjectDirty) {
+                                    await updateProject(loadedProjectId);
+                                }
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
+                            title="Automatically save changes"
+                        >
+                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${
+                                settings.autoSaveProject
+                                    ? 'bg-blue-500 border-blue-500'
+                                    : 'border-slate-300 dark:border-slate-500'
+                            }`}>
+                                {settings.autoSaveProject && (
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                )}
                             </div>
-                        )}
-
+                            <span>Auto-save</span>
+                        </button>
                         {/* Hidden file input for import */}
                         <input
                             ref={fileInputRef}
@@ -373,27 +398,17 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                             onChange={handleFileChange}
                             className="hidden"
                         />
-
-                        <button
-                            onClick={handleReset}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            <span>Reset to Default</span>
-                        </button>
                     </div>
                 </div>
             )}
 
-            {/* Save As Dialog */}
+            {/* Save As / New Project Dialog */}
             {showSaveDialog && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-80 overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/50">
                             <h3 className="font-semibold text-slate-800 dark:text-slate-200">
-                                Save Project As
+                                {isCreatingNew ? 'New Project' : 'Save Project As'}
                             </h3>
                         </div>
                         <div className="p-4">
@@ -424,6 +439,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 onClick={() => {
                                     setShowSaveDialog(false);
                                     setNewProjectName('');
+                                    setIsCreatingNew(false);
                                     setSaveError(null);
                                 }}
                                 className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
@@ -434,7 +450,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 onClick={handleSaveAsNew}
                                 className="px-4 py-2 text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 rounded-lg transition-colors"
                             >
-                                Save
+                                {isCreatingNew ? 'Create' : 'Save'}
                             </button>
                         </div>
                     </div>
