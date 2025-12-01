@@ -9,6 +9,7 @@ export interface AppSettings {
     authToken: string | null;    // Optional auth token
     username: string;            // User identifier for per-user settings
     maxDisplayEntries: number;   // Max entries to load in client
+    autoSaveProject: boolean;    // Auto-save project changes to server
 }
 
 const STORAGE_KEY = 'smartinspect-settings';
@@ -25,6 +26,7 @@ const defaultSettings: AppSettings = {
     authToken: null,
     username: 'default',  // Default user identifier
     maxDisplayEntries: 10000,
+    autoSaveProject: false,  // Auto-save project changes to server
 };
 
 function loadSettings(): AppSettings {

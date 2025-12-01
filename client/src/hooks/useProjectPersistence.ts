@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useLogStore, View, ViewWithGridState, Project, WorkingProjectState } from '../store/logStore';
+import { getSettings } from './useSettings';
 
 // LocalStorage key for working project
 const WORKING_PROJECT_KEY = 'si-working-project';
@@ -294,7 +295,7 @@ export function useProjectPersistence() {
             clearTimeout(saveTimeoutRef.current);
         }
 
-        saveTimeoutRef.current = window.setTimeout(() => {
+        saveTimeoutRef.current = window.setTimeout(async () => {
             saveTimeoutRef.current = null;
 
             // Build working state using refs for tracking state
@@ -317,8 +318,31 @@ export function useProjectPersistence() {
             saveWorkingProject(currentRoom, currentUser, state);
             lastSavedRef.current = JSON.stringify(state);
             console.log('[ProjectPersistence] Auto-saved to localStorage, dirty:', loadedProjectDirtyRef.current);
+
+            // Auto-save to server if enabled and project is loaded and dirty
+            const settings = getSettings();
+            if (settings.autoSaveProject && loadedProjectIdRef.current && loadedProjectDirtyRef.current) {
+                try {
+                    const response = await fetch(`/api/projects/${loadedProjectIdRef.current}?room=${encodeURIComponent(currentRoom)}&user=${encodeURIComponent(currentUser)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ project: projectData })
+                    });
+
+                    if (response.ok) {
+                        // Clear dirty flag after successful save
+                        setLoadedProjectDirty(false);
+                        // Update localStorage with clean state
+                        state.loadedProjectDirty = false;
+                        saveWorkingProject(currentRoom, currentUser, state);
+                        console.log('[ProjectPersistence] Auto-saved to server');
+                    }
+                } catch (err) {
+                    console.error('[ProjectPersistence] Auto-save to server failed:', err);
+                }
+            }
         }, SAVE_DEBOUNCE_MS);
-    }, [currentRoom, currentUser]);
+    }, [currentRoom, currentUser, setLoadedProjectDirty]);
 
     // Auto-save when relevant state changes (only saves to localStorage, doesn't mark dirty)
     useEffect(() => {

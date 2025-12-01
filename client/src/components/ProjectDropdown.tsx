@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
+import { useSettings } from '../hooks/useSettings';
 import { ProjectSummary } from '../store/logStore';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
@@ -29,6 +30,8 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         deleteProject,
         resetToDefault
     } = useProjectPersistence();
+
+    const { settings, updateSettings } = useSettings();
 
     const [isOpen, setIsOpen] = useState(false);
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -165,19 +168,8 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                         </div>
                     </div>
 
-                    {/* Save options */}
+                    {/* Save as new option */}
                     <div className="border-b border-slate-200 dark:border-slate-700">
-                        {loadedProjectId && loadedProjectDirty && (
-                            <button
-                                onClick={handleSaveProject}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
-                            >
-                                <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                                </svg>
-                                <span>Save "{loadedProjectName}"</span>
-                            </button>
-                        )}
                         <button
                             onClick={() => setShowSaveDialog(true)}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
@@ -234,8 +226,22 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                         )}
                                     </div>
                                     {loadedProjectId === project.id ? (
+                                        /* Save button for loaded project when dirty */
                                         loadedProjectDirty && (
-                                            <span className="w-1.5 h-1.5 bg-amber-400 rounded-full flex-shrink-0" />
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleSaveProject();
+                                                }}
+                                                className="p-1 text-amber-500 hover:text-amber-400 transition-colors flex-shrink-0"
+                                                title="Save changes"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3v4a1 1 0 001 1h3" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 14h10M7 18h10M9 3v4h6V3" />
+                                                </svg>
+                                            </button>
                                         )
                                     ) : (
                                         <button
@@ -255,6 +261,31 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
 
                     {/* Footer actions */}
                     <div className="border-t border-slate-200 dark:border-slate-700">
+                        {/* Auto-save toggle */}
+                        <button
+                            onClick={async () => {
+                                const newAutoSave = !settings.autoSaveProject;
+                                updateSettings({ autoSaveProject: newAutoSave });
+                                // If enabling auto-save and there are unsaved changes, save immediately
+                                if (newAutoSave && loadedProjectId && loadedProjectDirty) {
+                                    await updateProject(loadedProjectId);
+                                }
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                        >
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
+                                settings.autoSaveProject
+                                    ? 'bg-blue-500 border-blue-500'
+                                    : 'bg-slate-100 dark:bg-slate-600 border-slate-300 dark:border-slate-500'
+                            }`}>
+                                {settings.autoSaveProject && (
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                )}
+                            </div>
+                            <span>Auto-save changes</span>
+                        </button>
                         <button
                             onClick={handleReset}
                             className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
