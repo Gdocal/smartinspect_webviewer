@@ -7,15 +7,25 @@ import 'ag-grid-community/styles/ag-theme-balham.css'
 
 import './index.css'
 
-// Check if we're on the test page
-const isTestPage = window.location.pathname === '/ag-grid-test' || window.location.search.includes('test=ag-grid')
+// Check if we're on a test page
+const isAgGridTestPage = window.location.pathname === '/ag-grid-test' || window.location.search.includes('test=ag-grid')
+const isVirtualGridTestPage = window.location.pathname === '/virtual-grid-test' || window.location.search.includes('test=virtual-grid')
 
-if (isTestPage) {
-  // Load test page without WebSocket
+if (isAgGridTestPage) {
+  // Load AG Grid test page without WebSocket
   import('./AgGridTest').then(({ AgGridTest }) => {
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
         <AgGridTest />
+      </React.StrictMode>,
+    )
+  })
+} else if (isVirtualGridTestPage) {
+  // Load Virtual Grid test page without WebSocket
+  import('./VirtualLogGridTest').then(({ VirtualLogGridTest }) => {
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode>
+        <VirtualLogGridTest />
       </React.StrictMode>,
     )
   })
