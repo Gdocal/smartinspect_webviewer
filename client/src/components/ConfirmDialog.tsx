@@ -35,7 +35,7 @@ export function ConfirmDialog({
     message,
     confirmText = 'Confirm',
     cancelText = 'Cancel',
-    danger = false,
+    danger: _danger = false,
     onConfirm,
     onCancel,
 }: ConfirmDialogProps) {

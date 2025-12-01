@@ -29,7 +29,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         listProjects,
         deleteProject,
         resetToDefault,
-        exportProjectById,
+        exportProject,
         importProject
     } = useProjectPersistence();
 
@@ -178,9 +178,9 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         }
     };
 
-    const handleExportProject = async (e: React.MouseEvent, projectId: string, projectName: string) => {
+    const handleExportProject = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        await exportProjectById(projectId, projectName);
+        exportProject();
     };
 
     const handleImportClick = () => {
@@ -297,7 +297,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {/* Export button */}
                                         <button
-                                            onClick={(e) => handleExportProject(e, project.id, project.name)}
+                                            onClick={(e) => handleExportProject(e)}
                                             className="p-1 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
                                             title="Export project"
                                         >

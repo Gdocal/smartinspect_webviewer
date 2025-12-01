@@ -54,7 +54,7 @@ const ContentCellRenderer = memo(function ContentCellRenderer(props: ICellRender
             const parsed = JSON.parse(trimmed);
             const preview = JSON.stringify(parsed).substring(0, 100);
             return (
-                <span className="font-mono text-xs text-slate-600">
+                <span className="font-mono text-xs text-slate-700 dark:text-slate-200">
                     {preview}{preview.length >= 100 ? '...' : ''}
                 </span>
             );
@@ -64,7 +64,7 @@ const ContentCellRenderer = memo(function ContentCellRenderer(props: ICellRender
     }
 
     return (
-        <span className="text-xs text-slate-700">
+        <span className="text-xs text-slate-800 dark:text-slate-100">
             {data.length > 100 ? data.substring(0, 100) + '...' : data}
         </span>
     );
@@ -78,7 +78,7 @@ interface StreamsViewProps {
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
     const { streams, clearAllStreams, clearStream, theme } = useLogStore();
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
-    const [filterText, setFilterText] = useState('');
+    const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [paused, setPaused] = useState(false);
     const [autoScroll, setAutoScroll] = useState(true);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
@@ -143,6 +143,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     if (!selectedChannel && channels.length > 0) {
         setSelectedChannel(channels[0]);
     }
+
+    // Get filter text for current channel
+    const filterText = selectedChannel ? (filterTextByChannel[selectedChannel] || '') : '';
 
     // Filter entries
     const filteredEntries = useMemo(() => {
@@ -237,6 +240,49 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const onGridReady = useCallback((params: GridReadyEvent) => {
         gridApiRef.current = params.api;
     }, []);
+
+    // Handle keyboard navigation
+    const handleKeyDown = useCallback((event: KeyboardEvent) => {
+        if (!gridApiRef.current) return;
+
+        const api = gridApiRef.current;
+        const focusedCell = api.getFocusedCell();
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+
+            const rowCount = api.getDisplayedRowCount();
+            if (rowCount === 0) return;
+
+            let currentIndex = focusedCell?.rowIndex ?? -1;
+            let newIndex: number;
+
+            if (event.key === 'ArrowDown') {
+                newIndex = currentIndex < rowCount - 1 ? currentIndex + 1 : currentIndex;
+            } else {
+                newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+            }
+
+            // Navigate to new row
+            api.setFocusedCell(newIndex, 'data');
+            api.ensureIndexVisible(newIndex);
+
+            // Select the row and update details
+            const rowNode = api.getDisplayedRowAtIndex(newIndex);
+            if (rowNode?.data) {
+                onSelectEntry(rowNode.data);
+            }
+        }
+    }, [onSelectEntry]);
+
+    // Add keyboard event listener to grid container
+    useEffect(() => {
+        const gridContainer = document.querySelector('.streams-grid-container');
+        if (gridContainer) {
+            gridContainer.addEventListener('keydown', handleKeyDown as EventListener);
+            return () => gridContainer.removeEventListener('keydown', handleKeyDown as EventListener);
+        }
+    }, [handleKeyDown]);
 
     const onRowClicked = useCallback((event: RowClickedEvent<StreamEntry>) => {
         if (event.data) {
@@ -344,13 +390,20 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Toolbar - filter, exclude, spacer, pause, autoscroll, clear (right-aligned) */}
                 <div className="h-[42px] px-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center gap-2">
-                    {/* Filter input */}
+                    {/* Filter input - per stream */}
                     <div className="relative max-w-xs">
                         <input
                             type="text"
                             value={filterText}
-                            onChange={(e) => setFilterText(e.target.value)}
-                            placeholder="Filter entries..."
+                            onChange={(e) => {
+                                if (selectedChannel) {
+                                    setFilterTextByChannel(prev => ({
+                                        ...prev,
+                                        [selectedChannel]: e.target.value
+                                    }));
+                                }
+                            }}
+                            placeholder={selectedChannel ? `Filter ${selectedChannel}...` : 'Filter entries...'}
                             className="w-48 text-sm border border-slate-200 dark:border-slate-600 rounded pl-8 pr-3 py-1 h-[28px] bg-white dark:bg-slate-700 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                         />
                         <svg className="w-4 h-4 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -429,7 +482,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                 {/* Entries grid */}
                 {selectedChannel ? (
-                    <div className={`flex-1 ${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }}>
+                    <div className={`flex-1 streams-grid-container ${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }} tabIndex={0}>
                         <AgGridReact
                             theme="legacy"
                             rowData={displayedEntries}

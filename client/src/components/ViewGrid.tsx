@@ -637,6 +637,49 @@ export function ViewGrid({
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
+    // Handle keyboard navigation
+    const handleKeyDown = useCallback((event: KeyboardEvent) => {
+        if (!gridApiRef.current) return;
+
+        const api = gridApiRef.current;
+        const focusedCell = api.getFocusedCell();
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+
+            const rowCount = api.getDisplayedRowCount();
+            if (rowCount === 0) return;
+
+            let currentIndex = focusedCell?.rowIndex ?? -1;
+            let newIndex: number;
+
+            if (event.key === 'ArrowDown') {
+                newIndex = currentIndex < rowCount - 1 ? currentIndex + 1 : currentIndex;
+            } else {
+                newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+            }
+
+            // Navigate to new row
+            api.setFocusedCell(newIndex, 'title');
+            api.ensureIndexVisible(newIndex);
+
+            // Select the row and update details
+            const rowNode = api.getDisplayedRowAtIndex(newIndex);
+            if (rowNode?.data) {
+                setSelectedEntryId(rowNode.data.id);
+            }
+        }
+    }, [setSelectedEntryId]);
+
+    // Add keyboard event listener to container when active
+    useEffect(() => {
+        if (!isActive || !containerRef.current) return;
+
+        const container = containerRef.current;
+        container.addEventListener('keydown', handleKeyDown as EventListener);
+        return () => container.removeEventListener('keydown', handleKeyDown as EventListener);
+    }, [isActive, handleKeyDown]);
+
     // Refs for stick-to-bottom behavior (from AgGridTest.tsx)
     const stickToBottomRef = useRef(true);
     const isProgrammaticScrollRef = useRef(false);
@@ -782,6 +825,7 @@ export function ViewGrid({
         <div
             ref={containerRef}
             className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`}
+            tabIndex={isActive ? 0 : -1}
             style={{
                 fontSize: '13px',
                 visibility: isActive ? 'visible' : 'hidden',

@@ -659,6 +659,49 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
+    // Handle keyboard navigation
+    const handleKeyDown = useCallback((event: KeyboardEvent) => {
+        if (!gridApiRef.current) return;
+
+        const api = gridApiRef.current;
+        const focusedCell = api.getFocusedCell();
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+
+            const rowCount = api.getDisplayedRowCount();
+            if (rowCount === 0) return;
+
+            let currentIndex = focusedCell?.rowIndex ?? -1;
+            let newIndex: number;
+
+            if (event.key === 'ArrowDown') {
+                newIndex = currentIndex < rowCount - 1 ? currentIndex + 1 : currentIndex;
+            } else {
+                newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+            }
+
+            // Navigate to new row
+            api.setFocusedCell(newIndex, 'title');
+            api.ensureIndexVisible(newIndex);
+
+            // Select the row and update details
+            const rowNode = api.getDisplayedRowAtIndex(newIndex);
+            if (rowNode?.data) {
+                setSelectedEntryId(rowNode.data.id);
+            }
+        }
+    }, [setSelectedEntryId]);
+
+    // Add keyboard event listener to grid container
+    useEffect(() => {
+        const gridContainer = document.querySelector('.log-grid-container');
+        if (gridContainer) {
+            gridContainer.addEventListener('keydown', handleKeyDown as EventListener);
+            return () => gridContainer.removeEventListener('keydown', handleKeyDown as EventListener);
+        }
+    }, [handleKeyDown]);
+
     // Auto-scroll handler - called when grid finishes updating row data
     const onRowDataUpdated = useCallback(() => {
         // Don't auto-scroll when paused or disabled
@@ -671,7 +714,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     }, [autoScroll, paused]);
 
     return (
-        <div className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }}>
+        <div className={`log-grid-container ${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }} tabIndex={0}>
             <AgGridReact
                 ref={gridRef}
                 theme="legacy"
