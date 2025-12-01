@@ -28,7 +28,9 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         updateProject,
         listProjects,
         deleteProject,
-        resetToDefault
+        resetToDefault,
+        exportProject,
+        importProject
     } = useProjectPersistence();
 
     const { settings, updateSettings } = useSettings();
@@ -39,7 +41,9 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     const [showSaveDialog, setShowSaveDialog] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [saveError, setSaveError] = useState<string | null>(null);
+    const [importError, setImportError] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const confirmDialog = useConfirmDialog();
 
     // Load projects when dropdown opens
@@ -134,6 +138,34 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         if (confirmed) {
             resetToDefault();
             setIsOpen(false);
+        }
+    };
+
+    const handleExport = () => {
+        exportProject();
+        setIsOpen(false);
+    };
+
+    const handleImportClick = () => {
+        setImportError(null);
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const result = await importProject(file);
+        if (result.success) {
+            setIsOpen(false);
+            setImportError(null);
+        } else {
+            setImportError(result.error || 'Failed to import project');
+        }
+
+        // Reset file input so the same file can be selected again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
         }
     };
 
@@ -286,9 +318,49 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                             </div>
                             <span>Auto-save changes</span>
                         </button>
+
+                        {/* Export/Import section */}
+                        <div className="flex border-t border-slate-100 dark:border-slate-600">
+                            <button
+                                onClick={handleExport}
+                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                title="Export project to file"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                                <span>Export</span>
+                            </button>
+                            <div className="w-px bg-slate-100 dark:bg-slate-600" />
+                            <button
+                                onClick={handleImportClick}
+                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                title="Import project from file"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>Import</span>
+                            </button>
+                        </div>
+                        {importError && (
+                            <div className="px-3 py-2 text-xs text-red-500 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800">
+                                {importError}
+                            </div>
+                        )}
+
+                        {/* Hidden file input for import */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".siwv,.json"
+                            onChange={handleFileChange}
+                            className="hidden"
+                        />
+
                         <button
                             onClick={handleReset}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

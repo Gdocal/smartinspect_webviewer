@@ -574,6 +574,90 @@ export function useProjectPersistence() {
         console.log('[ProjectPersistence] Reset to default project');
     }, [currentRoom, currentUser]);
 
+    // Export current project to a JSON file
+    const exportProject = useCallback(() => {
+        const projectData = extractProjectFromStore();
+        const exportData: Project = {
+            id: 'exported',
+            name: loadedProjectName || 'Exported Project',
+            description: 'Exported from SmartInspect Web Viewer',
+            createdBy: currentUser,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isShared: false,
+            ...projectData
+        };
+
+        // Create a clean filename from project name
+        const filename = `${(loadedProjectName || 'project').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.siwv`;
+
+        // Create and download the file
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        console.log('[ProjectPersistence] Exported project:', filename);
+        return { success: true, filename };
+    }, [currentUser, loadedProjectName]);
+
+    // Import a project from a JSON file
+    const importProject = useCallback((file: File): Promise<{ success: boolean; error?: string; project?: Project }> => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const content = e.target?.result as string;
+                    const importedData = JSON.parse(content) as Project;
+
+                    // Validate the structure
+                    if (!importedData.views || !Array.isArray(importedData.views)) {
+                        resolve({ success: false, error: 'Invalid project file: missing views array' });
+                        return;
+                    }
+
+                    // Skip multiple effect runs during import
+                    skipCountRef.current = 10;
+
+                    // Apply the imported project to the store
+                    applyProjectToStore(importedData);
+
+                    // Clear loaded project tracking since this is an imported file
+                    setLoadedProjectId(null);
+                    setLoadedProjectName(importedData.name || 'Imported Project');
+                    setLoadedProjectDirty(false);
+
+                    // Save to localStorage
+                    const workingState: WorkingProjectState = {
+                        project: importedData,
+                        loadedProjectId: null,
+                        loadedProjectDirty: false
+                    };
+                    saveWorkingProject(currentRoom, currentUser, workingState);
+                    lastSavedRef.current = JSON.stringify(workingState);
+
+                    console.log('[ProjectPersistence] Imported project:', importedData.name);
+                    resolve({ success: true, project: importedData });
+                } catch (err) {
+                    console.error('[ProjectPersistence] Failed to import project:', err);
+                    resolve({ success: false, error: `Failed to parse project file: ${String(err)}` });
+                }
+            };
+
+            reader.onerror = () => {
+                resolve({ success: false, error: 'Failed to read file' });
+            };
+
+            reader.readAsText(file);
+        });
+    }, [currentRoom, currentUser, setLoadedProjectId, setLoadedProjectName, setLoadedProjectDirty]);
+
     // Cleanup
     useEffect(() => {
         return () => {
@@ -597,6 +681,8 @@ export function useProjectPersistence() {
         listProjects,
         deleteProject,
         resetToDefault,
+        exportProject,
+        importProject,
         markDirty  // Call this when user explicitly changes project state
     };
 }

@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
 import { useLogStore, HighlightRule, ProjectLimits, defaultLimits } from '../store/logStore';
+import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { reconnect } from '../services/earlyWebSocket';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
 
@@ -100,6 +101,7 @@ export function SettingsPanel({
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
     const setCurrentUser = useLogStore(state => state.setCurrentUser);
     const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames, limits, setLimits } = useLogStore();
+    const { markDirty } = useProjectPersistence();
 
     // Local form state
     const [formState, setFormState] = useState<AppSettings>(settings);
@@ -132,6 +134,7 @@ export function SettingsPanel({
         } else {
             addHighlightRule(ruleData);
         }
+        markDirty();
         setShowRuleEditor(false);
         setEditingRule(undefined);
     };
@@ -139,11 +142,13 @@ export function SettingsPanel({
     const handleDeleteRule = (id: string) => {
         if (confirm('Delete this rule?')) {
             deleteHighlightRule(id);
+            markDirty();
         }
     };
 
     const handleToggleRule = (rule: HighlightRule) => {
         updateHighlightRule(rule.id, { enabled: !rule.enabled });
+        markDirty();
     };
 
     // Reset form when modal opens

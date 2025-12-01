@@ -5,6 +5,7 @@
 import { useLogStore } from '../store/logStore';
 import { RoomSelector } from './RoomSelector';
 import { Tooltip } from './Tooltip';
+import { useProjectPersistence } from '../hooks/useProjectPersistence';
 
 interface StatusBarProps {
     onServerInfoClick?: () => void;
@@ -12,6 +13,7 @@ interface StatusBarProps {
 
 export function StatusBar({ onServerInfoClick }: StatusBarProps) {
     const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, limits, roomSwitching, authRequired, currentUser, theme, toggleTheme } = useLogStore();
+    const { markDirty } = useProjectPersistence();
 
     // Get connection status text and style
     // During room switching, show "Switching room..." to avoid layout shift
@@ -128,7 +130,7 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
                 {/* Theme toggle */}
                 <Tooltip content={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} position="top">
                     <button
-                        onClick={toggleTheme}
+                        onClick={() => { toggleTheme(); markDirty(); }}
                         className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors"
                     >
                         {theme === 'light' ? (
