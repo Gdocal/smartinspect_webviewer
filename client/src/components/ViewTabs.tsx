@@ -88,6 +88,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const { sessions, appNames, hostNames, globalHighlightRules, views } = useLogStore();
     const [name, setName] = useState(view?.name || generateViewName(views));
     const [tabColor, setTabColor] = useState(view?.tabColor || '');
+    const [alternatingRows, setAlternatingRows] = useState(view?.alternatingRows ?? false);
     const nameInputRef = useRef<HTMLInputElement>(null);
     const confirmDialog = useConfirmDialog();
 
@@ -223,7 +224,8 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
             },
             highlightRules,
             useGlobalHighlights,
-            autoScroll: view?.autoScroll ?? true
+            autoScroll: view?.autoScroll ?? true,
+            alternatingRows
         });
     };
 
@@ -359,33 +361,36 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Tab Header Color
                                 </label>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2">
                                     <input
                                         type="color"
                                         value={tabColor || '#3b82f6'}
                                         onChange={(e) => setTabColor(e.target.value)}
-                                        className="w-10 h-10 rounded border border-slate-200 dark:border-slate-600 cursor-pointer"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={tabColor}
-                                        onChange={(e) => setTabColor(e.target.value)}
-                                        className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                        placeholder="e.g. #3b82f6 or transparent"
+                                        className="w-7 h-7 rounded border border-slate-200 dark:border-slate-600 cursor-pointer"
                                     />
                                     {tabColor && (
                                         <button
                                             type="button"
                                             onClick={() => setTabColor('')}
-                                            className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600 rounded"
                                         >
                                             Clear
                                         </button>
                                     )}
                                 </div>
-                                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                                    Leave empty for default tab style
-                                </p>
+                            </div>
+
+                            {/* Alternating Row Colors */}
+                            <div className="mb-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <Checkbox
+                                        checked={alternatingRows}
+                                        onChange={setAlternatingRows}
+                                    />
+                                    <span className="text-sm text-slate-700 dark:text-slate-200">
+                                        Alternating row colors
+                                    </span>
+                                </label>
                             </div>
                         </>
                     ) : activeTab === 'filters' ? (
@@ -746,6 +751,7 @@ export function ViewTabs() {
             highlightRules: view.highlightRules.map(r => ({ ...r, id: Math.random().toString(36).substring(2, 9) })),
             useGlobalHighlights: view.useGlobalHighlights,
             autoScroll: view.autoScroll,
+            alternatingRows: view.alternatingRows,
             columnState: view.columnState ? [...view.columnState] : undefined
         };
         addView(clonedViewData, true); // Activate the cloned view

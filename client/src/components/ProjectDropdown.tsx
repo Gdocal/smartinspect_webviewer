@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { ProjectSummary } from '../store/logStore';
+import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
 interface ProjectDropdownProps {
     className?: string;
@@ -36,6 +37,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     const [newProjectName, setNewProjectName] = useState('');
     const [saveError, setSaveError] = useState<string | null>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const confirmDialog = useConfirmDialog();
 
     // Load projects when dropdown opens
     const loadProjectsList = useCallback(async () => {
@@ -103,16 +105,30 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
         }
     };
 
-    const handleDeleteProject = async (e: React.MouseEvent, projectId: string) => {
+    const handleDeleteProject = async (e: React.MouseEvent, projectId: string, projectName: string) => {
         e.stopPropagation();
-        if (confirm('Are you sure you want to delete this project?')) {
+        const confirmed = await confirmDialog.confirm({
+            title: 'Delete Project',
+            message: `Are you sure you want to delete "${projectName}"?`,
+            confirmText: 'OK',
+            cancelText: 'Cancel',
+            danger: true
+        });
+        if (confirmed) {
             await deleteProject(projectId);
             await loadProjectsList();
         }
     };
 
-    const handleReset = () => {
-        if (confirm('Reset to default project? This will clear your current view configuration.')) {
+    const handleReset = async () => {
+        const confirmed = await confirmDialog.confirm({
+            title: 'Reset to Default',
+            message: 'This will clear your current view configuration.',
+            confirmText: 'OK',
+            cancelText: 'Cancel',
+            danger: true
+        });
+        if (confirmed) {
             resetToDefault();
             setIsOpen(false);
         }
@@ -188,7 +204,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 <div
                                     key={project.id}
                                     onClick={() => handleLoadProject(project.id)}
-                                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                                    className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
                                         loadedProjectId === project.id
                                             ? 'bg-blue-50 dark:bg-blue-900/30'
                                             : 'hover:bg-slate-50 dark:hover:bg-slate-700'
@@ -223,7 +239,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                         )
                                     ) : (
                                         <button
-                                            onClick={(e) => handleDeleteProject(e, project.id)}
+                                            onClick={(e) => handleDeleteProject(e, project.id, project.name)}
                                             className="p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                                             title="Delete project"
                                         >
@@ -304,6 +320,16 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Confirm Dialog */}
+            {confirmDialog.dialogProps && (
+                <ConfirmDialog
+                    isOpen={confirmDialog.isOpen}
+                    onConfirm={confirmDialog.handleConfirm}
+                    onCancel={confirmDialog.handleCancel}
+                    {...confirmDialog.dialogProps}
+                />
             )}
         </div>
     );

@@ -199,6 +199,7 @@ export interface View {
     useGlobalHighlights: boolean; // Whether to also apply global highlight rules
     columnState?: ColumnState[];
     autoScroll: boolean;
+    alternatingRows?: boolean; // Show alternating row colors for better readability
 }
 
 // Extended view with per-view grid state (for Projects system)

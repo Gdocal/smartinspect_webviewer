@@ -8,6 +8,7 @@
     "client"
   ],
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
@@ -15,6 +16,7 @@
     "start": "npm run start -w server"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "patch-package": "^8.0.1"
   }
 }

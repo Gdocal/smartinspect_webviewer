@@ -560,11 +560,12 @@ export function ViewGrid({
         defaultToolPanel: '',
     }), []);
 
-    // Row styling based on highlight rules
+    // Row styling based on highlight rules and alternating rows
     const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string | number> | undefined => {
         const entry = params.data;
         if (!entry) return undefined;
 
+        // Check highlight rules first (they take priority)
         const sortedRules = [...highlightRules].sort((a, b) => b.priority - a.priority);
         for (const rule of sortedRules) {
             if (matchesHighlightRule(entry, rule)) {
@@ -600,8 +601,21 @@ export function ViewGrid({
             }
         }
 
+        // Apply alternating row colors if enabled (only for rows without highlight rules)
+        if (view.alternatingRows && params.node?.rowIndex != null) {
+            const isOddRow = params.node.rowIndex % 2 === 1;
+            if (isOddRow) {
+                // Subtle alternating colors - low contrast
+                // Light: slightly darker than default white (#f8fafc = slate-50)
+                // Dark: slightly lighter than default (#1e293b = slate-800, so use a touch lighter)
+                return {
+                    backgroundColor: theme === 'dark' ? '#243244' : '#f8fafc'
+                };
+            }
+        }
+
         return undefined;
-    }, [highlightRules, theme]);
+    }, [highlightRules, theme, view.alternatingRows]);
 
     // Handle grid ready
     const onGridReady = useCallback((params: GridReadyEvent) => {
@@ -651,19 +665,80 @@ export function ViewGrid({
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
+    // Refs for stick-to-bottom behavior (from AgGridTest.tsx)
+    const stickToBottomRef = useRef(true);
+    const isProgrammaticScrollRef = useRef(false);
+    const userInteractionTimeRef = useRef(0);
+    const userDisabledAutoScrollTimeRef = useRef(0);
+
     // Snap to bottom helper - updates both viewports to prevent bounce
     const snapToBottom = useCallback(() => {
         const viewport = document.querySelector('.ag-body-viewport') as HTMLElement;
         const fakeScroll = document.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
 
         if (viewport) {
+            isProgrammaticScrollRef.current = true;
             const maxScroll = viewport.scrollHeight - viewport.clientHeight;
             viewport.scrollTop = maxScroll;
             if (fakeScroll) {
                 fakeScroll.scrollTop = maxScroll;
             }
+            // Reset after a short delay
+            setTimeout(() => {
+                isProgrammaticScrollRef.current = false;
+            }, 50);
         }
     }, []);
+
+    // Set up scroll event listeners to track user scroll intent
+    useEffect(() => {
+        const viewport = document.querySelector('.ag-body-viewport') as HTMLElement;
+        const fakeScroll = document.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
+
+        // Wheel event - user is scrolling with mouse wheel
+        const handleWheel = (e: WheelEvent) => {
+            userInteractionTimeRef.current = Date.now();
+            // Scrolling up (negative deltaY) = user wants to leave auto-scroll
+            if (e.deltaY < 0) {
+                stickToBottomRef.current = false;
+                userDisabledAutoScrollTimeRef.current = Date.now();
+            }
+        };
+
+        // Mousedown on scrollbar track - user is dragging scrollbar
+        const handleMouseDown = () => {
+            userInteractionTimeRef.current = Date.now();
+            // User is interacting with scrollbar, disable stick-to-bottom
+            stickToBottomRef.current = false;
+            userDisabledAutoScrollTimeRef.current = Date.now();
+        };
+
+        // Scroll event - check if user scrolled to bottom to re-enable
+        const handleScroll = () => {
+            if (!viewport || isProgrammaticScrollRef.current) return;
+
+            const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+
+            // If user scrolled to bottom (within 10px), enable stick-to-bottom
+            if (distanceFromBottom < 10) {
+                stickToBottomRef.current = true;
+                // Reset the disabled timer so auto-scroll can resume immediately
+                userDisabledAutoScrollTimeRef.current = 0;
+            }
+        };
+
+        viewport?.addEventListener('wheel', handleWheel, { passive: true });
+        viewport?.addEventListener('mousedown', handleMouseDown);
+        fakeScroll?.addEventListener('mousedown', handleMouseDown);
+        viewport?.addEventListener('scroll', handleScroll, { passive: true });
+
+        return () => {
+            viewport?.removeEventListener('wheel', handleWheel);
+            viewport?.removeEventListener('mousedown', handleMouseDown);
+            fakeScroll?.removeEventListener('mousedown', handleMouseDown);
+            viewport?.removeEventListener('scroll', handleScroll);
+        };
+    }, [view.id]); // Re-attach when view changes
 
     // Auto-scroll to bottom when new entries arrive (only for active view with autoScroll)
     useEffect(() => {
@@ -674,14 +749,24 @@ export function ViewGrid({
                 entriesVersion > lastEntriesVersionRef.current;
 
             if (hasNewEntries) {
-                // Snap multiple times to catch all AG Grid internal updates
-                // This prevents the scroll bounce issue
-                snapToBottom();
-                queueMicrotask(() => snapToBottom());
-                requestAnimationFrame(() => {
+                // Check timing conditions before auto-scrolling
+                const timeSinceInteraction = Date.now() - userInteractionTimeRef.current;
+                const timeSinceDisabled = Date.now() - userDisabledAutoScrollTimeRef.current;
+
+                // Don't auto-scroll if:
+                // 1. stickToBottom is false (user explicitly disabled)
+                // 2. User interacted within last 500ms
+                // 3. User disabled auto-scroll within last 5 seconds (longer grace period)
+                if (stickToBottomRef.current && timeSinceInteraction > 500 && timeSinceDisabled > 5000) {
+                    // Snap multiple times to catch all AG Grid internal updates
+                    // This prevents the scroll bounce issue
                     snapToBottom();
-                    requestAnimationFrame(() => snapToBottom());
-                });
+                    queueMicrotask(() => snapToBottom());
+                    requestAnimationFrame(() => {
+                        snapToBottom();
+                        requestAnimationFrame(() => snapToBottom());
+                    });
+                }
             }
         }
         lastEntryCountRef.current = filteredEntries.length;
