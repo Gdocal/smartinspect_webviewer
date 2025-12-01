@@ -920,11 +920,6 @@ export function ViewTabs() {
                             <span className={`text-sm whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}>
                                 {view.name}
                             </span>
-                            {view.filter.sessions.length > 0 && (
-                                <span className="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">
-                                    {view.filter.sessions.length}
-                                </span>
-                            )}
                             {view.id !== 'all' && (
                                 <button
                                     onClick={(e) => handleDeleteView(e, view.id)}
