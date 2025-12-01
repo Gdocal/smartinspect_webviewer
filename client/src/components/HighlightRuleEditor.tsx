@@ -77,7 +77,7 @@ const colorPalette = {
 type ColorFamily = keyof typeof colorPalette;
 type Intensity = 'light' | 'medium' | 'dark';
 
-// Compact ColorSelector component with intensity dropdown
+// Compact ColorSelector component - single click applies color, intensity buttons below
 interface ColorSelectorProps {
     bgColor: string;
     textColor: string;
@@ -85,10 +85,7 @@ interface ColorSelectorProps {
 }
 
 function ColorSelector({ bgColor, textColor, onColorChange }: ColorSelectorProps) {
-    const [selectedFamily, setSelectedFamily] = useState<ColorFamily | null>(null);
-    const [showIntensityDropdown, setShowIntensityDropdown] = useState(false);
     const [showCustom, setShowCustom] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
 
     // Detect current selection from colors
     const currentSelection = useMemo(() => {
@@ -102,113 +99,66 @@ function ColorSelector({ bgColor, textColor, onColorChange }: ColorSelectorProps
         return null;
     }, [bgColor, textColor]);
 
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setShowIntensityDropdown(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
+    // Single click applies medium intensity of that color
     const handleColorClick = (family: ColorFamily) => {
-        if (selectedFamily === family && showIntensityDropdown) {
-            setShowIntensityDropdown(false);
-        } else {
-            setSelectedFamily(family);
-            setShowIntensityDropdown(true);
-        }
+        const colors = colorPalette[family].intensities.medium;
+        onColorChange(colors.bg, colors.text);
+        setShowCustom(false);
     };
 
-    const handleIntensitySelect = (intensity: Intensity) => {
-        if (selectedFamily) {
-            const colors = colorPalette[selectedFamily].intensities[intensity];
+    // Change intensity of current color family
+    const handleIntensityChange = (intensity: Intensity) => {
+        if (currentSelection) {
+            const colors = colorPalette[currentSelection.family].intensities[intensity];
             onColorChange(colors.bg, colors.text);
-            setShowIntensityDropdown(false);
-            setShowCustom(false);
         }
-    };
-
-    const intensityLabels: Record<Intensity, string> = {
-        light: 'Light',
-        medium: 'Medium',
-        dark: 'Intense'
     };
 
     return (
-        <div className="space-y-3">
-            {/* Color row - 7 small color buttons */}
-            <div className="flex items-center gap-1.5">
+        <div className="space-y-2">
+            {/* Color row - 7 color buttons + custom */}
+            <div className="flex items-center gap-1">
                 {Object.entries(colorPalette).map(([family, data]) => {
                     const isSelected = currentSelection?.family === family;
-                    const displayColor = data.intensities.medium; // Show medium as preview
+                    // Show current intensity if selected, otherwise medium
+                    const displayIntensity = isSelected && currentSelection ? currentSelection.intensity : 'medium';
+                    const displayColor = data.intensities[displayIntensity];
                     return (
-                        <div key={family} className="relative" ref={selectedFamily === family ? dropdownRef : undefined}>
-                            <button
-                                type="button"
-                                onClick={() => handleColorClick(family as ColorFamily)}
-                                className={`w-8 h-8 rounded border-2 transition-all flex items-center justify-center text-[10px] font-bold ${
-                                    isSelected
-                                        ? 'border-blue-500 ring-2 ring-blue-500/30 scale-110'
-                                        : 'border-transparent hover:border-slate-300 dark:hover:border-slate-500 hover:scale-105'
-                                }`}
-                                style={{ backgroundColor: displayColor.bg, color: displayColor.text }}
-                                title={data.name}
-                            >
-                                A
-                            </button>
-
-                            {/* Intensity dropdown */}
-                            {selectedFamily === family && showIntensityDropdown && (
-                                <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg p-1 min-w-[100px]">
-                                    {(['light', 'medium', 'dark'] as const).map(intensity => {
-                                        const colors = data.intensities[intensity];
-                                        const isCurrentIntensity = currentSelection?.family === family && currentSelection?.intensity === intensity;
-                                        return (
-                                            <button
-                                                key={intensity}
-                                                type="button"
-                                                onClick={() => handleIntensitySelect(intensity)}
-                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-slate-100 dark:hover:bg-slate-600 ${
-                                                    isCurrentIntensity ? 'bg-slate-100 dark:bg-slate-600' : ''
-                                                }`}
-                                            >
-                                                <span
-                                                    className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold"
-                                                    style={{ backgroundColor: colors.bg, color: colors.text }}
-                                                >
-                                                    A
-                                                </span>
-                                                <span className="text-slate-700 dark:text-slate-200">{intensityLabels[intensity]}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                        <button
+                            key={family}
+                            type="button"
+                            onClick={() => handleColorClick(family as ColorFamily)}
+                            className={`w-8 h-8 rounded transition-all flex items-center justify-center text-[10px] font-bold ${
+                                isSelected
+                                    ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-slate-500'
+                                    : 'hover:scale-110'
+                            }`}
+                            style={{ backgroundColor: displayColor.bg, color: displayColor.text }}
+                            title={data.name}
+                        >
+                            A
+                        </button>
                     );
                 })}
+
+                {/* Separator */}
+                <div className="w-px h-6 bg-slate-200 dark:bg-slate-600 mx-1" />
 
                 {/* Custom color button */}
                 <button
                     type="button"
-                    onClick={() => {
-                        setShowCustom(!showCustom);
-                        setShowIntensityDropdown(false);
-                    }}
-                    className={`w-8 h-8 rounded border-2 transition-all flex items-center justify-center ${
+                    onClick={() => setShowCustom(!showCustom)}
+                    className={`w-8 h-8 rounded transition-all flex items-center justify-center ${
                         showCustom || !currentSelection
-                            ? 'border-blue-500 ring-2 ring-blue-500/30'
-                            : 'border-slate-300 dark:border-slate-500 hover:border-slate-400 dark:hover:border-slate-400'
+                            ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-slate-500'
+                            : 'hover:scale-110 bg-slate-100 dark:bg-slate-700'
                     }`}
-                    style={!currentSelection ? { backgroundColor: bgColor, color: textColor } : { backgroundColor: '#f1f5f9' }}
+                    style={!currentSelection ? { backgroundColor: bgColor, color: textColor } : undefined}
                     title="Custom color"
                 >
-                    {currentSelection ? (
-                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    {currentSelection && !showCustom ? (
+                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                         </svg>
                     ) : (
                         <span className="text-[10px] font-bold">A</span>
@@ -216,7 +166,32 @@ function ColorSelector({ bgColor, textColor, onColorChange }: ColorSelectorProps
                 </button>
             </div>
 
-            {/* Custom color pickers - collapsible */}
+            {/* Intensity selector - only show when a color family is selected */}
+            {currentSelection && !showCustom && (
+                <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 mr-1">Intensity:</span>
+                    {(['light', 'medium', 'dark'] as const).map(intensity => {
+                        const isActive = currentSelection.intensity === intensity;
+                        const colors = colorPalette[currentSelection.family].intensities[intensity];
+                        return (
+                            <button
+                                key={intensity}
+                                type="button"
+                                onClick={() => handleIntensityChange(intensity)}
+                                className={`w-6 h-6 rounded text-[8px] font-bold transition-all ${
+                                    isActive ? 'ring-1 ring-offset-1 ring-slate-400 dark:ring-slate-500' : 'hover:scale-110'
+                                }`}
+                                style={{ backgroundColor: colors.bg, color: colors.text }}
+                                title={intensity === 'dark' ? 'Intense' : intensity.charAt(0).toUpperCase() + intensity.slice(1)}
+                            >
+                                A
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Custom color pickers */}
             {showCustom && (
                 <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
                     <div className="flex items-center gap-2">
