@@ -434,7 +434,7 @@ class StreamStore {
     /**
      * Add a stream entry to a channel
      */
-    add(channel, data, timestamp) {
+    add(channel, data, timestamp, streamType = null) {
         if (!this.channels.has(channel)) {
             this.channels.set(channel, []);
         }
@@ -443,7 +443,8 @@ class StreamStore {
             id: ++this.entryId,
             channel,
             data,
-            timestamp: timestamp || new Date()
+            timestamp: timestamp || new Date(),
+            streamType: streamType || undefined
         };
 
         const entries = this.channels.get(channel);

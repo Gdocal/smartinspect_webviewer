@@ -267,6 +267,7 @@ export interface StreamEntry {
     data: string;
     timestamp: string;
     sessionName?: string;
+    streamType?: string;
 }
 
 // Layout sizes stored as percentages (0-100)

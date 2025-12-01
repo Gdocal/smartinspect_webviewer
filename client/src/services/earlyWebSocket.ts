@@ -287,12 +287,13 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             if (!useLogStore.getState().connected && !pendingAuth) {
                 completeConnection();
             }
-            const { channel, entry } = message as { channel: string; entry: { data: string; timestamp: string } };
+            const { channel, entry } = message as { channel: string; entry: { data: string; timestamp: string; streamType?: string } };
             if (channel && entry) {
                 store.addStreamEntry(channel, {
                     channel,
                     data: entry.data,
-                    timestamp: entry.timestamp
+                    timestamp: entry.timestamp,
+                    streamType: entry.streamType
                 });
             }
             break;

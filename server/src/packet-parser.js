@@ -388,7 +388,8 @@ class PacketParser {
 
     /**
      * Parse Stream packet
-     * Format: [channelLen(4)] [dataLen(4)] [timestamp(8)] [channel] [data]
+     * Format v2 (with type): [channelLen(4)] [dataLen(4)] [typeLen(4)] [timestamp(8)] [channel] [data] [type]
+     * Format v1 (legacy): [channelLen(4)] [dataLen(4)] [timestamp(8)] [channel] [data]
      */
     parseStream(data) {
         if (data.length < 16) return null;
@@ -397,18 +398,51 @@ class PacketParser {
 
         const channelLen = data.readInt32LE(offset); offset += 4;
         const dataLen = data.readInt32LE(offset); offset += 4;
-        const timestamp = data.readDoubleLE(offset); offset += 8;
 
-        const channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
-        offset += channelLen;
+        // Check if this is v2 format (with type field) by checking minimum size
+        // v2: 4 + 4 + 4 + 8 = 20 bytes header, v1: 4 + 4 + 8 = 16 bytes header
+        // We detect v2 by checking if the total data size matches v2 format
+        const potentialTypeLen = data.readInt32LE(offset);
+        const v2HeaderSize = 20;
+        const v1HeaderSize = 16;
 
-        const streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+        // Calculate expected sizes for both formats
+        const v2ExpectedSize = v2HeaderSize + channelLen + dataLen + potentialTypeLen;
+        const v1ExpectedSize = v1HeaderSize + channelLen + dataLen;
+
+        let streamType = '';
+        let timestamp;
+        let channel;
+        let streamData;
+
+        if (data.length >= v2ExpectedSize && potentialTypeLen >= 0 && potentialTypeLen < 1000) {
+            // v2 format with type
+            offset += 4; // skip typeLen (already read as potentialTypeLen)
+            timestamp = data.readDoubleLE(offset); offset += 8;
+
+            channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
+            offset += channelLen;
+
+            streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+            offset += dataLen;
+
+            streamType = potentialTypeLen > 0 ? data.slice(offset, offset + potentialTypeLen).toString('utf8') : '';
+        } else {
+            // v1 format without type (legacy)
+            timestamp = data.readDoubleLE(offset); offset += 8;
+
+            channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
+            offset += channelLen;
+
+            streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+        }
 
         return {
             packetType: PacketType.Stream,
             type: 'stream',
             channel,
             data: streamData,
+            streamType,
             timestamp: timestampToDate(timestamp)
         };
     }

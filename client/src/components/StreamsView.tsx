@@ -182,7 +182,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         lastEntryCountRef.current = displayedEntries.length;
     }, [displayedEntries.length, autoScroll, paused]);
 
-    // Column definitions - Content first, Time at the end
+    // Column definitions - Content first, Type, Time at the end
     const columnDefs = useMemo<ColDef<StreamEntry>[]>(() => [
         {
             headerName: 'Content',
@@ -192,6 +192,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             cellRenderer: ContentCellRenderer,
             sortable: false,
             filter: 'agTextColumnFilter',
+        },
+        {
+            headerName: 'Type',
+            field: 'streamType',
+            width: 100,
+            minWidth: 60,
+            filter: 'agTextColumnFilter',
+            cellClass: 'text-xs text-slate-600 dark:text-slate-300',
         },
         {
             headerName: 'Time',

@@ -1000,7 +1000,8 @@ function handlePacket(packet, clientInfo) {
             const streamEntry = room.streamStore.add(
                 packet.channel,
                 packet.data,
-                packet.timestamp
+                packet.timestamp,
+                packet.streamType
             );
             room.touch();
 
@@ -1010,7 +1011,8 @@ function handlePacket(packet, clientInfo) {
                 entry: {
                     id: streamEntry.id,
                     data: streamEntry.data,
-                    timestamp: streamEntry.timestamp.toISOString()
+                    timestamp: streamEntry.timestamp.toISOString(),
+                    streamType: streamEntry.streamType
                 }
             });
             break;

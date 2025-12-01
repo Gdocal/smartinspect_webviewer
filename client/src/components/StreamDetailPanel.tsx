@@ -120,7 +120,25 @@ export function StreamDetailPanel({ entry }: StreamDetailPanelProps) {
                 </button>
             </div>
 
-            {/* Content - Data only, no metadata */}
+            {/* Metadata row */}
+            <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 dark:text-slate-500">Channel:</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-300">{entry.channel}</span>
+                </div>
+                {entry.streamType && (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400 dark:text-slate-500">Type:</span>
+                        <span className="font-medium text-purple-600 dark:text-purple-400">{entry.streamType}</span>
+                    </div>
+                )}
+                <div className="flex items-center gap-1.5">
+                    <span className="text-slate-400 dark:text-slate-500">Time:</span>
+                    <span className="text-slate-600 dark:text-slate-400">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+                </div>
+            </div>
+
+            {/* Content - Data */}
             <div className="flex-1 overflow-auto p-4">
                 <DataViewer data={entry.data} />
             </div>
