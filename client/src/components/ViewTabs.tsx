@@ -3,12 +3,13 @@
  * Uses the same filter components as HighlightRuleEditor for consistency
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 import { ViewGrid } from './ViewGrid';
 import { ColumnState, FilterModel } from 'ag-grid-community';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
+import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
 // Checkbox is imported from HighlightRuleEditor
 
@@ -85,6 +86,7 @@ interface ViewEditorProps {
 function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const { sessions, appNames, hostNames, globalHighlightRules, views } = useLogStore();
     const [name, setName] = useState(view?.name || generateViewName(views));
+    const confirmDialog = useConfirmDialog();
 
     // Session filter state using ListTextFilter (same as HighlightRuleEditor)
     const [sessionFilter, setSessionFilter] = useState<ListTextFilter>(() => {
@@ -247,8 +249,15 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
         setEditingHighlightRule(undefined);
     };
 
-    const handleDeleteHighlightRule = (id: string) => {
-        if (confirm('Delete this highlight rule?')) {
+    const handleDeleteHighlightRule = async (id: string) => {
+        const confirmed = await confirmDialog.confirm({
+            title: 'Delete Highlight Rule',
+            message: 'Are you sure you want to delete this highlight rule? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            danger: true
+        });
+        if (confirmed) {
             setHighlightRules(highlightRules.filter(r => r.id !== id));
         }
     };
@@ -534,6 +543,20 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                     </button>
                 </div>
             </div>
+
+            {/* Confirm Dialog for ViewEditor */}
+            {confirmDialog.dialogProps && (
+                <ConfirmDialog
+                    isOpen={confirmDialog.isOpen}
+                    title={confirmDialog.dialogProps.title}
+                    message={confirmDialog.dialogProps.message}
+                    confirmText={confirmDialog.dialogProps.confirmText}
+                    cancelText={confirmDialog.dialogProps.cancelText}
+                    danger={confirmDialog.dialogProps.danger}
+                    onConfirm={confirmDialog.handleConfirm}
+                    onCancel={confirmDialog.handleCancel}
+                />
+            )}
         </div>
     );
 }
@@ -564,6 +587,9 @@ export function ViewTabs() {
 
     // Context menu for tab headers
     const contextMenu = useContextMenu<View>();
+
+    // Confirm dialog for delete operations
+    const confirmDialog = useConfirmDialog();
 
     // Check scroll state
     const updateScrollState = useCallback(() => {
@@ -638,13 +664,25 @@ export function ViewTabs() {
         setEditingView(undefined);
     };
 
-    const handleDeleteView = (e: React.MouseEvent, viewId: string) => {
+    const handleDeleteView = useCallback(async (e: React.MouseEvent, viewId: string) => {
         e.stopPropagation();
         if (viewId === 'all') return; // Can't delete default view
-        if (confirm('Delete this view?')) {
+
+        const viewToDelete = views.find(v => v.id === viewId);
+        const viewName = viewToDelete?.name || 'this view';
+
+        const confirmed = await confirmDialog.confirm({
+            title: 'Close View',
+            message: `Are you sure you want to close "${viewName}"? This action cannot be undone.`,
+            confirmText: 'Close',
+            cancelText: 'Cancel',
+            danger: true
+        });
+
+        if (confirmed) {
             deleteView(viewId);
         }
-    };
+    }, [views, confirmDialog, deleteView]);
 
     const handleStreamsClick = () => {
         setStreamsMode(true);
@@ -663,8 +701,7 @@ export function ViewTabs() {
             highlightRules: view.highlightRules.map(r => ({ ...r, id: Math.random().toString(36).substring(2, 9) })),
             useGlobalHighlights: view.useGlobalHighlights,
             autoScroll: view.autoScroll,
-            columnState: view.columnState ? [...view.columnState] : undefined,
-            gridFilterModel: view.gridFilterModel ? { ...view.gridFilterModel } : undefined
+            columnState: view.columnState ? [...view.columnState] : undefined
         };
         addView(clonedViewData, true); // Activate the cloned view
     }, [addView]);
@@ -677,6 +714,23 @@ export function ViewTabs() {
         setActiveView(keepViewId);
         setStreamsMode(false);
     }, [views, deleteView, setActiveView, setStreamsMode]);
+
+    // Close view via context menu (with confirmation)
+    const handleCloseViewFromMenu = useCallback(async (view: View) => {
+        if (view.id === 'all') return; // Can't delete default view
+
+        const confirmed = await confirmDialog.confirm({
+            title: 'Close View',
+            message: `Are you sure you want to close "${view.name}"? This action cannot be undone.`,
+            confirmText: 'Close',
+            cancelText: 'Cancel',
+            danger: true
+        });
+
+        if (confirmed) {
+            deleteView(view.id);
+        }
+    }, [confirmDialog, deleteView]);
 
     // Build context menu items for a view
     const getContextMenuItems = useCallback((view: View): ContextMenuItem[] => {
@@ -727,14 +781,10 @@ export function ViewTabs() {
                 ),
                 disabled: isDefaultView,
                 danger: !isDefaultView,
-                onClick: () => {
-                    if (!isDefaultView && confirm('Delete this view?')) {
-                        deleteView(view.id);
-                    }
-                }
+                onClick: () => handleCloseViewFromMenu(view)
             }
         ];
-    }, [views, handleEditView, handleCloneView, handleCloseOtherViews, deleteView]);
+    }, [views, handleEditView, handleCloneView, handleCloseOtherViews, handleCloseViewFromMenu]);
 
     // Handle right-click on tab
     const handleTabContextMenu = useCallback((e: React.MouseEvent, view: View) => {
@@ -864,6 +914,20 @@ export function ViewTabs() {
                     items={getContextMenuItems(contextMenu.state.data)}
                     position={contextMenu.state.position}
                     onClose={contextMenu.close}
+                />
+            )}
+
+            {/* Confirm Dialog for ViewTabs */}
+            {confirmDialog.dialogProps && (
+                <ConfirmDialog
+                    isOpen={confirmDialog.isOpen}
+                    title={confirmDialog.dialogProps.title}
+                    message={confirmDialog.dialogProps.message}
+                    confirmText={confirmDialog.dialogProps.confirmText}
+                    cancelText={confirmDialog.dialogProps.cancelText}
+                    danger={confirmDialog.dialogProps.danger}
+                    onConfirm={confirmDialog.handleConfirm}
+                    onCancel={confirmDialog.handleCancel}
                 />
             )}
         </>
