@@ -366,6 +366,7 @@ export function ViewGrid({
     onFilterModelChange,
     onScrollChange
 }: ViewGridProps) {
+    const containerRef = useRef<HTMLDivElement>(null);
     const gridRef = useRef<AgGridReact>(null);
     const gridApiRef = useRef<GridApi | null>(null);
     const scrollTopRef = useRef(0);
@@ -673,8 +674,10 @@ export function ViewGrid({
 
     // Snap to bottom helper - updates both viewports to prevent bounce
     const snapToBottom = useCallback(() => {
-        const viewport = document.querySelector('.ag-body-viewport') as HTMLElement;
-        const fakeScroll = document.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
+        if (!containerRef.current) return;
+
+        const viewport = containerRef.current.querySelector('.ag-body-viewport') as HTMLElement;
+        const fakeScroll = containerRef.current.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
 
         if (viewport) {
             isProgrammaticScrollRef.current = true;
@@ -692,8 +695,12 @@ export function ViewGrid({
 
     // Set up scroll event listeners to track user scroll intent
     useEffect(() => {
-        const viewport = document.querySelector('.ag-body-viewport') as HTMLElement;
-        const fakeScroll = document.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
+        if (!containerRef.current) return;
+
+        const viewport = containerRef.current.querySelector('.ag-body-viewport') as HTMLElement;
+        const fakeScroll = containerRef.current.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
+
+        if (!viewport) return;
 
         // Wheel event - user is scrolling with mouse wheel
         const handleWheel = (e: WheelEvent) => {
@@ -715,7 +722,7 @@ export function ViewGrid({
 
         // Scroll event - check if user scrolled to bottom to re-enable
         const handleScroll = () => {
-            if (!viewport || isProgrammaticScrollRef.current) return;
+            if (isProgrammaticScrollRef.current) return;
 
             const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
 
@@ -727,16 +734,16 @@ export function ViewGrid({
             }
         };
 
-        viewport?.addEventListener('wheel', handleWheel, { passive: true });
-        viewport?.addEventListener('mousedown', handleMouseDown);
+        viewport.addEventListener('wheel', handleWheel, { passive: true });
+        viewport.addEventListener('mousedown', handleMouseDown);
         fakeScroll?.addEventListener('mousedown', handleMouseDown);
-        viewport?.addEventListener('scroll', handleScroll, { passive: true });
+        viewport.addEventListener('scroll', handleScroll, { passive: true });
 
         return () => {
-            viewport?.removeEventListener('wheel', handleWheel);
-            viewport?.removeEventListener('mousedown', handleMouseDown);
+            viewport.removeEventListener('wheel', handleWheel);
+            viewport.removeEventListener('mousedown', handleMouseDown);
             fakeScroll?.removeEventListener('mousedown', handleMouseDown);
-            viewport?.removeEventListener('scroll', handleScroll);
+            viewport.removeEventListener('scroll', handleScroll);
         };
     }, [view.id]); // Re-attach when view changes
 
@@ -802,6 +809,7 @@ export function ViewGrid({
 
     return (
         <div
+            ref={containerRef}
             className={`${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`}
             style={{
                 fontSize: '13px',

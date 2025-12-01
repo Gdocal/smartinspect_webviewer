@@ -338,9 +338,9 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 
                 <div className="p-4 overflow-auto flex-1 min-h-0">
                     {activeTab === 'general' ? (
-                        <>
+                        <div className="space-y-4">
                             {/* View Name */}
-                            <div className="mb-4">
+                            <div>
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     View Name
                                 </label>
@@ -356,33 +356,30 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                 />
                             </div>
 
-                            {/* Tab Color */}
-                            <div className="mb-4">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Tab Header Color
-                                </label>
-                                <div className="flex items-center gap-2">
+                            {/* Options */}
+                            <div className="space-y-3 pt-2">
+                                {/* Tab Header Color */}
+                                <div className="flex items-center gap-3">
                                     <input
                                         type="color"
                                         value={tabColor || '#3b82f6'}
                                         onChange={(e) => setTabColor(e.target.value)}
-                                        className="w-7 h-7 rounded border border-slate-200 dark:border-slate-600 cursor-pointer"
+                                        className="w-6 h-6 rounded border border-slate-300 dark:border-slate-500 cursor-pointer flex-shrink-0"
                                     />
+                                    <span className="text-sm text-slate-700 dark:text-slate-200 flex-1">Tab color</span>
                                     {tabColor && (
                                         <button
                                             type="button"
                                             onClick={() => setTabColor('')}
-                                            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600 rounded"
+                                            className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                                         >
-                                            Clear
+                                            Reset
                                         </button>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* Alternating Row Colors */}
-                            <div className="mb-4">
-                                <label className="flex items-center gap-2 cursor-pointer">
+                                {/* Alternating Row Colors */}
+                                <label className="flex items-center gap-3 cursor-pointer">
                                     <Checkbox
                                         checked={alternatingRows}
                                         onChange={setAlternatingRows}
@@ -392,7 +389,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                     </span>
                                 </label>
                             </div>
-                        </>
+                        </div>
                     ) : activeTab === 'filters' ? (
                         <>
                             {/* Session Filter - using shared component */}
