@@ -299,6 +299,53 @@ app.get('/api/server/config', (req, res) => {
 });
 
 /**
+ * GET /api/server/connection-info - Get connection info for loggers
+ * Returns all network interfaces with IPs and ports for connecting log sources
+ */
+app.get('/api/server/connection-info', (req, res) => {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    const connections = [];
+
+    // Collect all network interfaces
+    for (const [name, addrs] of Object.entries(interfaces)) {
+        if (!addrs) continue;
+        for (const addr of addrs) {
+            // Skip internal (loopback) addresses
+            if (addr.internal) continue;
+
+            const connectionString = addr.family === 'IPv4'
+                ? `tcp(host=${addr.address}, port=${config.tcpPort})`
+                : `tcp(host=[${addr.address}], port=${config.tcpPort})`;
+
+            connections.push({
+                interface: name,
+                address: addr.address,
+                family: addr.family,
+                port: config.tcpPort,
+                connectionString
+            });
+        }
+    }
+
+    // Add localhost entries
+    connections.unshift({
+        interface: 'localhost',
+        address: '127.0.0.1',
+        family: 'IPv4',
+        port: config.tcpPort,
+        connectionString: `tcp(host=127.0.0.1, port=${config.tcpPort})`
+    });
+
+    res.json({
+        tcpPort: config.tcpPort,
+        httpPort: config.httpPort,
+        connections,
+        hostname: os.hostname()
+    });
+});
+
+/**
  * PATCH /api/server/config - Update server configuration
  */
 app.patch('/api/server/config', (req, res) => {

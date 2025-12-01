@@ -12,6 +12,18 @@ import { ColumnState, FilterModel } from 'ag-grid-community';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
+// Tab header color palette - softer colors suitable for tab backgrounds
+const tabColorPalette = [
+    { name: 'Rose', color: '#f472b6' },
+    { name: 'Orange', color: '#fb923c' },
+    { name: 'Amber', color: '#fbbf24' },
+    { name: 'Green', color: '#4ade80' },
+    { name: 'Teal', color: '#2dd4bf' },
+    { name: 'Sky', color: '#38bdf8' },
+    { name: 'Violet', color: '#a78bfa' },
+    { name: 'Slate', color: '#94a3b8' }
+];
+
 // Checkbox is imported from HighlightRuleEditor
 
 // Helper to get a summary of the filter for display
@@ -363,28 +375,68 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                 </label>
                                 <div className="space-y-2">
                                     {/* Tab Header Color */}
-                                    <div className="flex items-center gap-3">
-                                        <div
-                                            className="w-4 h-4 rounded border-2 border-slate-300 dark:border-slate-500 cursor-pointer flex-shrink-0 relative overflow-hidden"
-                                            style={{ backgroundColor: tabColor || '#808080' }}
-                                        >
-                                            <input
-                                                type="color"
-                                                value={tabColor || '#808080'}
-                                                onChange={(e) => setTabColor(e.target.value)}
-                                                className="absolute inset-0 w-[200%] h-[200%] cursor-pointer opacity-0"
-                                            />
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm text-slate-700 dark:text-slate-200">Tab header color</span>
+                                            {tabColor && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setTabColor('')}
+                                                    className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                >
+                                                    Clear
+                                                </button>
+                                            )}
                                         </div>
-                                        <span className="text-sm text-slate-700 dark:text-slate-200 flex-1">Tab header color</span>
-                                        {tabColor && (
+                                        <div className="flex items-center gap-1">
+                                            {/* None option */}
                                             <button
                                                 type="button"
                                                 onClick={() => setTabColor('')}
-                                                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                                className={`w-7 h-7 rounded border-2 flex items-center justify-center transition-all ${
+                                                    !tabColor
+                                                        ? 'border-blue-500 ring-2 ring-blue-500/30'
+                                                        : 'border-slate-300 dark:border-slate-500 hover:border-slate-400 dark:hover:border-slate-400'
+                                                }`}
+                                                title="No color"
                                             >
-                                                Clear
+                                                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
                                             </button>
-                                        )}
+                                            {/* Color palette */}
+                                            {tabColorPalette.map((c) => (
+                                                <button
+                                                    key={c.name}
+                                                    type="button"
+                                                    onClick={() => setTabColor(c.color)}
+                                                    className={`w-7 h-7 rounded border-2 transition-all ${
+                                                        tabColor === c.color
+                                                            ? 'border-blue-500 ring-2 ring-blue-500/30'
+                                                            : 'border-slate-300 dark:border-slate-500 hover:border-slate-400 dark:hover:border-slate-400'
+                                                    }`}
+                                                    style={{ backgroundColor: c.color }}
+                                                    title={c.name}
+                                                />
+                                            ))}
+                                            {/* Custom color picker */}
+                                            <div
+                                                className={`w-7 h-7 rounded border-2 flex items-center justify-center transition-all relative overflow-hidden cursor-pointer ${
+                                                    tabColor && !tabColorPalette.some(c => c.color === tabColor)
+                                                        ? 'border-blue-500 ring-2 ring-blue-500/30'
+                                                        : 'border-slate-300 dark:border-slate-500 hover:border-slate-400 dark:hover:border-slate-400'
+                                                }`}
+                                                style={tabColor && !tabColorPalette.some(c => c.color === tabColor) ? { backgroundColor: tabColor } : { background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
+                                                title="Custom color"
+                                            >
+                                                <input
+                                                    type="color"
+                                                    value={tabColor || '#808080'}
+                                                    onChange={(e) => setTabColor(e.target.value)}
+                                                    className="absolute inset-0 w-[200%] h-[200%] cursor-pointer opacity-0"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Alternating Row Colors */}
