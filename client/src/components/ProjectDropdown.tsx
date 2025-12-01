@@ -365,7 +365,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 <span>Import</span>
                             </button>
                         </div>
-                        {/* Auto-save toggle */}
+                        {/* Auto-save toggle - compact row */}
                         <button
                             onClick={async () => {
                                 const newAutoSave = !settings.autoSaveProject;
@@ -374,21 +374,21 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                     await updateProject(loadedProjectId);
                                 }
                             }}
-                            className="w-full flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
+                            className="w-full flex items-center gap-1.5 px-3 py-1 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
                             title="Automatically save changes"
                         >
-                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${
+                            <div className={`w-3 h-3 rounded border flex items-center justify-center transition-colors ${
                                 settings.autoSaveProject
                                     ? 'bg-blue-500 border-blue-500'
                                     : 'border-slate-300 dark:border-slate-500'
                             }`}>
                                 {settings.autoSaveProject && (
-                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                     </svg>
                                 )}
                             </div>
-                            <span>Auto-save</span>
+                            <span>Auto-save changes</span>
                         </button>
                         {/* Hidden file input for import */}
                         <input
