@@ -460,7 +460,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'title',
             flex: 2,
             minWidth: 200,
-            sortable: true,
             filter: 'agTextColumnFilter',
             tooltipField: 'title',
         },
@@ -470,7 +469,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             width: 70,
             minWidth: 60,
             cellRenderer: LevelCellRenderer,
-            sortable: true,
             filter: 'agSetColumnFilter',
             filterParams: {
                 valueFormatter: (params: { value: number | null }) => {
@@ -492,7 +490,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'sessionName',
             width: 140,
             minWidth: 100,
-            sortable: true,
             filter: 'agSetColumnFilter',
         },
         {
@@ -500,7 +497,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'appName',
             width: 140,
             minWidth: 100,
-            sortable: true,
             filter: 'agSetColumnFilter',
             hide: false,
         },
@@ -509,7 +505,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'hostName',
             width: 120,
             minWidth: 80,
-            sortable: true,
             filter: 'agSetColumnFilter',
             hide: true,
         },
@@ -518,7 +513,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'processId',
             width: 80,
             minWidth: 60,
-            sortable: true,
             filter: 'agNumberColumnFilter',
             hide: true,
         },
@@ -527,7 +521,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             field: 'threadId',
             width: 70,
             minWidth: 50,
-            sortable: true,
             filter: 'agNumberColumnFilter',
             hide: true,
         },
@@ -560,7 +553,6 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             minWidth: 90,
             valueFormatter: (params) => formatTimestamp(params.value),
             tooltipValueGetter: (params) => formatFullTimestamp(params.value),
-            sortable: true,
             filter: TimestampFilter,
         },
     ], []);
@@ -568,7 +560,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
     // Default column definition - filter icons show on hover (via CSS)
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
-        sortable: true,
+        sortable: false,
         filter: true,
         suppressHeaderMenuButton: true,
     }), []);

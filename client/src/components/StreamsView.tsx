@@ -196,14 +196,13 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             width: 110,
             minWidth: 90,
             valueFormatter: (params) => formatTime(params.value),
-            sortable: true,
             filter: 'agTextColumnFilter',
         },
     ], []);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
-        sortable: true,
+        sortable: false,
         filter: true,
         suppressHeaderMenuButton: true,
     }), []);

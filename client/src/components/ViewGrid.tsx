@@ -423,7 +423,6 @@ export function ViewGrid({
             field: 'title',
             flex: 2,
             minWidth: 200,
-            sortable: true,
             filter: 'agTextColumnFilter',
             tooltipField: 'title',
         },
@@ -433,7 +432,6 @@ export function ViewGrid({
             width: 70,
             minWidth: 60,
             cellRenderer: LevelCellRenderer,
-            sortable: true,
             filter: 'agSetColumnFilter',
             filterParams: {
                 valueFormatter: (params: { value: number | null }) => {
@@ -455,7 +453,6 @@ export function ViewGrid({
             field: 'sessionName',
             width: 140,
             minWidth: 100,
-            sortable: true,
             filter: 'agSetColumnFilter',
         },
         {
@@ -463,7 +460,6 @@ export function ViewGrid({
             field: 'appName',
             width: 140,
             minWidth: 100,
-            sortable: true,
             filter: 'agSetColumnFilter',
             hide: false,
         },
@@ -472,7 +468,6 @@ export function ViewGrid({
             field: 'hostName',
             width: 120,
             minWidth: 80,
-            sortable: true,
             filter: 'agSetColumnFilter',
             hide: true,
         },
@@ -481,7 +476,6 @@ export function ViewGrid({
             field: 'processId',
             width: 80,
             minWidth: 60,
-            sortable: true,
             filter: 'agNumberColumnFilter',
             hide: true,
         },
@@ -490,7 +484,6 @@ export function ViewGrid({
             field: 'threadId',
             width: 70,
             minWidth: 50,
-            sortable: true,
             filter: 'agNumberColumnFilter',
             hide: true,
         },
@@ -523,14 +516,13 @@ export function ViewGrid({
             minWidth: 90,
             valueFormatter: (params) => formatTimestamp(params.value),
             tooltipValueGetter: (params) => formatFullTimestamp(params.value),
-            sortable: true,
             filter: TimestampFilter,
         },
     ], []);
 
     const defaultColDef = useMemo<ColDef>(() => ({
         resizable: true,
-        sortable: true,
+        sortable: false,
         filter: true,
         suppressHeaderMenuButton: true,
     }), []);
