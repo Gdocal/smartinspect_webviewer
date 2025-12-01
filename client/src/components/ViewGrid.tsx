@@ -446,6 +446,7 @@ export function ViewGrid({
                     return names[params.value] || String(params.value);
                 }
             },
+            hide: true,
         },
         {
             headerName: 'Session',
@@ -460,7 +461,7 @@ export function ViewGrid({
             width: 140,
             minWidth: 100,
             filter: 'agSetColumnFilter',
-            hide: false,
+            hide: true,
         },
         {
             headerName: 'Host',
