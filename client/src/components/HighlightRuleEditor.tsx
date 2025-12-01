@@ -11,18 +11,246 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { HighlightRule, HighlightFilter, TextFilter, ListTextFilter, Level, LogEntryType, defaultHighlightFilter } from '../store/logStore';
-import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
 
-// Color presets for quick styling - includes both light and dark variants
-const colorPresets = [
-    { bg: '#fef2f2', bgDark: '#3b1515', text: '#991b1b', textDark: '#fca5a5', name: 'Red' },
-    { bg: '#fffbeb', bgDark: '#3b2f10', text: '#92400e', textDark: '#fcd34d', name: 'Amber' },
-    { bg: '#ecfdf5', bgDark: '#153b2a', text: '#065f46', textDark: '#6ee7b7', name: 'Green' },
-    { bg: '#eff6ff', bgDark: '#1e2a4a', text: '#1e40af', textDark: '#93c5fd', name: 'Blue' },
-    { bg: '#f5f3ff', bgDark: '#2d1f4a', text: '#5b21b6', textDark: '#c4b5fd', name: 'Purple' },
-    { bg: '#fdf4ff', bgDark: '#3b1a3b', text: '#86198f', textDark: '#f0abfc', name: 'Pink' },
-    { bg: '#f8fafc', bgDark: '#1e293b', text: '#475569', textDark: '#cbd5e1', name: 'Gray' }
-];
+// Color palette with 7 colors × 3 intensities = 21 pre-paired combinations
+// Each combination has carefully selected bg + text colors that are easy on the eyes
+// No separate light/dark - these work well in any context
+const colorPalette = {
+    red: {
+        name: 'Red',
+        intensities: {
+            light: { bg: '#fef2f2', text: '#991b1b' },    // Very subtle red bg, dark red text
+            medium: { bg: '#fecaca', text: '#991b1b' },   // Light red bg, dark red text
+            dark: { bg: '#dc2626', text: '#ffffff' }      // Red bg, white text
+        }
+    },
+    orange: {
+        name: 'Orange',
+        intensities: {
+            light: { bg: '#fff7ed', text: '#9a3412' },    // Very subtle orange bg
+            medium: { bg: '#fed7aa', text: '#9a3412' },   // Light orange bg
+            dark: { bg: '#ea580c', text: '#ffffff' }      // Orange bg, white text
+        }
+    },
+    amber: {
+        name: 'Amber',
+        intensities: {
+            light: { bg: '#fffbeb', text: '#92400e' },
+            medium: { bg: '#fde68a', text: '#78350f' },
+            dark: { bg: '#d97706', text: '#ffffff' }
+        }
+    },
+    green: {
+        name: 'Green',
+        intensities: {
+            light: { bg: '#ecfdf5', text: '#065f46' },
+            medium: { bg: '#a7f3d0', text: '#065f46' },
+            dark: { bg: '#16a34a', text: '#ffffff' }
+        }
+    },
+    blue: {
+        name: 'Blue',
+        intensities: {
+            light: { bg: '#eff6ff', text: '#1e40af' },
+            medium: { bg: '#bfdbfe', text: '#1e40af' },
+            dark: { bg: '#2563eb', text: '#ffffff' }
+        }
+    },
+    purple: {
+        name: 'Purple',
+        intensities: {
+            light: { bg: '#f5f3ff', text: '#5b21b6' },
+            medium: { bg: '#ddd6fe', text: '#5b21b6' },
+            dark: { bg: '#7c3aed', text: '#ffffff' }
+        }
+    },
+    gray: {
+        name: 'Gray',
+        intensities: {
+            light: { bg: '#f8fafc', text: '#334155' },
+            medium: { bg: '#e2e8f0', text: '#1e293b' },
+            dark: { bg: '#475569', text: '#ffffff' }
+        }
+    }
+};
+
+type ColorFamily = keyof typeof colorPalette;
+type Intensity = 'light' | 'medium' | 'dark';
+
+// Compact ColorSelector component with intensity dropdown
+interface ColorSelectorProps {
+    bgColor: string;
+    textColor: string;
+    onColorChange: (bg: string, text: string) => void;
+}
+
+function ColorSelector({ bgColor, textColor, onColorChange }: ColorSelectorProps) {
+    const [selectedFamily, setSelectedFamily] = useState<ColorFamily | null>(null);
+    const [showIntensityDropdown, setShowIntensityDropdown] = useState(false);
+    const [showCustom, setShowCustom] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Detect current selection from colors
+    const currentSelection = useMemo(() => {
+        for (const [family, data] of Object.entries(colorPalette)) {
+            for (const [intensity, colors] of Object.entries(data.intensities)) {
+                if (colors.bg === bgColor && colors.text === textColor) {
+                    return { family: family as ColorFamily, intensity: intensity as Intensity };
+                }
+            }
+        }
+        return null;
+    }, [bgColor, textColor]);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setShowIntensityDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleColorClick = (family: ColorFamily) => {
+        if (selectedFamily === family && showIntensityDropdown) {
+            setShowIntensityDropdown(false);
+        } else {
+            setSelectedFamily(family);
+            setShowIntensityDropdown(true);
+        }
+    };
+
+    const handleIntensitySelect = (intensity: Intensity) => {
+        if (selectedFamily) {
+            const colors = colorPalette[selectedFamily].intensities[intensity];
+            onColorChange(colors.bg, colors.text);
+            setShowIntensityDropdown(false);
+            setShowCustom(false);
+        }
+    };
+
+    const intensityLabels: Record<Intensity, string> = {
+        light: 'Light',
+        medium: 'Medium',
+        dark: 'Intense'
+    };
+
+    return (
+        <div className="space-y-3">
+            {/* Color row - 7 small color buttons */}
+            <div className="flex items-center gap-1.5">
+                {Object.entries(colorPalette).map(([family, data]) => {
+                    const isSelected = currentSelection?.family === family;
+                    const displayColor = data.intensities.medium; // Show medium as preview
+                    return (
+                        <div key={family} className="relative" ref={selectedFamily === family ? dropdownRef : undefined}>
+                            <button
+                                type="button"
+                                onClick={() => handleColorClick(family as ColorFamily)}
+                                className={`w-8 h-8 rounded border-2 transition-all flex items-center justify-center text-[10px] font-bold ${
+                                    isSelected
+                                        ? 'border-blue-500 ring-2 ring-blue-500/30 scale-110'
+                                        : 'border-transparent hover:border-slate-300 dark:hover:border-slate-500 hover:scale-105'
+                                }`}
+                                style={{ backgroundColor: displayColor.bg, color: displayColor.text }}
+                                title={data.name}
+                            >
+                                A
+                            </button>
+
+                            {/* Intensity dropdown */}
+                            {selectedFamily === family && showIntensityDropdown && (
+                                <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg p-1 min-w-[100px]">
+                                    {(['light', 'medium', 'dark'] as const).map(intensity => {
+                                        const colors = data.intensities[intensity];
+                                        const isCurrentIntensity = currentSelection?.family === family && currentSelection?.intensity === intensity;
+                                        return (
+                                            <button
+                                                key={intensity}
+                                                type="button"
+                                                onClick={() => handleIntensitySelect(intensity)}
+                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-slate-100 dark:hover:bg-slate-600 ${
+                                                    isCurrentIntensity ? 'bg-slate-100 dark:bg-slate-600' : ''
+                                                }`}
+                                            >
+                                                <span
+                                                    className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold"
+                                                    style={{ backgroundColor: colors.bg, color: colors.text }}
+                                                >
+                                                    A
+                                                </span>
+                                                <span className="text-slate-700 dark:text-slate-200">{intensityLabels[intensity]}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+
+                {/* Custom color button */}
+                <button
+                    type="button"
+                    onClick={() => {
+                        setShowCustom(!showCustom);
+                        setShowIntensityDropdown(false);
+                    }}
+                    className={`w-8 h-8 rounded border-2 transition-all flex items-center justify-center ${
+                        showCustom || !currentSelection
+                            ? 'border-blue-500 ring-2 ring-blue-500/30'
+                            : 'border-slate-300 dark:border-slate-500 hover:border-slate-400 dark:hover:border-slate-400'
+                    }`}
+                    style={!currentSelection ? { backgroundColor: bgColor, color: textColor } : { backgroundColor: '#f1f5f9' }}
+                    title="Custom color"
+                >
+                    {currentSelection ? (
+                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                        </svg>
+                    ) : (
+                        <span className="text-[10px] font-bold">A</span>
+                    )}
+                </button>
+            </div>
+
+            {/* Custom color pickers - collapsible */}
+            {showCustom && (
+                <div className="flex items-center gap-3 p-2 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                    <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase">Bg</label>
+                        <input
+                            type="color"
+                            value={bgColor}
+                            onChange={(e) => onColorChange(e.target.value, textColor)}
+                            className="w-8 h-6 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase">Text</label>
+                        <input
+                            type="color"
+                            value={textColor}
+                            onChange={(e) => onColorChange(bgColor, e.target.value)}
+                            className="w-8 h-6 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
+                        />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Legacy presets for backwards compatibility
+const colorPresets = Object.entries(colorPalette).map(([_, data]) => ({
+    bg: data.intensities.light.bg,
+    bgDark: data.intensities.medium.bg,
+    text: data.intensities.light.text,
+    textDark: data.intensities.medium.text,
+    name: data.name
+}));
 
 // Level options
 const levelOptions = [
@@ -632,33 +860,10 @@ export function HighlightRuleEditor({
     const [filter, setFilter] = useState<HighlightFilter>(rule?.filter || { ...defaultHighlightFilter });
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
-    // Color state - light theme colors
+    // Color state - just store the actual colors
     const [bgColor, setBgColor] = useState(rule?.style.backgroundColor || '#eff6ff');
     const [textColor, setTextColor] = useState(rule?.style.textColor || '#1e40af');
-    // Color state - dark theme colors (undefined = auto-adapt)
-    const [bgColorDark, setBgColorDark] = useState<string | undefined>(rule?.style.backgroundColorDark);
-    const [textColorDark, setTextColorDark] = useState<string | undefined>(rule?.style.textColorDark);
-    // Color mode: 'auto' = auto-adapt dark from light, 'manual' = user sets both independently
-    const [colorMode, setColorMode] = useState<'auto' | 'manual'>(
-        rule?.style.backgroundColorDark !== undefined ? 'manual' : 'auto'
-    );
     const [fontWeight, setFontWeight] = useState<'normal' | 'bold'>(rule?.style.fontWeight || 'normal');
-
-    // Computed dark colors (either manual or auto-adapted)
-    const effectiveBgColorDark = useMemo(() => {
-        if (colorMode === 'manual' && bgColorDark !== undefined) {
-            return bgColorDark;
-        }
-        return adaptColorForTheme(bgColor, 'dark');
-    }, [colorMode, bgColorDark, bgColor]);
-
-    const effectiveTextColorDark = useMemo(() => {
-        if (colorMode === 'manual' && textColorDark !== undefined) {
-            return textColorDark;
-        }
-        const adaptedBg = adaptColorForTheme(bgColor, 'dark');
-        return adaptTextColor(textColor, adaptedBg, 'dark');
-    }, [colorMode, textColorDark, textColor, bgColor]);
 
     // Check if filter is valid (no regex errors)
     const isValid = useMemo(() => {
@@ -687,26 +892,9 @@ export function HighlightRuleEditor({
             style: {
                 backgroundColor: bgColor,
                 textColor,
-                fontWeight,
-                backgroundColorDark: colorMode === 'manual' ? effectiveBgColorDark : undefined,
-                textColorDark: colorMode === 'manual' ? effectiveTextColorDark : undefined
+                fontWeight
             }
         });
-    };
-
-    const applyPreset = (preset: typeof colorPresets[0]) => {
-        setBgColor(preset.bg);
-        setTextColor(preset.text);
-        if (colorMode === 'manual') {
-            setBgColorDark(preset.bgDark);
-            setTextColorDark(preset.textDark);
-        }
-    };
-
-    const handleSwitchToManual = () => {
-        setColorMode('manual');
-        setBgColorDark(effectiveBgColorDark);
-        setTextColorDark(effectiveTextColorDark);
     };
 
     const updateFilter = <K extends keyof HighlightFilter>(key: K, value: HighlightFilter[K]) => {
@@ -939,174 +1127,67 @@ export function HighlightRuleEditor({
 
                     {/* Style Tab */}
                     {activeTab === 'style' && (
-                        <div>
-                            {/* Presets */}
-                            <div className="mb-4">
+                        <div className="space-y-4">
+                            {/* Color Selector */}
+                            <div>
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
-                                    Quick Presets
+                                    Color
                                 </label>
-                                <div className="flex gap-2">
-                                    {colorPresets.map(preset => (
-                                        <button
-                                            key={preset.name}
-                                            type="button"
-                                            onClick={() => applyPreset(preset)}
-                                            className="w-10 h-10 rounded-lg border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors relative group shadow-sm"
-                                            style={{
-                                                background: `linear-gradient(135deg, ${preset.bg} 50%, ${preset.bgDark} 50%)`
-                                            }}
-                                            title={preset.name}
-                                        >
-                                            <span
-                                                className="absolute inset-0 flex items-center justify-center text-sm font-bold"
-                                                style={{
-                                                    background: `linear-gradient(135deg, ${preset.text} 50%, ${preset.textDark} 50%)`,
-                                                    WebkitBackgroundClip: 'text',
-                                                    WebkitTextFillColor: 'transparent',
-                                                    backgroundClip: 'text'
-                                                }}
-                                            >
-                                                A
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
+                                <ColorSelector
+                                    bgColor={bgColor}
+                                    textColor={textColor}
+                                    onColorChange={(bg, text) => {
+                                        setBgColor(bg);
+                                        setTextColor(text);
+                                    }}
+                                />
                             </div>
 
-                            {/* Auto/Manual toggle */}
-                            <div className="mb-4 flex items-center justify-between">
-                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                                    Dark Theme Colors
+                            {/* Font Weight Toggle */}
+                            <div className="flex items-center gap-3">
+                                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                                    Font
                                 </label>
                                 <div className="flex gap-1">
                                     <button
                                         type="button"
-                                        onClick={() => setColorMode('auto')}
+                                        onClick={() => setFontWeight('normal')}
                                         className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                                            colorMode === 'auto'
+                                            fontWeight === 'normal'
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                         }`}
                                     >
-                                        Auto
+                                        Normal
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={handleSwitchToManual}
-                                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                                            colorMode === 'manual'
+                                        onClick={() => setFontWeight('bold')}
+                                        className={`px-3 py-1 text-xs rounded-lg transition-colors font-bold ${
+                                            fontWeight === 'bold'
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
                                         }`}
                                     >
-                                        Manual
+                                        Bold
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Color pickers - Light theme */}
-                            <div className="mb-4 p-3 bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg">
-                                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                                    </svg>
-                                    Light Theme
+                            {/* Preview */}
+                            <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
+                                    Preview
                                 </label>
-                                <div className="flex gap-4 items-center">
-                                    <div>
-                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Background</label>
-                                        <input
-                                            type="color"
-                                            value={bgColor}
-                                            onChange={(e) => setBgColor(e.target.value)}
-                                            className="w-16 h-8 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Text</label>
-                                        <input
-                                            type="color"
-                                            value={textColor}
-                                            onChange={(e) => setTextColor(e.target.value)}
-                                            className="w-16 h-8 rounded cursor-pointer border border-slate-200 dark:border-slate-600"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Font</label>
-                                        <select
-                                            value={fontWeight}
-                                            onChange={(e) => setFontWeight(e.target.value as 'normal' | 'bold')}
-                                            className="px-2 py-1.5 border border-slate-200 dark:border-slate-600 rounded-lg text-xs bg-white dark:bg-slate-700 dark:text-slate-200"
-                                        >
-                                            <option value="normal">Normal</option>
-                                            <option value="bold">Bold</option>
-                                        </select>
-                                    </div>
-                                    <div className="flex-1">
-                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">Preview</label>
-                                        <div
-                                            className="px-3 py-1.5 rounded border border-slate-200 text-sm"
-                                            style={{
-                                                backgroundColor: bgColor,
-                                                color: textColor,
-                                                fontWeight
-                                            }}
-                                        >
-                                            Sample log entry
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Color pickers - Dark theme */}
-                            <div className="mb-4 p-3 bg-slate-800 border border-slate-600 rounded-lg">
-                                <label className="block text-xs font-medium text-slate-300 mb-2 flex items-center gap-1.5">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                                    </svg>
-                                    Dark Theme
-                                    {colorMode === 'auto' && <span className="text-blue-400 text-[10px]">(auto-calculated)</span>}
-                                </label>
-                                <div className="flex gap-4 items-center">
-                                    {colorMode === 'manual' ? (
-                                        <>
-                                            <div>
-                                                <label className="block text-xs text-slate-400 mb-1">Background</label>
-                                                <input
-                                                    type="color"
-                                                    value={bgColorDark || effectiveBgColorDark}
-                                                    onChange={(e) => setBgColorDark(e.target.value)}
-                                                    className="w-16 h-8 rounded cursor-pointer border border-slate-600"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-xs text-slate-400 mb-1">Text</label>
-                                                <input
-                                                    type="color"
-                                                    value={textColorDark || effectiveTextColorDark}
-                                                    onChange={(e) => setTextColorDark(e.target.value)}
-                                                    className="w-16 h-8 rounded cursor-pointer border border-slate-600"
-                                                />
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div className="text-xs text-slate-400">
-                                            Colors are automatically calculated from light theme
-                                        </div>
-                                    )}
-                                    <div className="flex-1">
-                                        <label className="block text-xs text-slate-400 mb-1">Preview</label>
-                                        <div
-                                            className="px-3 py-1.5 rounded border border-slate-600 text-sm"
-                                            style={{
-                                                backgroundColor: effectiveBgColorDark,
-                                                color: effectiveTextColorDark,
-                                                fontWeight
-                                            }}
-                                        >
-                                            Sample log entry
-                                        </div>
-                                    </div>
+                                <div
+                                    className="px-3 py-2 rounded text-sm"
+                                    style={{
+                                        backgroundColor: bgColor,
+                                        color: textColor,
+                                        fontWeight
+                                    }}
+                                >
+                                    Sample highlighted log entry text
                                 </div>
                             </div>
                         </div>

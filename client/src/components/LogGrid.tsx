@@ -25,7 +25,6 @@ ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 import { useLogStore, LogEntry, Level, LogEntryType, matchesHighlightRule, Filter, ListTextFilter, TextFilter } from '../store/logStore';
 import { TimestampFilter } from './TimestampFilter';
 import { format } from 'date-fns';
-import { adaptColorForTheme, adaptTextColor } from '../utils/colorUtils';
 
 // Set license key if available
 const licenseKey = import.meta.env.VITE_AG_GRID_LICENSE;
@@ -592,8 +591,8 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         defaultToolPanel: '',
     }), []);
 
-    // Row styling based on user-defined highlight rules (no auto-styling)
-    // Uses theme-appropriate colors: dark colors for dark theme, light colors for light theme
+    // Row styling based on user-defined highlight rules
+    // Uses exact colors as stored - no theme adaptation
     const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string | number> | undefined => {
         const entry = params.data;
         if (!entry) return undefined;
@@ -604,34 +603,9 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
             if (matchesHighlightRule(entry, rule)) {
                 const style: Record<string, string | number> = {};
 
-                // Get base colors (light theme values)
-                const baseBgColor = rule.style.backgroundColor;
-                const baseTextColor = rule.style.textColor;
-
-                if (theme === 'dark') {
-                    // Dark theme: use dark colors if available, otherwise auto-adapt
-                    if (baseBgColor) {
-                        style.backgroundColor = rule.style.backgroundColorDark
-                            || adaptColorForTheme(baseBgColor, 'dark');
-                    }
-                    if (baseTextColor) {
-                        if (rule.style.textColorDark) {
-                            style.color = rule.style.textColorDark;
-                        } else if (baseBgColor) {
-                            // Auto-adapt text color with contrast against dark background
-                            const darkBg = rule.style.backgroundColorDark
-                                || adaptColorForTheme(baseBgColor, 'dark');
-                            style.color = adaptTextColor(baseTextColor, darkBg, 'dark');
-                        } else {
-                            style.color = adaptColorForTheme(baseTextColor, 'dark');
-                        }
-                    }
-                } else {
-                    // Light theme: use original colors directly
-                    if (baseBgColor) style.backgroundColor = baseBgColor;
-                    if (baseTextColor) style.color = baseTextColor;
-                }
-
+                // Use exact colors as stored - no theme adaptation
+                if (rule.style.backgroundColor) style.backgroundColor = rule.style.backgroundColor;
+                if (rule.style.textColor) style.color = rule.style.textColor;
                 if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
                 if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle;
                 return style;
@@ -640,7 +614,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
 
         // No auto-styling - user controls all highlighting via rules
         return undefined;
-    }, [activeHighlightRules, theme]);
+    }, [activeHighlightRules]);
 
     // Handle grid ready
     const onGridReady = useCallback((params: GridReadyEvent) => {
