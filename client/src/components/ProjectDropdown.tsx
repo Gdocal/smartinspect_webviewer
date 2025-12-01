@@ -209,7 +209,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     const displayName = loadedProjectName || 'Working Project';
 
     return (
-        <div ref={dropdownRef} className={`relative ${className || ''}`}>
+        <div ref={dropdownRef} className={`relative flex items-center gap-1 ${className || ''}`}>
             {/* Dropdown trigger button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
@@ -224,16 +224,18 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                 </svg>
             </button>
 
-            {/* Save button - only visible when there are unsaved changes */}
+            {/* Save button - only visible when there are unsaved changes (positioned after project name) */}
             {loadedProjectDirty && loadedProjectId && !settings.autoSaveProject && (
                 <button
                     onClick={handleSaveProject}
-                    className="flex items-center gap-1 px-2 py-1 text-sm text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
+                    className="flex items-center gap-1 px-1.5 py-1 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
                     title="Save unsaved changes"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3v4a1 1 0 001 1h3" />
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 3h10l4 4v12a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v5h8V3" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 15l3 3 3-3" />
                     </svg>
                 </button>
             )}

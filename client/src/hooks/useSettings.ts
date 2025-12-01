@@ -78,14 +78,10 @@ export function useSettings() {
     };
 }
 
-// Singleton for settings access outside of React components
-let cachedSettings: AppSettings | null = null;
-
+// Get settings directly from localStorage (always fresh, no caching)
+// This ensures changes to settings are immediately visible everywhere
 export function getSettings(): AppSettings {
-    if (!cachedSettings) {
-        cachedSettings = loadSettings();
-    }
-    return cachedSettings;
+    return loadSettings();
 }
 
 export function getEffectiveServerUrl(): string {
