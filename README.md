@@ -2,7 +2,7 @@
 
 > A modern, web-based log viewer for SmartInspect that replaces the Windows desktop application with real-time streaming, advanced filtering, and enterprise-grade performance.
 
-![SmartInspect Web Viewer - Main Interface](docs/images/main-interface.png)
+![SmartInspect Web Viewer - Main Interface](docs/images/main-interface-screenshot.png)
 *Real-time log viewing with multi-session support, advanced filtering, watch values panel, and customizable views*
 
 ---
