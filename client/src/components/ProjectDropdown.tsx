@@ -66,6 +66,12 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
+            // Don't close if clicking on a dialog/modal
+            const target = event.target as HTMLElement;
+            if (target.closest('[role="dialog"]') || target.closest('.fixed.inset-0')) {
+                return;
+            }
+
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
