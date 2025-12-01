@@ -3,11 +3,12 @@
  * Uses the same filter components as HighlightRuleEditor for consistency
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 import { ViewGrid } from './ViewGrid';
 import { ColumnState, FilterModel } from 'ag-grid-community';
+import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 
 // Checkbox is imported from HighlightRuleEditor
 
@@ -561,6 +562,9 @@ export function ViewTabs() {
     const [canScrollRight, setCanScrollRight] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+    // Context menu for tab headers
+    const contextMenu = useContextMenu<View>();
+
     // Check scroll state
     const updateScrollState = useCallback(() => {
         const container = scrollContainerRef.current;
@@ -651,6 +655,92 @@ export function ViewTabs() {
         setActiveView(viewId);
     };
 
+    // Clone a view with all its settings
+    const handleCloneView = useCallback((view: View) => {
+        const clonedViewData: Omit<View, 'id'> = {
+            name: `${view.name} (Copy)`,
+            filter: { ...view.filter },
+            highlightRules: view.highlightRules.map(r => ({ ...r, id: Math.random().toString(36).substring(2, 9) })),
+            useGlobalHighlights: view.useGlobalHighlights,
+            autoScroll: view.autoScroll,
+            columnState: view.columnState ? [...view.columnState] : undefined,
+            gridFilterModel: view.gridFilterModel ? { ...view.gridFilterModel } : undefined
+        };
+        addView(clonedViewData, true); // Activate the cloned view
+    }, [addView]);
+
+    // Close all views except the specified one
+    const handleCloseOtherViews = useCallback((keepViewId: string) => {
+        const viewsToClose = views.filter(v => v.id !== keepViewId && v.id !== 'all');
+        viewsToClose.forEach(v => deleteView(v.id));
+        // Activate the kept view
+        setActiveView(keepViewId);
+        setStreamsMode(false);
+    }, [views, deleteView, setActiveView, setStreamsMode]);
+
+    // Build context menu items for a view
+    const getContextMenuItems = useCallback((view: View): ContextMenuItem[] => {
+        const isDefaultView = view.id === 'all';
+        const otherClosableViews = views.filter(v => v.id !== view.id && v.id !== 'all');
+
+        return [
+            {
+                id: 'edit',
+                label: 'Edit View',
+                icon: (
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                ),
+                onClick: () => handleEditView(view)
+            },
+            {
+                id: 'clone',
+                label: 'Clone View',
+                icon: (
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                ),
+                onClick: () => handleCloneView(view)
+            },
+            { id: 'sep1', label: '', separator: true },
+            {
+                id: 'close-others',
+                label: 'Close Other Views',
+                icon: (
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                ),
+                disabled: otherClosableViews.length === 0,
+                onClick: () => handleCloseOtherViews(view.id)
+            },
+            { id: 'sep2', label: '', separator: true },
+            {
+                id: 'close',
+                label: 'Close View',
+                icon: (
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                ),
+                disabled: isDefaultView,
+                danger: !isDefaultView,
+                onClick: () => {
+                    if (!isDefaultView && confirm('Delete this view?')) {
+                        deleteView(view.id);
+                    }
+                }
+            }
+        ];
+    }, [views, handleEditView, handleCloneView, handleCloseOtherViews, deleteView]);
+
+    // Handle right-click on tab
+    const handleTabContextMenu = useCallback((e: React.MouseEvent, view: View) => {
+        contextMenu.open(e, view);
+    }, [contextMenu]);
+
     return (
         <>
             <div className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center relative">
@@ -701,6 +791,7 @@ export function ViewTabs() {
                             key={view.id}
                             onClick={() => handleViewClick(view.id)}
                             onDoubleClick={() => handleEditView(view)}
+                            onContextMenu={(e) => handleTabContextMenu(e, view)}
                             className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
                                 !isStreamsMode && activeViewId === view.id
                                     ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
@@ -764,6 +855,15 @@ export function ViewTabs() {
                         setShowEditor(false);
                         setEditingView(undefined);
                     }}
+                />
+            )}
+
+            {/* Context menu for tabs */}
+            {contextMenu.state.isOpen && contextMenu.state.data && (
+                <ContextMenu
+                    items={getContextMenuItems(contextMenu.state.data)}
+                    position={contextMenu.state.position}
+                    onClose={contextMenu.close}
                 />
             )}
         </>
