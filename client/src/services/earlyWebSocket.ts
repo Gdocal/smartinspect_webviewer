@@ -172,7 +172,8 @@ async function completeConnection(): Promise<void> {
         if (settings.authToken) {
             headers['Authorization'] = `Bearer ${settings.authToken}`;
         }
-        const response = await fetch('/api/logs?limit=5000', { headers });
+        const initialLoadLimit = store.limits.initialLoadLimit;
+        const response = await fetch(`/api/logs?limit=${initialLoadLimit}`, { headers });
         const data = await response.json();
         if (data.entries && data.entries.length > 0) {
             console.log(`[Early WS] Loaded ${data.entries.length} existing entries`);

@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
-import { useLogStore, HighlightRule } from '../store/logStore';
+import { useLogStore, HighlightRule, ProjectLimits, defaultLimits } from '../store/logStore';
 import { reconnect } from '../services/earlyWebSocket';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
 
@@ -93,12 +93,27 @@ interface SettingsPanelProps {
     onClose: () => void;
 }
 
-const MAX_ENTRIES_OPTIONS = [
+const INITIAL_LOAD_OPTIONS = [
     { value: 1000, label: '1,000' },
     { value: 5000, label: '5,000' },
     { value: 10000, label: '10,000' },
+    { value: 25000, label: '25,000' },
     { value: 50000, label: '50,000' },
-    { value: 100000, label: '100,000 (All)' },
+];
+
+const MAX_BUFFER_OPTIONS = [
+    { value: 10000, label: '10,000' },
+    { value: 25000, label: '25,000' },
+    { value: 50000, label: '50,000' },
+    { value: 100000, label: '100,000' },
+    { value: 250000, label: '250,000' },
+];
+
+const MAX_GRID_ROWS_OPTIONS = [
+    { value: 5000, label: '5,000' },
+    { value: 10000, label: '10,000' },
+    { value: 25000, label: '25,000' },
+    { value: 50000, label: '50,000' },
 ];
 
 export function SettingsPanel({
@@ -107,10 +122,11 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
     const setCurrentUser = useLogStore(state => state.setCurrentUser);
-    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames } = useLogStore();
+    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames, limits, setLimits } = useLogStore();
 
     // Local form state
     const [formState, setFormState] = useState<AppSettings>(settings);
+    const [limitsFormState, setLimitsFormState] = useState<ProjectLimits>(limits);
     const [showToken, setShowToken] = useState(false);
     const [activeTab, setActiveTab] = useState<'connection' | 'display' | 'highlights'>('connection');
 
@@ -157,8 +173,9 @@ export function SettingsPanel({
     useEffect(() => {
         if (isOpen) {
             setFormState(settings);
+            setLimitsFormState(limits);
         }
-    }, [isOpen, settings]);
+    }, [isOpen, settings, limits]);
 
     // Close on escape
     useEffect(() => {
@@ -182,6 +199,9 @@ export function SettingsPanel({
         // Save client settings
         updateSettings(formState);
 
+        // Save project limits
+        setLimits(limitsFormState);
+
         // Update logStore currentUser if username changed
         if (usernameChanged) {
             setCurrentUser(formState.username || 'default');
@@ -201,6 +221,7 @@ export function SettingsPanel({
     const handleReset = () => {
         if (confirm('Reset all settings to defaults?')) {
             setFormState(defaultSettings);
+            setLimitsFormState(defaultLimits);
         }
     };
 
@@ -343,21 +364,58 @@ export function SettingsPanel({
 
                     {activeTab === 'display' && (
                         <div className="space-y-4">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                These limits are saved with the current project.
+                            </p>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
-                                    Max Entries to Display
+                                    Initial Load Limit
                                 </label>
                                 <select
-                                    value={formState.maxDisplayEntries}
-                                    onChange={(e) => setFormState(prev => ({ ...prev, maxDisplayEntries: parseInt(e.target.value) }))}
+                                    value={limitsFormState.initialLoadLimit}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, initialLoadLimit: parseInt(e.target.value) }))}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                 >
-                                    {MAX_ENTRIES_OPTIONS.map(opt => (
+                                    {INITIAL_LOAD_OPTIONS.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                     ))}
                                 </select>
                                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                                    Limits memory usage in browser. Older entries are dropped when limit is reached.
+                                    How many log entries to fetch from server on connect.
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Max Buffer Entries
+                                </label>
+                                <select
+                                    value={limitsFormState.maxBufferEntries}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxBufferEntries: parseInt(e.target.value) }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                >
+                                    {MAX_BUFFER_OPTIONS.map(opt => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                                    Total entries to keep in client memory. Older entries are dropped when limit is reached.
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Max Grid Rows
+                                </label>
+                                <select
+                                    value={limitsFormState.maxGridRows}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxGridRows: parseInt(e.target.value) }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                >
+                                    {MAX_GRID_ROWS_OPTIONS.map(opt => (
+                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                                    Maximum rows each grid view can display. Higher values may affect performance.
                                 </p>
                             </div>
                         </div>

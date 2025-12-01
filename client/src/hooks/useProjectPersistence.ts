@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import { useLogStore, View, ViewWithGridState, Project, WorkingProjectState } from '../store/logStore';
+import { useLogStore, View, ViewWithGridState, Project, WorkingProjectState, defaultLimits } from '../store/logStore';
 import { getSettings } from './useSettings';
 
 // LocalStorage key for working project
@@ -82,7 +82,7 @@ function createDefaultProject(user: string): Project {
             showWatchPanel: true,
             showStreamPanel: false
         },
-        maxDisplayEntries: 10000,
+        limits: { ...defaultLimits },
         theme: 'light'
     };
 }
@@ -151,7 +151,7 @@ function extractProjectFromStore(): Omit<Project, 'id' | 'name' | 'description' 
             showWatchPanel: state.showWatchPanel,
             showStreamPanel: state.showStreamPanel
         },
-        maxDisplayEntries: state.maxDisplayEntries,
+        limits: { ...state.limits },
         theme: state.theme
     };
 }
@@ -198,6 +198,14 @@ function applyProjectToStore(project: Project): void {
     if (project.theme) {
         store.setTheme(project.theme);
     }
+
+    // Apply limits with fallback to defaults for backward compatibility
+    const limits = project.limits || {};
+    store.setLimits({
+        initialLoadLimit: limits.initialLoadLimit ?? defaultLimits.initialLoadLimit,
+        maxBufferEntries: limits.maxBufferEntries ?? defaultLimits.maxBufferEntries,
+        maxGridRows: limits.maxGridRows ?? defaultLimits.maxGridRows
+    });
 }
 
 /**

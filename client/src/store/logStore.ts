@@ -208,6 +208,13 @@ export interface ViewWithGridState extends View {
     scrollPosition: { top: number };           // Scroll position to restore
 }
 
+// Project data limits
+export interface ProjectLimits {
+    initialLoadLimit: number;   // How many entries to fetch on connect
+    maxBufferEntries: number;   // Total entries to keep in client memory
+    maxGridRows: number;        // Max rows each grid view displays
+}
+
 // Project data structure
 export interface Project {
     id: string;
@@ -230,7 +237,7 @@ export interface Project {
         showWatchPanel: boolean;
         showStreamPanel: boolean;
     };
-    maxDisplayEntries: number;
+    limits: ProjectLimits;
     theme: 'light' | 'dark';
 }
 
@@ -293,7 +300,7 @@ interface LogState {
 
     // Log entries (limited buffer for performance)
     entries: LogEntry[];
-    maxDisplayEntries: number;
+    limits: ProjectLimits;  // Project limits (initialLoadLimit, maxBufferEntries, maxGridRows)
     lastEntryId: number;
     entriesVersion: number; // Increment to trigger re-render only when needed
 
@@ -374,6 +381,7 @@ interface LogState {
     clearWatches: () => void;
     setSessions: (sessions: Record<string, number>) => void;
     setStats: (stats: LogState['stats']) => void;
+    setLimits: (limits: Partial<ProjectLimits>) => void;
     setAppNames: (appNames: Record<string, number>) => void;
     setHostNames: (hostNames: Record<string, number>) => void;
     setFilter: (filter: Partial<Filter>) => void;
@@ -455,8 +463,12 @@ const defaultViews: View[] = [
 // Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// Pre-allocate array for ring buffer efficiency
-const INITIAL_CAPACITY = 10000;
+// Default limits for projects
+export const defaultLimits: ProjectLimits = {
+    initialLoadLimit: 5000,    // Entries to fetch on connect
+    maxBufferEntries: 50000,   // Total entries in client memory
+    maxGridRows: 10000         // Max rows per grid view
+};
 
 export const useLogStore = create<LogState>((set, get) => ({
     // Initial state
@@ -475,7 +487,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     roomSwitching: false,
 
     entries: [],
-    maxDisplayEntries: INITIAL_CAPACITY,
+    limits: { ...defaultLimits },
     lastEntryId: 0,
     entriesVersion: 0,
     watches: {},
@@ -550,9 +562,10 @@ export const useLogStore = create<LogState>((set, get) => ({
     addEntries: (newEntries) => set((state) => {
         if (newEntries.length === 0) return state;
 
+        const maxLen = state.limits.maxBufferEntries;
         const combined = [...state.entries, ...newEntries];
-        const trimmed = combined.length > state.maxDisplayEntries
-            ? combined.slice(-state.maxDisplayEntries)
+        const trimmed = combined.length > maxLen
+            ? combined.slice(-maxLen)
             : combined;
 
         return {
@@ -568,7 +581,7 @@ export const useLogStore = create<LogState>((set, get) => ({
 
         const currentLen = state.entries.length;
         const newLen = newEntries.length;
-        const maxLen = state.maxDisplayEntries;
+        const maxLen = state.limits.maxBufferEntries;
         const totalLen = currentLen + newLen;
 
         let result: LogEntry[];
@@ -610,6 +623,11 @@ export const useLogStore = create<LogState>((set, get) => ({
             entries: result,
             lastEntryId: newEntries[newEntries.length - 1].id,
             entriesVersion: state.entriesVersion + 1,
+            stats: {
+                ...state.stats,
+                size: result.length,
+                lastEntryId: newEntries[newEntries.length - 1].id
+            },
             ...(appNamesChanged ? { appNames: newAppNames } : {}),
             ...(hostNamesChanged ? { hostNames: newHostNames } : {})
         };
@@ -641,6 +659,9 @@ export const useLogStore = create<LogState>((set, get) => ({
     clearWatches: () => set({ watches: {} }),
     setSessions: (sessions) => set({ sessions }),
     setStats: (stats) => set({ stats }),
+    setLimits: (limitsUpdate) => set((state) => ({
+        limits: { ...state.limits, ...limitsUpdate }
+    })),
     setAppNames: (appNames) => set({ appNames }),
     setHostNames: (hostNames) => set({ hostNames }),
 

@@ -11,7 +11,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ onServerInfoClick }: StatusBarProps) {
-    const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, roomSwitching, authRequired, currentUser, theme, toggleTheme } = useLogStore();
+    const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, limits, roomSwitching, authRequired, currentUser, theme, toggleTheme } = useLogStore();
 
     // Get connection status text and style
     // During room switching, show "Switching room..." to avoid layout shift
@@ -115,10 +115,10 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
                 <span className="text-slate-700">|</span>
 
                 {/* Stats */}
-                <Tooltip content="Log entries in buffer / maximum capacity" position="top">
+                <Tooltip content="Entries loaded in browser / maximum display limit (configurable in Settings)" position="top">
                     <span className="text-slate-400 cursor-default">
-                        Buffer: <span className="text-slate-200">{stats.size.toLocaleString()}</span>
-                        <span className="text-slate-500"> / {stats.maxEntries.toLocaleString()}</span>
+                        Entries: <span className="text-slate-200">{stats.size.toLocaleString()}</span>
+                        <span className="text-slate-500"> / {limits.maxBufferEntries.toLocaleString()}</span>
                     </span>
                 </Tooltip>
 

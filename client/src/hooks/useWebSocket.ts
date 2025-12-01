@@ -287,8 +287,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
             // Fetch existing logs from REST API for this room
             try {
+                const initialLoadLimit = useLogStore.getState().limits.initialLoadLimit;
                 const response = await fetch(
-                    `/api/logs?limit=5000&room=${encodeURIComponent(currentRoomValue)}`,
+                    `/api/logs?limit=${initialLoadLimit}&room=${encodeURIComponent(currentRoomValue)}`,
                     { signal: fetchAbortControllerRef.current.signal }
                 );
                 const data = await response.json();
