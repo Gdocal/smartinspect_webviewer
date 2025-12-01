@@ -673,7 +673,7 @@ export function ViewTabs() {
 
         const confirmed = await confirmDialog.confirm({
             title: 'Close View',
-            message: `Are you sure you want to close "${viewName}"? This action cannot be undone.`,
+            message: `Are you sure you want to close "${viewName}"?`,
             confirmText: 'Close',
             cancelText: 'Cancel',
             danger: true
@@ -721,7 +721,7 @@ export function ViewTabs() {
 
         const confirmed = await confirmDialog.confirm({
             title: 'Close View',
-            message: `Are you sure you want to close "${view.name}"? This action cannot be undone.`,
+            message: `Are you sure you want to close "${view.name}"?`,
             confirmText: 'Close',
             cancelText: 'Cancel',
             danger: true

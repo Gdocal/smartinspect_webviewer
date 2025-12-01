@@ -756,7 +756,7 @@ export const useLogStore = create<LogState>((set, get) => ({
 
     // Layout size actions
     setDetailPanelHeightPercent: (percent) => set({
-        detailPanelHeightPercent: Math.max(10, Math.min(60, percent)) // Clamp 10-60%
+        detailPanelHeightPercent: Math.max(5, Math.min(90, percent)) // Clamp 5-90%
     }),
     setWatchPanelWidthPercent: (percent) => set({
         watchPanelWidthPercent: Math.max(10, Math.min(40, percent)) // Clamp 10-40%
