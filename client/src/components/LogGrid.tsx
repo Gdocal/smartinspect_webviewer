@@ -593,7 +593,8 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
 
     // Row styling based on user-defined highlight rules
     // Uses exact colors as stored - no theme adaptation
-    const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string | number> | undefined => {
+    // Also sets CSS custom property for selection styling preservation
+    const getRowStyle = useCallback((params: RowClassParams<LogEntry>): Record<string, string> | undefined => {
         const entry = params.data;
         if (!entry) return undefined;
 
@@ -601,10 +602,14 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         const sortedRules = [...activeHighlightRules].sort((a, b) => b.priority - a.priority);
         for (const rule of sortedRules) {
             if (matchesHighlightRule(entry, rule)) {
-                const style: Record<string, string | number> = {};
+                const style: Record<string, string> = {};
 
                 // Use exact colors as stored - no theme adaptation
-                if (rule.style.backgroundColor) style.backgroundColor = rule.style.backgroundColor;
+                if (rule.style.backgroundColor) {
+                    style.backgroundColor = rule.style.backgroundColor;
+                    // Set CSS custom property so we can preserve this color when row is selected
+                    style['--ag-row-highlight-bg'] = rule.style.backgroundColor;
+                }
                 if (rule.style.textColor) style.color = rule.style.textColor;
                 if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
                 if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle;
@@ -613,6 +618,21 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
         }
 
         // No auto-styling - user controls all highlighting via rules
+        return undefined;
+    }, [activeHighlightRules]);
+
+    // Add class to highlighted rows so we can target them with CSS for selection styling
+    const getRowClass = useCallback((params: RowClassParams<LogEntry>): string | string[] | undefined => {
+        const entry = params.data;
+        if (!entry) return undefined;
+
+        // Check if row matches any highlight rule with a background color
+        const sortedRules = [...activeHighlightRules].sort((a, b) => b.priority - a.priority);
+        for (const rule of sortedRules) {
+            if (matchesHighlightRule(entry, rule) && rule.style.backgroundColor) {
+                return 'ag-row-highlighted';
+            }
+        }
         return undefined;
     }, [activeHighlightRules]);
 
@@ -660,6 +680,7 @@ export function LogGrid({ onColumnStateChange, initialColumnState }: LogGridProp
                 defaultColDef={defaultColDef}
                 getRowId={getRowId}
                 getRowStyle={getRowStyle}
+                getRowClass={getRowClass}
                 onGridReady={onGridReady}
                 onRowClicked={onRowClicked}
                 onColumnMoved={onColumnStateChanged}

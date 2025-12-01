@@ -290,4 +290,27 @@ html, body, #root {
     font-style: italic;
 }
 
+/* Preserve custom row highlight colors when row is selected */
+/* When a highlighted row is selected, keep the highlight background color
+   (stored as CSS custom property --ag-row-highlight-bg) and add a selection indicator */
+
+/* Light theme: highlighted + selected row - preserve background, add left border */
+.ag-theme-balham .ag-row.ag-row-highlighted.ag-row-selected {
+    /* Use the custom property set by getRowStyle to preserve highlight color */
+    background-color: var(--ag-row-highlight-bg) !important;
+    /* Add blue left border as selection indicator */
+    box-shadow: inset 4px 0 0 0 #3b82f6 !important; /* blue-500 */
+}
+
+/* Dark theme: highlighted + selected row */
+.ag-theme-balham-dark .ag-row.ag-row-highlighted.ag-row-selected {
+    background-color: var(--ag-row-highlight-bg) !important;
+    box-shadow: inset 4px 0 0 0 #60a5fa !important; /* blue-400 */
+}
+
+/* Ensure cells don't override the row background */
+.ag-theme-balham .ag-row-highlighted.ag-row-selected .ag-cell,
+.ag-theme-balham-dark .ag-row-highlighted.ag-row-selected .ag-cell {
+    background-color: transparent !important;
+}
 

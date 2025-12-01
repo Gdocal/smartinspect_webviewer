@@ -12,16 +12,16 @@ import { ColumnState, FilterModel } from 'ag-grid-community';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
-// Tab header color palette - softer colors suitable for tab backgrounds
+// Tab header color palette - darker, muted colors for better text contrast
 const tabColorPalette = [
-    { name: 'Rose', color: '#f472b6' },
-    { name: 'Orange', color: '#fb923c' },
-    { name: 'Amber', color: '#fbbf24' },
-    { name: 'Green', color: '#4ade80' },
-    { name: 'Teal', color: '#2dd4bf' },
-    { name: 'Sky', color: '#38bdf8' },
-    { name: 'Violet', color: '#a78bfa' },
-    { name: 'Slate', color: '#94a3b8' }
+    { name: 'Rose', color: '#be185d' },      // pink-700
+    { name: 'Orange', color: '#c2410c' },    // orange-700
+    { name: 'Amber', color: '#b45309' },     // amber-700
+    { name: 'Green', color: '#15803d' },     // green-700
+    { name: 'Teal', color: '#0f766e' },      // teal-700
+    { name: 'Blue', color: '#1d4ed8' },      // blue-700
+    { name: 'Violet', color: '#6d28d9' },    // violet-700
+    { name: 'Slate', color: '#475569' }      // slate-600
 ];
 
 // Checkbox is imported from HighlightRuleEditor
@@ -953,29 +953,56 @@ export function ViewTabs() {
                     {/* Regular view tabs */}
                     {views.map(view => {
                         const isActiveTab = !isStreamsMode && activeViewId === view.id;
+
+                        // For colored tabs: active = solid color + white text
+                        // inactive = light tinted background + colored text (like Streams tab)
+                        const getTabStyle = () => {
+                            if (!view.tabColor) return undefined;
+
+                            if (isActiveTab) {
+                                // Active: solid color background
+                                return { backgroundColor: view.tabColor };
+                            } else {
+                                // Inactive: light tint of the color (20% opacity in light mode, 30% in dark mode)
+                                return { backgroundColor: `${view.tabColor}33` }; // 20% opacity (hex 33)
+                            }
+                        };
+
                         return (
                         <div
                             key={view.id}
                             onClick={() => handleViewClick(view.id)}
                             onDoubleClick={() => handleEditView(view)}
                             onContextMenu={(e) => handleTabContextMenu(e, view)}
-                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded-t cursor-pointer transition-all relative ${
+                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-all relative ${
                                 view.tabColor
-                                    ? `text-white ${isActiveTab ? '' : 'opacity-60 hover:opacity-80'}`
+                                    ? isActiveTab
+                                        ? 'text-white'
+                                        : 'hover:brightness-110'
                                     : isActiveTab
                                         ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
                                         : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                             }`}
-                            style={view.tabColor ? { backgroundColor: view.tabColor } : undefined}
+                            style={getTabStyle()}
                             title={view.name}
                         >
-                            <span className={`text-sm whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}>
+                            <span
+                                className={`text-sm whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}
+                                style={view.tabColor && !isActiveTab ? { color: view.tabColor } : undefined}
+                            >
                                 {view.name}
                             </span>
                             {view.id !== 'all' && (
                                 <button
                                     onClick={(e) => handleDeleteView(e, view.id)}
-                                    className={`transition-colors ${view.tabColor ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-red-500 dark:hover:text-red-400'}`}
+                                    className={`transition-colors ${
+                                        view.tabColor
+                                            ? isActiveTab
+                                                ? 'text-white/70 hover:text-white'
+                                                : 'opacity-60 hover:opacity-100'
+                                            : 'text-slate-400 hover:text-red-500 dark:hover:text-red-400'
+                                    }`}
+                                    style={view.tabColor && !isActiveTab ? { color: view.tabColor } : undefined}
                                     title="Close tab"
                                 >
                                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
