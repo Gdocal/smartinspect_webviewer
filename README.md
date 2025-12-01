@@ -39,6 +39,10 @@ await si.connect({
 si.log('Hello from my app!');
 si.warn('Warning message');
 si.error('Error message');
+
+// Stream high-frequency data with optional type
+si.stream('metrics', { cpu: 45.2, memory: 2048 }, 'json');
+si.stream('events', 'User logged in', 'text');
 ```
 
 ## Key Features
@@ -47,7 +51,7 @@ si.error('Error message');
 - **Advanced filtering** by sessions, levels, text patterns, time ranges
 - **Customizable views** with tabs for different filter combinations
 - **Watch panel** for live variable monitoring
-- **Stream panel** for high-frequency data channels
+- **Stream panel** for high-frequency data channels with type categorization
 - **Highlighting rules** with custom styling
 - **Project management** with save/load/export/import
 - **Multi-room support** for team isolation
