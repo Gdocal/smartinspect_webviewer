@@ -5,6 +5,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
+import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 import { ViewGrid } from './ViewGrid';
 import { ColumnState, FilterModel } from 'ag-grid-community';
@@ -86,6 +87,8 @@ interface ViewEditorProps {
 function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const { sessions, appNames, hostNames, globalHighlightRules, views } = useLogStore();
     const [name, setName] = useState(view?.name || generateViewName(views));
+    const [tabColor, setTabColor] = useState(view?.tabColor || '');
+    const nameInputRef = useRef<HTMLInputElement>(null);
     const confirmDialog = useConfirmDialog();
 
     // Session filter state using ListTextFilter (same as HighlightRuleEditor)
@@ -199,6 +202,7 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
 
         onSave({
             name,
+            tabColor: tabColor || undefined,
             filter: {
                 ...defaultFilter,
                 // Legacy format arrays (for backwards compatibility)
@@ -252,8 +256,8 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
     const handleDeleteHighlightRule = async (id: string) => {
         const confirmed = await confirmDialog.confirm({
             title: 'Delete Highlight Rule',
-            message: 'Are you sure you want to delete this highlight rule? This action cannot be undone.',
-            confirmText: 'Delete',
+            message: 'Are you sure you want to delete this highlight rule?',
+            confirmText: 'OK',
             cancelText: 'Cancel',
             danger: true
         });
@@ -339,12 +343,49 @@ function ViewEditor({ view, onSave, onCancel }: ViewEditorProps) {
                                     View Name
                                 </label>
                                 <input
+                                    ref={nameInputRef}
                                     type="text"
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
+                                    onFocus={(e) => e.target.select()}
                                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
                                     placeholder="Enter view name..."
+                                    autoFocus={!view}
                                 />
+                            </div>
+
+                            {/* Tab Color */}
+                            <div className="mb-4">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Tab Header Color
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        value={tabColor || '#3b82f6'}
+                                        onChange={(e) => setTabColor(e.target.value)}
+                                        className="w-10 h-10 rounded border border-slate-200 dark:border-slate-600 cursor-pointer"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={tabColor}
+                                        onChange={(e) => setTabColor(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                        placeholder="e.g. #3b82f6 or transparent"
+                                    />
+                                    {tabColor && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setTabColor('')}
+                                            className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                                    Leave empty for default tab style
+                                </p>
                             </div>
                         </>
                     ) : activeTab === 'filters' ? (
@@ -579,6 +620,7 @@ function generateViewName(views: View[]): string {
 
 export function ViewTabs() {
     const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId } = useLogStore();
+    const { markDirty } = useProjectPersistence();
     const [showEditor, setShowEditor] = useState(false);
     const [editingView, setEditingView] = useState<View | undefined>(undefined);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -660,6 +702,7 @@ export function ViewTabs() {
             // When creating a new view, automatically activate it
             addView(viewData, true);
         }
+        markDirty(); // Mark project as dirty when view is added/edited
         setShowEditor(false);
         setEditingView(undefined);
     };
@@ -674,15 +717,16 @@ export function ViewTabs() {
         const confirmed = await confirmDialog.confirm({
             title: 'Close View',
             message: `Are you sure you want to close "${viewName}"?`,
-            confirmText: 'Close',
+            confirmText: 'OK',
             cancelText: 'Cancel',
             danger: true
         });
 
         if (confirmed) {
             deleteView(viewId);
+            markDirty(); // Mark project as dirty when view is deleted
         }
-    }, [views, confirmDialog, deleteView]);
+    }, [views, confirmDialog, deleteView, markDirty]);
 
     const handleStreamsClick = () => {
         setStreamsMode(true);
@@ -697,6 +741,7 @@ export function ViewTabs() {
     const handleCloneView = useCallback((view: View) => {
         const clonedViewData: Omit<View, 'id'> = {
             name: `${view.name} (Copy)`,
+            tabColor: view.tabColor,
             filter: { ...view.filter },
             highlightRules: view.highlightRules.map(r => ({ ...r, id: Math.random().toString(36).substring(2, 9) })),
             useGlobalHighlights: view.useGlobalHighlights,
@@ -704,16 +749,20 @@ export function ViewTabs() {
             columnState: view.columnState ? [...view.columnState] : undefined
         };
         addView(clonedViewData, true); // Activate the cloned view
-    }, [addView]);
+        markDirty(); // Mark project as dirty when view is cloned
+    }, [addView, markDirty]);
 
     // Close all views except the specified one
     const handleCloseOtherViews = useCallback((keepViewId: string) => {
         const viewsToClose = views.filter(v => v.id !== keepViewId && v.id !== 'all');
-        viewsToClose.forEach(v => deleteView(v.id));
+        if (viewsToClose.length > 0) {
+            viewsToClose.forEach(v => deleteView(v.id));
+            markDirty(); // Mark project as dirty when views are closed
+        }
         // Activate the kept view
         setActiveView(keepViewId);
         setStreamsMode(false);
-    }, [views, deleteView, setActiveView, setStreamsMode]);
+    }, [views, deleteView, setActiveView, setStreamsMode, markDirty]);
 
     // Close view via context menu (with confirmation)
     const handleCloseViewFromMenu = useCallback(async (view: View) => {
@@ -722,15 +771,16 @@ export function ViewTabs() {
         const confirmed = await confirmDialog.confirm({
             title: 'Close View',
             message: `Are you sure you want to close "${view.name}"?`,
-            confirmText: 'Close',
+            confirmText: 'OK',
             cancelText: 'Cancel',
             danger: true
         });
 
         if (confirmed) {
             deleteView(view.id);
+            markDirty(); // Mark project as dirty when view is closed
         }
-    }, [confirmDialog, deleteView]);
+    }, [confirmDialog, deleteView, markDirty]);
 
     // Build context menu items for a view
     const getContextMenuItems = useCallback((view: View): ContextMenuItem[] => {
@@ -843,10 +893,13 @@ export function ViewTabs() {
                             onDoubleClick={() => handleEditView(view)}
                             onContextMenu={(e) => handleTabContextMenu(e, view)}
                             className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
-                                !isStreamsMode && activeViewId === view.id
-                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
-                                    : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
+                                view.tabColor
+                                    ? 'text-white'
+                                    : !isStreamsMode && activeViewId === view.id
+                                        ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
+                                        : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                             }`}
+                            style={view.tabColor ? { backgroundColor: view.tabColor } : undefined}
                             title={view.name}
                         >
                             <span className={`text-sm whitespace-nowrap ${!isStreamsMode && activeViewId === view.id ? 'font-medium' : ''}`}>

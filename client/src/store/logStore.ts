@@ -193,6 +193,7 @@ export interface View {
     id: string;
     name: string;
     icon?: string;
+    tabColor?: string; // Background color for tab header (CSS color value)
     filter: Filter;
     highlightRules: HighlightRule[];
     useGlobalHighlights: boolean; // Whether to also apply global highlight rules
@@ -338,6 +339,11 @@ interface LogState {
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
 
+    // Project tracking (shared state for dirty indicator)
+    loadedProjectId: string | null; // Which server project is loaded (null = fresh)
+    loadedProjectName: string | null; // Name of loaded project
+    loadedProjectDirty: boolean; // Has working project diverged from loaded?
+
     // Percentage-based panel sizes (0-100)
     detailPanelHeightPercent: number;
     watchPanelWidthPercent: number;
@@ -409,6 +415,11 @@ interface LogState {
     // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
     setWatchPanelWidthPercent: (percent: number) => void;
+
+    // Project tracking actions
+    setLoadedProjectId: (id: string | null) => void;
+    setLoadedProjectName: (name: string | null) => void;
+    setLoadedProjectDirty: (dirty: boolean) => void;
 
     // Get selected entry
     getSelectedEntry: () => LogEntry | null;
@@ -498,6 +509,11 @@ export const useLogStore = create<LogState>((set, get) => ({
     // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
     detailPanelHeightPercent: 25,
     watchPanelWidthPercent: 20,
+
+    // Project tracking (initialized by useProjectPersistence)
+    loadedProjectId: null,
+    loadedProjectName: null,
+    loadedProjectDirty: false,
 
     // Actions
     setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined }),
@@ -761,6 +777,11 @@ export const useLogStore = create<LogState>((set, get) => ({
     setWatchPanelWidthPercent: (percent) => set({
         watchPanelWidthPercent: Math.max(10, Math.min(40, percent)) // Clamp 10-40%
     }),
+
+    // Project tracking actions
+    setLoadedProjectId: (id) => set({ loadedProjectId: id }),
+    setLoadedProjectName: (name) => set({ loadedProjectName: name }),
+    setLoadedProjectDirty: (dirty) => set({ loadedProjectDirty: dirty }),
 
     // Get selected entry
     getSelectedEntry: () => {

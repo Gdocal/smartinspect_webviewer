@@ -41,7 +41,8 @@ export function App() {
         isStreamsMode,
         selectedStreamEntryId,
         setSelectedStreamEntryId,
-        theme
+        theme,
+        updateView
     } = useLogStore();
 
     // Apply dark class to document element (both html and body for full coverage)
@@ -92,14 +93,17 @@ export function App() {
     useViewsSync();
 
     // Project persistence (auto-saves working project to localStorage)
-    useProjectPersistence();
+    const { markDirty } = useProjectPersistence();
 
     // Per-view grid state handlers
-    const handleViewColumnStateChange = useCallback((_viewId: string, state: ColumnState[]) => {
-        // For now, we save to the global layout (backward compatibility)
-        // In Phase 5, this will be saved per-view in the project
+    const handleViewColumnStateChange = useCallback((viewId: string, state: ColumnState[]) => {
+        // Save column state to the specific view in the store
+        updateView(viewId, { columnState: state });
+        // Also save to global layout for backward compatibility
         saveLayout({ columnState: state });
-    }, [saveLayout]);
+        // Mark project as dirty (markDirty respects skipCount during project load)
+        markDirty();
+    }, [updateView, saveLayout, markDirty]);
 
     const handleViewFilterModelChange = useCallback((_viewId: string, _model: FilterModel) => {
         // Per-view filter model will be saved in Phase 5
@@ -139,13 +143,14 @@ export function App() {
             document.removeEventListener('mouseup', handleMouseUp);
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
+            markDirty(); // Mark project as dirty when panel is resized
         };
 
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
         document.body.style.cursor = type === 'detail' ? 'ns-resize' : 'ew-resize';
         document.body.style.userSelect = 'none';
-    }, [getDetailPanelHeightPx, getWatchPanelWidthPx, updateDetailPanelHeightFromPx, updateWatchPanelWidthFromPx]);
+    }, [getDetailPanelHeightPx, getWatchPanelWidthPx, updateDetailPanelHeightFromPx, updateWatchPanelWidthFromPx, markDirty]);
 
     return (
         <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
@@ -173,7 +178,7 @@ export function App() {
                 <div className="flex items-center gap-0.5">
                     {/* Detail panel toggle */}
                     <button
-                        onClick={() => setShowDetailPanel(!showDetailPanel)}
+                        onClick={() => { setShowDetailPanel(!showDetailPanel); markDirty(); }}
                         className={`p-1.5 rounded transition-all ${
                             showDetailPanel
                                 ? 'bg-blue-500/15 text-blue-400'
@@ -188,7 +193,7 @@ export function App() {
 
                     {/* Watch panel toggle */}
                     <button
-                        onClick={() => setShowWatchPanel(!showWatchPanel)}
+                        onClick={() => { setShowWatchPanel(!showWatchPanel); markDirty(); }}
                         className={`p-1.5 rounded transition-all ${
                             showWatchPanel
                                 ? 'bg-blue-500/15 text-blue-400'

@@ -651,6 +651,20 @@ export function ViewGrid({
         setSelectedEntryId(event.data?.id || null);
     }, [setSelectedEntryId]);
 
+    // Snap to bottom helper - updates both viewports to prevent bounce
+    const snapToBottom = useCallback(() => {
+        const viewport = document.querySelector('.ag-body-viewport') as HTMLElement;
+        const fakeScroll = document.querySelector('.ag-body-vertical-scroll-viewport') as HTMLElement;
+
+        if (viewport) {
+            const maxScroll = viewport.scrollHeight - viewport.clientHeight;
+            viewport.scrollTop = maxScroll;
+            if (fakeScroll) {
+                fakeScroll.scrollTop = maxScroll;
+            }
+        }
+    }, []);
+
     // Auto-scroll to bottom when new entries arrive (only for active view with autoScroll)
     useEffect(() => {
         if (paused || !isActive || !view.autoScroll) return;
@@ -660,19 +674,19 @@ export function ViewGrid({
                 entriesVersion > lastEntriesVersionRef.current;
 
             if (hasNewEntries) {
-                setTimeout(() => {
-                    if (gridApiRef.current) {
-                        const rowCount = gridApiRef.current.getDisplayedRowCount();
-                        if (rowCount > 0) {
-                            gridApiRef.current.ensureIndexVisible(rowCount - 1, 'bottom');
-                        }
-                    }
-                }, 100);
+                // Snap multiple times to catch all AG Grid internal updates
+                // This prevents the scroll bounce issue
+                snapToBottom();
+                queueMicrotask(() => snapToBottom());
+                requestAnimationFrame(() => {
+                    snapToBottom();
+                    requestAnimationFrame(() => snapToBottom());
+                });
             }
         }
         lastEntryCountRef.current = filteredEntries.length;
         lastEntriesVersionRef.current = entriesVersion;
-    }, [filteredEntries.length, isActive, view.autoScroll, paused, entriesVersion]);
+    }, [filteredEntries.length, isActive, view.autoScroll, paused, entriesVersion, snapToBottom]);
 
     // Restore scroll position when becoming active (but not on initial mount during auto-scroll)
     useEffect(() => {

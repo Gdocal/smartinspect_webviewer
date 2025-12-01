@@ -11,7 +11,7 @@
  * - Save Project: Save working project to server as new or overwrite existing
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { useLogStore, View, ViewWithGridState, Project, WorkingProjectState } from '../store/logStore';
 
 // LocalStorage key for working project
@@ -157,29 +157,46 @@ function extractProjectFromStore(): Omit<Project, 'id' | 'name' | 'description' 
 
 /**
  * Apply project data to store state
+ * Includes defensive handling for older/incomplete project schemas
  */
 function applyProjectToStore(project: Project): void {
     const store = useLogStore.getState();
 
-    // Apply views (strip grid state for now - Phase 4 will handle this)
-    store.setViews(project.views);
+    // Apply views with fallback to current views if missing
+    if (project.views && Array.isArray(project.views) && project.views.length > 0) {
+        store.setViews(project.views);
+    }
 
     // Apply active view
     if (project.activeViewId) {
         store.setActiveView(project.activeViewId);
     }
 
-    // Apply panel sizes
-    store.setDetailPanelHeightPercent(project.panelSizes.detailHeightPercent);
-    store.setWatchPanelWidthPercent(project.panelSizes.watchWidthPercent);
+    // Apply panel sizes with defaults
+    const panelSizes = project.panelSizes || {};
+    if (typeof panelSizes.detailHeightPercent === 'number') {
+        store.setDetailPanelHeightPercent(panelSizes.detailHeightPercent);
+    }
+    if (typeof panelSizes.watchWidthPercent === 'number') {
+        store.setWatchPanelWidthPercent(panelSizes.watchWidthPercent);
+    }
 
-    // Apply panel visibility
-    store.setShowDetailPanel(project.panelVisibility.showDetailPanel);
-    store.setShowWatchPanel(project.panelVisibility.showWatchPanel);
-    store.setShowStreamPanel(project.panelVisibility.showStreamPanel);
+    // Apply panel visibility with defaults
+    const panelVisibility = project.panelVisibility || {};
+    if (typeof panelVisibility.showDetailPanel === 'boolean') {
+        store.setShowDetailPanel(panelVisibility.showDetailPanel);
+    }
+    if (typeof panelVisibility.showWatchPanel === 'boolean') {
+        store.setShowWatchPanel(panelVisibility.showWatchPanel);
+    }
+    if (typeof panelVisibility.showStreamPanel === 'boolean') {
+        store.setShowStreamPanel(panelVisibility.showStreamPanel);
+    }
 
     // Apply theme
-    store.setTheme(project.theme);
+    if (project.theme) {
+        store.setTheme(project.theme);
+    }
 }
 
 /**
@@ -199,17 +216,19 @@ export function useProjectPersistence() {
     const watchPanelWidthPercent = useLogStore(state => state.watchPanelWidthPercent);
     const theme = useLogStore(state => state.theme);
 
-    // Working project state
-    const [loadedProjectId, setLoadedProjectId] = useState<string | null>(null);
-    const [loadedProjectDirty, setLoadedProjectDirty] = useState(false);
-    const [loadedProjectName, setLoadedProjectName] = useState<string | null>(null);
+    // Project tracking state from global store (shared across components)
+    const loadedProjectId = useLogStore(state => state.loadedProjectId);
+    const loadedProjectDirty = useLogStore(state => state.loadedProjectDirty);
+    const loadedProjectName = useLogStore(state => state.loadedProjectName);
+    const setLoadedProjectId = useLogStore(state => state.setLoadedProjectId);
+    const setLoadedProjectDirty = useLogStore(state => state.setLoadedProjectDirty);
+    const setLoadedProjectName = useLogStore(state => state.setLoadedProjectName);
 
     // Refs
     const mountedRef = useRef(true);
     const saveTimeoutRef = useRef<number | null>(null);
     const initializedRef = useRef(false);
     const lastSavedRef = useRef<string>('');
-    const skipNextSaveRef = useRef(false);
 
     // Initialize on mount - load working project from localStorage
     useEffect(() => {
@@ -220,17 +239,20 @@ export function useProjectPersistence() {
 
         if (workingState) {
             console.log('[ProjectPersistence] Loaded working project from localStorage');
-            skipNextSaveRef.current = true;
             applyProjectToStore(workingState.project);
             setLoadedProjectId(workingState.loadedProjectId);
             setLoadedProjectDirty(workingState.loadedProjectDirty);
+            // Restore project name from saved state
+            if (workingState.project?.name) {
+                setLoadedProjectName(workingState.project.name);
+            }
 
             // Update last saved to prevent immediate re-save
             lastSavedRef.current = JSON.stringify(workingState);
         } else {
             console.log('[ProjectPersistence] No working project found, using defaults');
         }
-    }, [currentRoom, currentUser]);
+    }, [currentRoom, currentUser, setLoadedProjectId, setLoadedProjectDirty, setLoadedProjectName]);
 
     // Build current working state from store
     const buildWorkingState = useCallback((): WorkingProjectState => {
@@ -251,7 +273,22 @@ export function useProjectPersistence() {
         };
     }, [currentUser, loadedProjectId, loadedProjectDirty, loadedProjectName]);
 
-    // Schedule debounced save to localStorage
+    // Track skips - use counter to skip multiple effect runs during project load/reset
+    const skipCountRef = useRef(0);
+
+    // Use ref to track dirty state for effect without causing re-runs
+    const loadedProjectDirtyRef = useRef(loadedProjectDirty);
+    loadedProjectDirtyRef.current = loadedProjectDirty;
+
+    // Use ref to track project ID for effect without causing re-runs when it changes
+    const loadedProjectIdRef = useRef(loadedProjectId);
+    loadedProjectIdRef.current = loadedProjectId;
+
+    // Use ref for project name to avoid stale closures
+    const loadedProjectNameRef = useRef(loadedProjectName);
+    loadedProjectNameRef.current = loadedProjectName;
+
+    // Schedule debounced save to localStorage - use refs to avoid dependency issues
     const scheduleSave = useCallback(() => {
         if (saveTimeoutRef.current) {
             clearTimeout(saveTimeoutRef.current);
@@ -259,29 +296,63 @@ export function useProjectPersistence() {
 
         saveTimeoutRef.current = window.setTimeout(() => {
             saveTimeoutRef.current = null;
-            const state = buildWorkingState();
+
+            // Build working state using refs for tracking state
+            const projectData = extractProjectFromStore();
+            const state: WorkingProjectState = {
+                project: {
+                    id: 'working',
+                    name: loadedProjectNameRef.current || 'Working Project',
+                    description: 'Current editing state',
+                    createdBy: currentUser,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    isShared: false,
+                    ...projectData
+                },
+                loadedProjectId: loadedProjectIdRef.current,
+                loadedProjectDirty: loadedProjectDirtyRef.current
+            };
+
             saveWorkingProject(currentRoom, currentUser, state);
             lastSavedRef.current = JSON.stringify(state);
-            console.log('[ProjectPersistence] Auto-saved to localStorage');
+            console.log('[ProjectPersistence] Auto-saved to localStorage, dirty:', loadedProjectDirtyRef.current);
         }, SAVE_DEBOUNCE_MS);
-    }, [buildWorkingState, currentRoom, currentUser]);
+    }, [currentRoom, currentUser]);
 
-    // Auto-save when relevant state changes
+    // Auto-save when relevant state changes (only saves to localStorage, doesn't mark dirty)
     useEffect(() => {
-        // Skip if not initialized or if we should skip
-        if (!initializedRef.current || skipNextSaveRef.current) {
-            skipNextSaveRef.current = false;
+        // Skip if not initialized
+        if (!initializedRef.current) {
+            console.log('[ProjectPersistence] Effect skipped: not initialized');
             return;
         }
 
-        // Mark as dirty if we loaded from a named project
-        if (loadedProjectId && !loadedProjectDirty) {
-            setLoadedProjectDirty(true);
+        // Skip if we're in the middle of loading/resetting a project
+        if (skipCountRef.current > 0) {
+            console.log('[ProjectPersistence] Effect skipped: skipCount =', skipCountRef.current);
+            skipCountRef.current--;
+            return;
         }
 
+        console.log('[ProjectPersistence] Auto-save effect running');
         scheduleSave();
     }, [views, activeViewId, showDetailPanel, showWatchPanel, showStreamPanel,
-        detailPanelHeightPercent, watchPanelWidthPercent, theme, scheduleSave, loadedProjectId, loadedProjectDirty]);
+        detailPanelHeightPercent, watchPanelWidthPercent, theme, scheduleSave]);
+
+    // Helper function to mark project as dirty (exported for use by other actions)
+    // Respects skipCount to avoid marking dirty during project load/reset
+    const markDirty = useCallback(() => {
+        // Skip if we're in the loading window (skipCount > 0)
+        if (skipCountRef.current > 0) {
+            console.log('[ProjectPersistence] markDirty skipped: skipCount =', skipCountRef.current);
+            return;
+        }
+        if (loadedProjectIdRef.current && !loadedProjectDirtyRef.current) {
+            console.log('[ProjectPersistence] Marking project as dirty:', loadedProjectIdRef.current);
+            setLoadedProjectDirty(true);
+        }
+    }, [setLoadedProjectDirty]);
 
     // Load a named project from server
     const loadProject = useCallback(async (projectId: string) => {
@@ -291,11 +362,18 @@ export function useProjectPersistence() {
                 throw new Error(`Failed to load project: ${response.statusText}`);
             }
 
-            const data = await response.json();
-            const project = data.project as Project;
+            const serverResponse = await response.json();
 
-            // Apply to store
-            skipNextSaveRef.current = true;
+            // Server returns { id, name, projectData: { views, panelSizes, ... } }
+            // We need to merge the name with projectData to create a full Project
+            const project: Project = {
+                name: serverResponse.name,
+                ...serverResponse.projectData
+            };
+
+            // Apply to store - skip multiple effect runs during load
+            // (views, activeView, panelSizes, panelVisibility, theme, projectId, dirty = ~7 changes)
+            skipCountRef.current = 10;
             applyProjectToStore(project);
 
             // Update tracking state
@@ -345,6 +423,9 @@ export function useProjectPersistence() {
             const data = await response.json();
             const savedProject = data.project as Project;
 
+            // Skip effect runs during state updates to prevent false dirty flag
+            skipCountRef.current = 5;
+
             // Update tracking state
             setLoadedProjectId(savedProject.id);
             setLoadedProjectName(savedProject.name);
@@ -381,6 +462,9 @@ export function useProjectPersistence() {
 
             const data = await response.json();
             const updatedProject = data.project as Project;
+
+            // Skip effect runs during state updates to prevent false dirty flag
+            skipCountRef.current = 3;
 
             // Update tracking state
             setLoadedProjectDirty(false);
@@ -444,7 +528,8 @@ export function useProjectPersistence() {
     const resetToDefault = useCallback(() => {
         const defaultState = createDefaultWorkingState(currentUser);
 
-        skipNextSaveRef.current = true;
+        // Skip multiple effect runs during reset
+        skipCountRef.current = 10;
         applyProjectToStore(defaultState.project);
 
         setLoadedProjectId(null);
@@ -479,6 +564,7 @@ export function useProjectPersistence() {
         updateProject,
         listProjects,
         deleteProject,
-        resetToDefault
+        resetToDefault,
+        markDirty  // Call this when user explicitly changes project state
     };
 }
