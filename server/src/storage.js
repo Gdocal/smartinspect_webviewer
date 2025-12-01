@@ -432,6 +432,19 @@ class StreamStore {
     }
 
     /**
+     * Update max entries per channel
+     */
+    setMaxEntries(maxEntries) {
+        this.maxEntries = maxEntries;
+        // Trim existing channels if needed
+        for (const [channel, entries] of this.channels) {
+            if (entries.length > maxEntries) {
+                this.channels.set(channel, entries.slice(-maxEntries));
+            }
+        }
+    }
+
+    /**
      * Add a stream entry to a channel
      */
     add(channel, data, timestamp, streamType = null) {

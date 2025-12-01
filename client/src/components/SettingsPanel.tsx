@@ -2,12 +2,17 @@
  * SettingsPanel - Client settings configuration modal with tabs
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSettings, AppSettings } from '../hooks/useSettings';
 import { useLogStore, HighlightRule, ProjectLimits, defaultLimits } from '../store/logStore';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { reconnect } from '../services/earlyWebSocket';
 import { HighlightRuleEditor } from './HighlightRuleEditor';
+
+interface ServerConfig {
+    maxEntries: number;
+    maxStreamEntries: number;
+}
 
 // Custom checkbox component that works properly in dark mode
 interface CheckboxProps {
@@ -106,8 +111,32 @@ export function SettingsPanel({
     // Local form state
     const [formState, setFormState] = useState<AppSettings>(settings);
     const [limitsFormState, setLimitsFormState] = useState<ProjectLimits>(limits);
+    const [serverConfig, setServerConfig] = useState<ServerConfig>({ maxEntries: 100000, maxStreamEntries: 1000 });
     const [showToken, setShowToken] = useState(false);
     const [activeTab, setActiveTab] = useState<'connection' | 'display' | 'highlights'>('connection');
+
+    // Convert WebSocket URL to HTTP URL
+    const getHttpUrl = useCallback((): string => {
+        const wsUrl = getServerUrl();
+        return wsUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+    }, [getServerUrl]);
+
+    // Fetch server config
+    const fetchServerConfig = useCallback(async () => {
+        try {
+            const baseUrl = getHttpUrl();
+            const response = await fetch(`${baseUrl}/api/server/config`);
+            if (response.ok) {
+                const data = await response.json();
+                setServerConfig({
+                    maxEntries: data.maxEntries || 100000,
+                    maxStreamEntries: data.maxStreamEntries || 1000
+                });
+            }
+        } catch (err) {
+            console.error('Failed to fetch server config:', err);
+        }
+    }, [getHttpUrl]);
 
     // Highlight rule editor state
     const [showRuleEditor, setShowRuleEditor] = useState(false);
@@ -151,13 +180,14 @@ export function SettingsPanel({
         markDirty();
     };
 
-    // Reset form when modal opens
+    // Reset form when modal opens and fetch server config
     useEffect(() => {
         if (isOpen) {
             setFormState(settings);
             setLimitsFormState(limits);
+            fetchServerConfig();
         }
-    }, [isOpen, settings, limits]);
+    }, [isOpen, settings, limits, fetchServerConfig]);
 
     // Close on escape
     useEffect(() => {
@@ -170,7 +200,7 @@ export function SettingsPanel({
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onClose]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         // Check if server URL changed
         const urlChanged = formState.serverUrl !== settings.serverUrl;
         // Check if username changed
@@ -183,6 +213,21 @@ export function SettingsPanel({
 
         // Save project limits
         setLimits(limitsFormState);
+
+        // Save server config if changed
+        try {
+            const baseUrl = getHttpUrl();
+            await fetch(`${baseUrl}/api/server/config`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    maxEntries: serverConfig.maxEntries,
+                    maxStreamEntries: serverConfig.maxStreamEntries
+                })
+            });
+        } catch (err) {
+            console.error('Failed to save server config:', err);
+        }
 
         // Update logStore currentUser if username changed
         if (usernameChanged) {
@@ -398,6 +443,30 @@ export function SettingsPanel({
                                 />
                                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     Maximum rows each grid view can display. Higher values may affect performance.
+                                </p>
+                            </div>
+
+                            {/* Server-side settings */}
+                            <div className="pt-3 border-t border-slate-200 dark:border-slate-600">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                    Server-side limits (affects all viewers)
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Max Stream Entries (per channel)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="100"
+                                    max="100000"
+                                    step="100"
+                                    value={serverConfig.maxStreamEntries}
+                                    onChange={(e) => setServerConfig(prev => ({ ...prev, maxStreamEntries: Math.max(100, Math.min(100000, parseInt(e.target.value) || 1000)) }))}
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                />
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                                    Maximum stream entries per channel on server (100-100,000). Higher values use more server memory.
                                 </p>
                             </div>
                         </div>

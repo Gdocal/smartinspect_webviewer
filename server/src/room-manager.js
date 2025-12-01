@@ -15,10 +15,10 @@ const { LogRingBuffer, WatchStore, MethodContextTracker, StreamStore } = require
  * Storage container for a single room
  */
 class RoomStorage {
-    constructor(maxEntries = 100000) {
+    constructor(maxEntries = 100000, maxStreamEntries = 1000) {
         this.logBuffer = new LogRingBuffer(maxEntries);
         this.watchStore = new WatchStore();
-        this.streamStore = new StreamStore();
+        this.streamStore = new StreamStore(maxStreamEntries);
         this.methodTracker = new MethodContextTracker();
         this.clients = new Set();    // TCP client IDs in this room
         this.viewers = new Set();    // WebSocket viewer IDs in this room
@@ -64,9 +64,10 @@ class RoomStorage {
  * Manages multiple rooms with lazy creation
  */
 class RoomManager {
-    constructor(defaultMaxEntries = 100000) {
+    constructor(defaultMaxEntries = 100000, defaultMaxStreamEntries = 1000) {
         this.rooms = new Map();  // roomId -> RoomStorage
         this.defaultMaxEntries = defaultMaxEntries;
+        this.defaultMaxStreamEntries = defaultMaxStreamEntries;
     }
 
     /**
@@ -77,7 +78,7 @@ class RoomManager {
     getOrCreate(roomId = 'default') {
         if (!this.rooms.has(roomId)) {
             console.log(`[RoomManager] Creating room: ${roomId}`);
-            this.rooms.set(roomId, new RoomStorage(this.defaultMaxEntries));
+            this.rooms.set(roomId, new RoomStorage(this.defaultMaxEntries, this.defaultMaxStreamEntries));
         }
         return this.rooms.get(roomId);
     }
@@ -252,6 +253,17 @@ class RoomManager {
     }
 
     /**
+     * Update max stream entries per channel for all rooms
+     * @param {number} maxStreamEntries - New maximum stream entries per channel
+     */
+    setMaxStreamEntries(maxStreamEntries) {
+        this.defaultMaxStreamEntries = maxStreamEntries;
+        for (const [, room] of this.rooms) {
+            room.streamStore.setMaxEntries(maxStreamEntries);
+        }
+    }
+
+    /**
      * Get total statistics across all rooms
      * @returns {Object} Aggregated statistics
      */
@@ -277,7 +289,8 @@ class RoomManager {
             totalStreams,
             totalClients,
             totalViewers,
-            maxEntriesPerRoom: this.defaultMaxEntries
+            maxEntriesPerRoom: this.defaultMaxEntries,
+            maxStreamEntriesPerChannel: this.defaultMaxStreamEntries
         };
     }
 }

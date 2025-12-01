@@ -25,11 +25,12 @@ const config = {
     tcpPort: parseInt(process.env.TCP_PORT) || 4229,
     authToken: process.env.SI_AUTH_TOKEN || null,
     authRequired: process.env.SI_AUTH_REQUIRED === 'true',
-    maxEntries: parseInt(process.env.MAX_ENTRIES) || 100000
+    maxEntries: parseInt(process.env.MAX_ENTRIES) || 100000,
+    maxStreamEntries: parseInt(process.env.MAX_STREAM_ENTRIES) || 1000
 };
 
 // Initialize room manager (replaces global storage)
-const roomManager = new RoomManager(config.maxEntries);
+const roomManager = new RoomManager(config.maxEntries, config.maxStreamEntries);
 
 // Ensure default room exists
 roomManager.getOrCreate('default');
@@ -291,6 +292,7 @@ app.get('/api/server/stats', (req, res) => {
 app.get('/api/server/config', (req, res) => {
     res.json({
         maxEntries: config.maxEntries,
+        maxStreamEntries: config.maxStreamEntries,
         httpPort: config.httpPort,
         tcpPort: config.tcpPort,
         authRequired: config.authRequired,
@@ -349,7 +351,7 @@ app.get('/api/server/connection-info', (req, res) => {
  * PATCH /api/server/config - Update server configuration
  */
 app.patch('/api/server/config', (req, res) => {
-    const { maxEntries } = req.body;
+    const { maxEntries, maxStreamEntries } = req.body;
 
     if (maxEntries !== undefined) {
         const newMax = parseInt(maxEntries);
@@ -362,8 +364,20 @@ app.patch('/api/server/config', (req, res) => {
         config.maxEntries = newMax;
     }
 
+    if (maxStreamEntries !== undefined) {
+        const newMax = parseInt(maxStreamEntries);
+        if (isNaN(newMax) || newMax < 100 || newMax > 100000) {
+            return res.status(400).json({
+                error: 'maxStreamEntries must be between 100 and 100,000'
+            });
+        }
+        roomManager.setMaxStreamEntries(newMax);
+        config.maxStreamEntries = newMax;
+    }
+
     res.json({
         maxEntries: config.maxEntries,
+        maxStreamEntries: config.maxStreamEntries,
         httpPort: config.httpPort,
         tcpPort: config.tcpPort
     });

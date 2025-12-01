@@ -334,7 +334,7 @@ export function useProjectPersistence() {
                     const response = await fetch(`/api/projects/${loadedProjectIdRef.current}?room=${encodeURIComponent(currentRoom)}&user=${encodeURIComponent(currentUser)}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ project: projectData })
+                        body: JSON.stringify({ project: { name: loadedProjectNameRef.current || 'Untitled Project', ...projectData } })
                     });
 
                     if (response.ok) {
@@ -344,13 +344,28 @@ export function useProjectPersistence() {
                         state.loadedProjectDirty = false;
                         saveWorkingProject(currentRoom, currentUser, state);
                         console.log('[ProjectPersistence] Auto-saved to server');
+                    } else if (response.status === 404) {
+                        // Project was deleted on server - clear loaded project reference
+                        console.warn('[ProjectPersistence] Project not found on server, clearing loaded project reference');
+                        // Update refs
+                        loadedProjectIdRef.current = null;
+                        loadedProjectNameRef.current = null;
+                        // Update store state
+                        setLoadedProjectId(null);
+                        setLoadedProjectName(null);
+                        setLoadedProjectDirty(false);
+                        // Update localStorage
+                        state.loadedProjectId = null;
+                        state.loadedProjectDirty = false;
+                        state.project.name = 'Working Project';
+                        saveWorkingProject(currentRoom, currentUser, state);
                     }
                 } catch (err) {
                     console.error('[ProjectPersistence] Auto-save to server failed:', err);
                 }
             }
         }, SAVE_DEBOUNCE_MS);
-    }, [currentRoom, currentUser, setLoadedProjectDirty]);
+    }, [currentRoom, currentUser, setLoadedProjectDirty, setLoadedProjectId, setLoadedProjectName]);
 
     // Auto-save when relevant state changes (only saves to localStorage, doesn't mark dirty)
     useEffect(() => {
