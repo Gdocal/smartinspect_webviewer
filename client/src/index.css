@@ -147,6 +147,29 @@ html, body, #root {
     border-color: #475569; /* slate-600 */
 }
 
+/* Dark mode number input spinner buttons */
+.dark input[type="number"]::-webkit-inner-spin-button,
+.dark input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+/* Custom number input with visible spinners for dark mode */
+.dark input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+/* Re-enable spinners with custom styling */
+@supports (-webkit-appearance: none) {
+    .dark input[type="number"] {
+        -webkit-appearance: none;
+        appearance: none;
+        position: relative;
+    }
+}
+
 /* Custom scrollbar - Light mode */
 ::-webkit-scrollbar {
     width: 8px;

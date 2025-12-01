@@ -93,29 +93,6 @@ interface SettingsPanelProps {
     onClose: () => void;
 }
 
-const INITIAL_LOAD_OPTIONS = [
-    { value: 1000, label: '1,000' },
-    { value: 5000, label: '5,000' },
-    { value: 10000, label: '10,000' },
-    { value: 25000, label: '25,000' },
-    { value: 50000, label: '50,000' },
-];
-
-const MAX_BUFFER_OPTIONS = [
-    { value: 10000, label: '10,000' },
-    { value: 25000, label: '25,000' },
-    { value: 50000, label: '50,000' },
-    { value: 100000, label: '100,000' },
-    { value: 250000, label: '250,000' },
-];
-
-const MAX_GRID_ROWS_OPTIONS = [
-    { value: 5000, label: '5,000' },
-    { value: 10000, label: '10,000' },
-    { value: 25000, label: '25,000' },
-    { value: 50000, label: '50,000' },
-];
-
 export function SettingsPanel({
     isOpen,
     onClose
@@ -371,15 +348,15 @@ export function SettingsPanel({
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Initial Load Limit
                                 </label>
-                                <select
+                                <input
+                                    type="number"
+                                    min="100"
+                                    max="1000000"
+                                    step="1000"
                                     value={limitsFormState.initialLoadLimit}
-                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, initialLoadLimit: parseInt(e.target.value) }))}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, initialLoadLimit: Math.max(100, parseInt(e.target.value) || 5000) }))}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                >
-                                    {INITIAL_LOAD_OPTIONS.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
+                                />
                                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     How many log entries to fetch from server on connect.
                                 </p>
@@ -388,15 +365,15 @@ export function SettingsPanel({
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Max Buffer Entries
                                 </label>
-                                <select
+                                <input
+                                    type="number"
+                                    min="1000"
+                                    max="10000000"
+                                    step="10000"
                                     value={limitsFormState.maxBufferEntries}
-                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxBufferEntries: parseInt(e.target.value) }))}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxBufferEntries: Math.max(1000, parseInt(e.target.value) || 50000) }))}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                >
-                                    {MAX_BUFFER_OPTIONS.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
+                                />
                                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     Total entries to keep in client memory. Older entries are dropped when limit is reached.
                                 </p>
@@ -405,15 +382,15 @@ export function SettingsPanel({
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Max Grid Rows
                                 </label>
-                                <select
+                                <input
+                                    type="number"
+                                    min="1000"
+                                    max="1000000"
+                                    step="5000"
                                     value={limitsFormState.maxGridRows}
-                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxGridRows: parseInt(e.target.value) }))}
+                                    onChange={(e) => setLimitsFormState(prev => ({ ...prev, maxGridRows: Math.max(1000, parseInt(e.target.value) || 10000) }))}
                                     className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
-                                >
-                                    {MAX_GRID_ROWS_OPTIONS.map(opt => (
-                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                </select>
+                                />
                                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                                     Maximum rows each grid view can display. Higher values may affect performance.
                                 </p>
