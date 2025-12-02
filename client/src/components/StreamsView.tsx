@@ -528,6 +528,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 }
 
 // Content cell renderer - detects JSON and shows preview
+// CSS textOverflow: ellipsis handles truncation based on available width
 function StreamContentCell({ data }: { data: string }) {
     if (!data) return <span className="vlg-empty-data">-</span>;
 
@@ -536,20 +537,20 @@ function StreamContentCell({ data }: { data: string }) {
     if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         try {
             const parsed = JSON.parse(trimmed);
-            const preview = JSON.stringify(parsed).substring(0, 100);
+            const preview = JSON.stringify(parsed);
             return (
                 <span className="font-mono text-xs">
-                    {preview}{preview.length >= 100 ? '...' : ''}
+                    {preview}
                 </span>
             );
         } catch {
-            // Not valid JSON
+            // Not valid JSON, fall through to render as text
         }
     }
 
     return (
         <span className="text-xs">
-            {data.length > 100 ? data.substring(0, 100) + '...' : data}
+            {data}
         </span>
     );
 }
