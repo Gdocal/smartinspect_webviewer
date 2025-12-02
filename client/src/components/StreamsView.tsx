@@ -51,6 +51,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
+    const [newEntryIds, setNewEntryIds] = useState<Set<number>>(new Set()); // Track newly added entries for animation
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
@@ -342,6 +343,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                 const [entry, ...rest] = prev;
                 setSlowModeDisplayEntries(current => {
                     const updated = [...current, entry];
+                    // Mark entry as new for animation
+                    setNewEntryIds(prevIds => new Set(prevIds).add(entry.id));
+                    // Remove from new entries after animation completes (400ms)
+                    setTimeout(() => {
+                        setNewEntryIds(prevIds => {
+                            const next = new Set(prevIds);
+                            next.delete(entry.id);
+                            return next;
+                        });
+                    }, 400);
                     return updated.length > PLAYBACK_BUFFER_MAX
                         ? updated.slice(-PLAYBACK_BUFFER_MAX)
                         : updated;
@@ -767,8 +778,8 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                                     return (
                                         <div
-                                            key={virtualRow.index}
-                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''}`}
+                                            key={`${entry.id}-${entry.timestamp}-${virtualRow.index}`}
+                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''} ${newEntryIds.has(entry.id) ? 'new-entry' : ''}`}
                                             style={{
                                                 position: 'absolute',
                                                 top: 0,
