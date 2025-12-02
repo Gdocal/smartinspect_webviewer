@@ -47,19 +47,21 @@ si.stream('events', 'User logged in', 'text');
 
 ## Key Features
 
+- **High-performance virtual grid** - Custom-built in-house grid with TanStack Virtual for smooth rendering of 100K+ entries
 - **Real-time streaming** via WebSocket with batched updates
 - **Advanced filtering** by sessions, levels, text patterns, time ranges
 - **Customizable views** with tabs for different filter combinations
+- **Smart auto-scroll** - Smooth scrolling with automatic rate detection (lerp for slow updates, instant for high-speed)
 - **Watch panel** for live variable monitoring
 - **Stream panel** for high-frequency data channels with type categorization
-- **Highlighting rules** with custom styling
+- **Highlighting rules** with custom styling and priority system
 - **Project management** with save/load/export/import
 - **Multi-room support** for team isolation
 - **Dark/Light theme** with customizable layouts
 
 ## Technology Stack
 
-**Frontend:** React 18, TypeScript 5.3, Zustand, AG Grid Enterprise, Tailwind CSS, Vite
+**Frontend:** React 18, TypeScript 5.3, Zustand, TanStack Virtual, Tailwind CSS, Vite
 
 **Backend:** Node.js 18+, Express, WebSocket, SQLite, SmartInspect TCP Protocol
 
@@ -70,7 +72,7 @@ si.stream('events', 'User logged in', 'text');
 - **[API Reference](docs/API.md)** - REST endpoints and WebSocket protocol
 - **[Configuration](docs/CONFIGURATION.md)** - Environment variables, scripts, and settings
 - **[Implementation Status](IMPLEMENTATION_STATUS.md)** - Development progress checklist
-- **[AG Grid Patches](AG_GRID_PATCHES.md)** - Custom scroll behavior notes
+- **[Virtual Grid Implementation](docs/VIRTUAL_GRID.md)** - Custom high-performance grid architecture
 
 ## Production Build
 
@@ -114,9 +116,16 @@ http://<your-wsl-ip>:5173
 
 ```
 web-viewer/
-├── client/          # React frontend (TypeScript, Zustand, AG Grid)
+├── client/          # React frontend (TypeScript, Zustand, custom Virtual Grid)
 │   └── src/
-│       ├── components/   # 22 React components (8,300+ lines)
+│       ├── components/
+│       │   ├── VirtualLogGrid/   # High-performance custom grid
+│       │   │   ├── VirtualLogGrid.tsx      # Main grid component
+│       │   │   ├── VirtualLogGridRow.tsx   # Row renderer
+│       │   │   ├── VirtualLogGridHeader.tsx
+│       │   │   ├── useAutoScroll.ts        # Smart scroll hook
+│       │   │   └── useScrollDetection.ts   # Scroll state detection
+│       │   └── [20+ other components]
 │       ├── hooks/        # 7 custom hooks
 │       └── store/        # Zustand state management
 ├── server/          # Node.js backend (Express, WebSocket, SQLite)
@@ -136,4 +145,4 @@ web-viewer/
 
 ---
 
-**Built with ❤️ using React, Node.js, and AG Grid Enterprise**
+**Built with ❤️ using React, Node.js, and TanStack Virtual**
