@@ -48,7 +48,15 @@ function connect(): void {
     // Build WebSocket URL - NO sensitive data in URL for security
     const settings = getSettings();
     // Use custom server URL from settings, or fall back to current host
-    const host = settings.serverUrl || window.location.host;
+    // Strip any protocol prefix from serverUrl if present
+    let host = settings.serverUrl || window.location.host;
+    if (host.startsWith('ws://')) host = host.slice(5);
+    if (host.startsWith('wss://')) host = host.slice(6);
+    if (host.startsWith('http://')) host = host.slice(7);
+    if (host.startsWith('https://')) host = host.slice(8);
+    // Remove trailing slash if present
+    if (host.endsWith('/')) host = host.slice(0, -1);
+
     const protocol = host.startsWith('localhost') || host.match(/^[\d.]+:/)
         ? 'ws:'
         : (window.location.protocol === 'https:' ? 'wss:' : 'ws:');

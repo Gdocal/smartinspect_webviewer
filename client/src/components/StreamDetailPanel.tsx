@@ -45,7 +45,7 @@ function DataViewer({ data }: { data: string }) {
                 <JsonView
                     data={parsed}
                     style={jsonStyles}
-                    shouldExpandNode={(level) => level < 2}
+                    shouldExpandNode={() => true}
                 />
             </div>
         );

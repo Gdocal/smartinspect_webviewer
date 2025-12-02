@@ -29,7 +29,7 @@ interface StreamsViewProps {
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, clearAllStreams, clearStream, theme } = useLogStore();
+    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme } = useLogStore();
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [paused, setPaused] = useState(false);
@@ -53,7 +53,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
-    const speedCounterRef = useRef<Record<string, { count: number; timestamp: number }>>({});
 
     // Grid container ref for virtualization
     const parentRef = useRef<HTMLDivElement>(null);
@@ -163,6 +162,46 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     }, [clearAllStreams]);
 
     const channels = Object.keys(streams);
+
+    // Track previous total for speed calculation
+    const prevTotalRef = useRef<Record<string, number>>({});
+    const isFirstTickRef = useRef<Record<string, boolean>>({});
+    // Use ref to access latest totals without recreating interval
+    const totalReceivedRef = useRef(streamTotalReceived);
+    totalReceivedRef.current = streamTotalReceived;
+    const channelsRef = useRef(channels);
+    channelsRef.current = channels;
+
+    // Speedometer effect - calculates rate based on store's total received counter
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const newSpeeds: Record<string, number> = {};
+            const currentTotals = totalReceivedRef.current;
+
+            for (const channel of channelsRef.current) {
+                const currentTotal = currentTotals[channel] || 0;
+
+                // First tick for this channel: initialize ref, show 0/s
+                if (!isFirstTickRef.current[channel]) {
+                    isFirstTickRef.current[channel] = true;
+                    prevTotalRef.current[channel] = currentTotal;
+                    newSpeeds[channel] = 0;
+                    continue;
+                }
+
+                const prevTotal = prevTotalRef.current[channel] || 0;
+                const diff = currentTotal - prevTotal;
+
+                // Calculate events per second (we measure every 500ms, so multiply by 2)
+                newSpeeds[channel] = Math.max(0, diff * 2);
+                prevTotalRef.current[channel] = currentTotal;
+            }
+
+            setStreamSpeed(newSpeeds);
+        }, 500); // Update every 500ms for smoother display
+
+        return () => clearInterval(interval);
+    }, []); // Empty deps - interval runs continuously using refs for fresh data
 
     // Get source entries - either from snapshot, slow mode display, or live stream
     const sourceEntries = useMemo(() => {
@@ -306,58 +345,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         setSlowModeDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
     }, [selectedChannel, streams]);
 
-    // Speedometer - calculate events per second for each channel using interval
-    // Use ref to access latest streams without recreating the interval
-    const streamsRef = useRef(streams);
-    streamsRef.current = streams;
-
-    useEffect(() => {
-        // Set up interval to calculate speed every second
-        const interval = setInterval(() => {
-            const currentStreams = streamsRef.current;
-            const updates: Record<string, number> = {};
-            const now = Date.now();
-
-            Object.keys(currentStreams).forEach(channel => {
-                const entries = currentStreams[channel] || [];
-                const currentCount = entries.length;
-                const counter = speedCounterRef.current[channel];
-
-                if (!counter) {
-                    speedCounterRef.current[channel] = { count: currentCount, timestamp: now };
-                    return;
-                }
-
-                const newEntries = currentCount - counter.count;
-                const elapsed = (now - counter.timestamp) / 1000; // seconds
-
-                if (elapsed >= 1 && newEntries > 0) {
-                    // Calculate events per second
-                    const speed = newEntries / elapsed;
-                    updates[channel] = Math.round(speed * 10) / 10;
-
-                    // Reset counter
-                    speedCounterRef.current[channel] = { count: currentCount, timestamp: now };
-                }
-            });
-
-            // Only update state if there are changes
-            if (Object.keys(updates).length > 0) {
-                setStreamSpeed(prev => ({ ...prev, ...updates }));
-            }
-
-            // Cleanup old channels
-            const activeChannels = Object.keys(currentStreams);
-            Object.keys(speedCounterRef.current).forEach(channel => {
-                if (!activeChannels.includes(channel)) {
-                    delete speedCounterRef.current[channel];
-                }
-            });
-        }, 1000); // Check every second
-
-        return () => clearInterval(interval);
-    }, []); // Empty deps - interval runs continuously
-
     // Row height for virtualization
     const ROW_HEIGHT = 32;
 
@@ -492,24 +479,37 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     ) : (
                         channels.map(channel => {
                             const count = streams[channel]?.length || 0;
+                            const speed = streamSpeed[channel] ?? 0;
                             const isSelected = selectedChannel === channel;
                             return (
                                 <button
                                     key={channel}
                                     onClick={() => setSelectedChannel(channel)}
-                                    className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors ${
+                                    className={`w-full px-3 py-2 text-left flex items-center transition-colors ${
                                         isSelected
                                             ? 'bg-purple-500 text-white'
                                             : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
-                                    <div className="flex items-center gap-2 min-w-0">
+                                    {/* Channel name - flexible width */}
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
                                         <svg className={`w-4 h-4 flex-shrink-0 ${isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                         </svg>
                                         <span className="text-sm font-medium truncate">{channel}</span>
                                     </div>
-                                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                    {/* Speed column - fixed width for alignment */}
+                                    <span className={`text-[10px] font-mono tabular-nums w-12 text-right flex-shrink-0 ${
+                                        isSelected
+                                            ? 'text-purple-200'
+                                            : speed > 0
+                                                ? 'text-green-600 dark:text-green-400'
+                                                : 'text-slate-400 dark:text-slate-500'
+                                    }`}>
+                                        {speed}/s
+                                    </span>
+                                    {/* Entry count column - fixed width for alignment */}
+                                    <span className={`text-xs font-mono tabular-nums w-12 text-right flex-shrink-0 ml-2 px-1.5 py-0.5 rounded ${
                                         isSelected
                                             ? 'bg-purple-600 text-purple-100'
                                             : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
@@ -776,7 +776,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                             <div
                                                 className="vlg-cell"
                                                 style={{ flex: 1, minWidth: 200, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                title={entry.data}
                                             >
                                                 <StreamContentCell data={entry.data} />
                                             </div>

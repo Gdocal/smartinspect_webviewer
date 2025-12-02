@@ -351,6 +351,7 @@ interface LogState {
 
     // Stream data
     streams: Record<string, StreamEntry[]>;
+    streamTotalReceived: Record<string, number>; // Total entries received per channel (for speedometer)
     streamMaxEntries: number;
 
     // UI state
@@ -528,6 +529,7 @@ export const useLogStore = create<LogState>((set, get) => ({
 
     // Streams
     streams: {},
+    streamTotalReceived: {},
     streamMaxEntries: 1000,
 
     // UI
@@ -797,16 +799,21 @@ export const useLogStore = create<LogState>((set, get) => ({
             updated = channelEntries.concat(newEntry);
         }
 
+        // Increment total received counter for speedometer
+        const newTotal = (state.streamTotalReceived[channel] || 0) + 1;
+
         return {
-            streams: { ...state.streams, [channel]: updated }
+            streams: { ...state.streams, [channel]: updated },
+            streamTotalReceived: { ...state.streamTotalReceived, [channel]: newTotal }
         };
     }),
 
     clearStream: (channel) => set((state) => ({
-        streams: { ...state.streams, [channel]: [] }
+        streams: { ...state.streams, [channel]: [] },
+        streamTotalReceived: { ...state.streamTotalReceived, [channel]: 0 }
     })),
 
-    clearAllStreams: () => set({ streams: {} }),
+    clearAllStreams: () => set({ streams: {}, streamTotalReceived: {} }),
 
     // Panel visibility
     setShowDetailPanel: (show) => set({ showDetailPanel: show }),

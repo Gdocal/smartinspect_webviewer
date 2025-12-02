@@ -4,6 +4,26 @@
 
 import { useMemo, useState, useCallback } from 'react';
 import { useLogStore, LogEntryType } from '../store/logStore';
+import { JsonView, darkStyles } from 'react-json-view-lite';
+import 'react-json-view-lite/dist/index.css';
+
+// Custom dark theme matching our UI
+const jsonStyles = {
+    ...darkStyles,
+    container: 'json-view-container',
+    basicChildStyle: 'json-view-child',
+    label: 'json-view-label',
+    nullValue: 'json-view-null',
+    undefinedValue: 'json-view-undefined',
+    stringValue: 'json-view-string',
+    booleanValue: 'json-view-boolean',
+    numberValue: 'json-view-number',
+    otherValue: 'json-view-other',
+    punctuation: 'json-view-punctuation',
+    expandIcon: 'json-view-expand',
+    collapseIcon: 'json-view-collapse',
+    collapsedContent: 'json-view-collapsed',
+};
 
 function decodeData(data: string | undefined, encoding: string | undefined): string {
     if (!data) return '';
@@ -33,9 +53,13 @@ function DataViewer({ data, encoding, entryType, wordWrap }: { data?: string; en
         try {
             const parsed = JSON.parse(decodedData);
             return (
-                <pre className={`text-xs font-mono bg-slate-900 text-green-400 p-3 rounded ${wrapClass}`}>
-                    {JSON.stringify(parsed, null, 2)}
-                </pre>
+                <div className="text-xs font-mono bg-slate-900 p-3 rounded overflow-auto json-viewer-wrapper">
+                    <JsonView
+                        data={parsed}
+                        style={jsonStyles}
+                        shouldExpandNode={() => true}
+                    />
+                </div>
             );
         } catch {
             // Not valid JSON, show as text
