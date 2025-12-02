@@ -44,14 +44,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         frozenSelectedId: number | null;
     }>>({});
 
-    // Playback speed control state
-    const [playbackSpeed, setPlaybackSpeed] = useState(1.0); // 1.0 = real-time
+    // Slow mode playback control - absolute rate (entries/sec)
+    const [isSlowMode, setIsSlowMode] = useState(false);
+    const [displayRate, setDisplayRate] = useState(10); // 1-30 entries/sec when in slow mode
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
-    const [bufferDropCount, setBufferDropCount] = useState(0);
-    const [playbackDisplayEntries, setPlaybackDisplayEntries] = useState<StreamEntry[]>([]);
-    const lastProcessedIndexRef = useRef(0); // Track last processed entry from live stream
+    const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
+    const lastProcessedRef = useRef(0); // Track last processed entry from live stream
 
-    // Speedometer - track events per second per channel
+    // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
     const speedCounterRef = useRef<Record<string, { count: number; timestamp: number }>>({});
 
@@ -100,23 +100,36 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     const enterSnapshotMode = useCallback(() => {
         if (!selectedChannel) return;
-        const liveEntries = streams[selectedChannel] || [];
 
-        // Use React's state setter to avoid lag - no deep copy needed
-        // The array reference itself is stable enough since we're just reading from it
+        // Clear any buffering state first
+        setPlaybackBuffer([]);
+        lastProcessedRef.current = 0;
+
+        // Snapshot current displayed entries (use slow mode display if active, otherwise live)
+        const entriesToSnapshot = isSlowMode
+            ? slowModeDisplayEntries
+            : (streams[selectedChannel] || []);
+
         setSnapshotMode(prev => ({ ...prev, [selectedChannel]: true }));
         setSnapshots(prev => ({
             ...prev,
             [selectedChannel]: {
-                entries: liveEntries, // Use reference directly - no deep copy
+                entries: [...entriesToSnapshot], // Shallow copy for stability
                 capturedAt: new Date(),
                 frozenSelectedId: selectedEntryId
             }
         }));
-    }, [selectedChannel, streams, selectedEntryId]);
+    }, [selectedChannel, streams, selectedEntryId, isSlowMode, slowModeDisplayEntries]);
 
     const exitSnapshotMode = useCallback(() => {
         if (!selectedChannel) return;
+
+        // Clean exit: reset all playback state
+        setPlaybackBuffer([]);
+        const liveEntries = streams[selectedChannel] || [];
+        lastProcessedRef.current = liveEntries.length;
+        setSlowModeDisplayEntries(liveEntries);
+
         setSnapshotMode(prev => ({ ...prev, [selectedChannel]: false }));
         setSnapshots(prev => {
             const newSnapshots = { ...prev };
@@ -126,27 +139,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         // Re-enable auto-scroll when exiting snapshot
         setAutoScroll(true);
         setStuckToBottom(true);
-    }, [selectedChannel]);
+    }, [selectedChannel, streams]);
 
-    // Playback buffer constants and logic
+    // Playback buffer constant
     const PLAYBACK_BUFFER_MAX = 1000;
-    const PLAYBACK_INTERVAL_MS = 100; // Check buffer every 100ms
-
-    // Add entry to playback buffer (called when new entry arrives and speed < 1)
-    const addToPlaybackBuffer = useCallback((entry: StreamEntry) => {
-        setPlaybackBuffer(prev => {
-            const updated = [...prev, entry];
-
-            // If buffer overflow, drop oldest entries
-            if (updated.length > PLAYBACK_BUFFER_MAX) {
-                const dropped = updated.length - PLAYBACK_BUFFER_MAX;
-                setBufferDropCount(c => c + dropped);
-                return updated.slice(-PLAYBACK_BUFFER_MAX);
-            }
-
-            return updated;
-        });
-    }, []);
 
     // Clear selected stream only
     const handleClearSelected = useCallback(() => {
@@ -168,7 +164,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     const channels = Object.keys(streams);
 
-    // Get source entries - either from snapshot, playback buffer, or live stream
+    // Get source entries - either from snapshot, slow mode display, or live stream
     const sourceEntries = useMemo(() => {
         if (!selectedChannel) return [];
 
@@ -177,14 +173,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             return currentSnapshot.entries;
         }
 
-        // Slow playback mode (< 1x): use buffered display entries
-        if (playbackSpeed < 1) {
-            return playbackDisplayEntries;
+        // Slow mode: use buffered display entries
+        if (isSlowMode) {
+            return slowModeDisplayEntries;
         }
 
-        // Normal/fast mode (>= 1x): direct pass-through from live stream
+        // Live mode: direct pass-through from live stream
         return streams[selectedChannel] || [];
-    }, [selectedChannel, isInSnapshotMode, currentSnapshot, playbackSpeed, playbackDisplayEntries, streams]);
+    }, [selectedChannel, isInSnapshotMode, currentSnapshot, isSlowMode, slowModeDisplayEntries, streams]);
 
     // Auto-select first channel
     if (!selectedChannel && channels.length > 0) {
@@ -233,90 +229,81 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         return () => clearTimeout(cleanupTimer);
     }, [isInSnapshotMode, currentSnapshot, exitSnapshotMode]);
 
-    // Feed new entries into playback buffer when in slow mode
+    // Ref to track previous slow mode state for transitions
+    const wasSlowModeRef = useRef(false);
+
+    // Simple buffering effect - buffers new entries when in slow mode
     useEffect(() => {
         if (!selectedChannel) return;
         if (isInSnapshotMode) return; // Don't buffer in snapshot mode
 
         const liveEntries = streams[selectedChannel] || [];
 
-        if (playbackSpeed >= 1) {
-            // Normal/fast mode: reset playback state and show live stream directly
-            lastProcessedIndexRef.current = 0;
-            setPlaybackBuffer([]);
-            setBufferDropCount(0);
-            setPlaybackDisplayEntries(liveEntries);
+        if (!isSlowMode) {
+            // Live mode: reset state and sync to live stream
+            if (wasSlowModeRef.current) {
+                // Just exited slow mode - clear buffer
+                setPlaybackBuffer([]);
+                lastProcessedRef.current = 0;
+            }
+            setSlowModeDisplayEntries(liveEntries);
+            wasSlowModeRef.current = false;
             return;
         }
 
-        // Entering slow mode for the first time - initialize with current entries
-        if (lastProcessedIndexRef.current === 0 && liveEntries.length > 0) {
-            setPlaybackDisplayEntries(liveEntries);
-            lastProcessedIndexRef.current = liveEntries.length;
+        // Just entered slow mode - capture current state
+        if (!wasSlowModeRef.current) {
+            wasSlowModeRef.current = true;
+            lastProcessedRef.current = liveEntries.length;
+            setPlaybackBuffer([]);
+            setSlowModeDisplayEntries(liveEntries);
             return;
         }
 
         // Already in slow mode: buffer new entries
-        const newEntries = liveEntries.slice(lastProcessedIndexRef.current);
-
-        if (newEntries.length > 0) {
-            newEntries.forEach(addToPlaybackBuffer);
-            lastProcessedIndexRef.current = liveEntries.length;
+        const newCount = liveEntries.length - lastProcessedRef.current;
+        if (newCount > 0) {
+            const newEntries = liveEntries.slice(lastProcessedRef.current);
+            setPlaybackBuffer(prev => {
+                const updated = [...prev, ...newEntries];
+                // Ring buffer: keep last 1000
+                return updated.length > PLAYBACK_BUFFER_MAX
+                    ? updated.slice(-PLAYBACK_BUFFER_MAX)
+                    : updated;
+            });
+            lastProcessedRef.current = liveEntries.length;
         }
-    }, [selectedChannel, streams, playbackSpeed, isInSnapshotMode, addToPlaybackBuffer]);
+    }, [selectedChannel, streams, isSlowMode, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
 
-    // Playback consumption loop - consumes from buffer at controlled rate
+    // Simple consumption timer - displays entries at fixed rate (displayRate entries/sec)
     useEffect(() => {
-        if (playbackSpeed >= 1) return; // No buffering needed at normal/fast speed
-        if (playbackBuffer.length === 0) return; // Nothing to consume
+        if (!isSlowMode) return; // Only consume in slow mode
         if (isInSnapshotMode) return; // Don't consume in snapshot mode
 
-        // Calculate entries to consume per interval
-        // Example: 0.5x speed at 100ms interval = consume 0.5 * 0.1 = 0.05 entries per interval
-        // We need to accumulate to at least 1 entry before consuming
-        const baseEntriesPerSecond = playbackSpeed; // e.g., 0.5 entries/sec at 0.5x speed
-        const entriesPerInterval = baseEntriesPerSecond * (PLAYBACK_INTERVAL_MS / 1000);
+        const msPerEntry = 1000 / displayRate; // e.g., 5/sec = 200ms per entry
 
-        let accumulator = 0;
-
-        const interval = setInterval(() => {
-            accumulator += entriesPerInterval;
-
-            if (accumulator >= 1) {
-                const entriesToConsume = Math.floor(accumulator);
-                accumulator -= entriesToConsume;
-
-                setPlaybackBuffer(prev => {
-                    if (prev.length === 0) return prev;
-
-                    // Take entries from buffer
-                    const consumed = prev.slice(0, entriesToConsume);
-                    const remaining = prev.slice(entriesToConsume);
-
-                    // Add consumed entries to display
-                    setPlaybackDisplayEntries(current => {
-                        const updated = [...current, ...consumed];
-                        // Apply same 1000 limit as buffer
-                        if (updated.length > PLAYBACK_BUFFER_MAX) {
-                            return updated.slice(-PLAYBACK_BUFFER_MAX);
-                        }
-                        return updated;
-                    });
-
-                    return remaining;
+        const timer = setInterval(() => {
+            setPlaybackBuffer(prev => {
+                if (prev.length === 0) return prev;
+                const [entry, ...rest] = prev;
+                setSlowModeDisplayEntries(current => {
+                    const updated = [...current, entry];
+                    return updated.length > PLAYBACK_BUFFER_MAX
+                        ? updated.slice(-PLAYBACK_BUFFER_MAX)
+                        : updated;
                 });
-            }
-        }, PLAYBACK_INTERVAL_MS);
+                return rest;
+            });
+        }, msPerEntry);
 
-        return () => clearInterval(interval);
-    }, [playbackSpeed, playbackBuffer.length, isInSnapshotMode, PLAYBACK_INTERVAL_MS, PLAYBACK_BUFFER_MAX]);
+        return () => clearInterval(timer);
+    }, [isSlowMode, displayRate, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
 
     // Reset playback state when channel changes
     useEffect(() => {
-        lastProcessedIndexRef.current = 0;
+        lastProcessedRef.current = 0;
         setPlaybackBuffer([]);
-        setBufferDropCount(0);
-        setPlaybackDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
+        setSlowModeDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
     }, [selectedChannel, streams]);
 
     // Speedometer - calculate events per second for each channel using interval
@@ -586,58 +573,46 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         </svg>
                     </div>
 
-                    {/* Playback speed slider with logarithmic scale */}
+                    {/* Live/Slow mode toggle and rate control */}
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 dark:bg-slate-700/50 rounded border border-slate-200 dark:border-slate-600">
-                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="1"
-                            value={(() => {
-                                // Convert speed to logarithmic slider position
-                                // 0-70: 0.1x to 1x (logarithmic)
-                                // 70-100: 1x to 10x (logarithmic)
-                                if (playbackSpeed <= 1) {
-                                    return (Math.log10(playbackSpeed) - Math.log10(0.1)) / (Math.log10(1) - Math.log10(0.1)) * 70;
-                                } else {
-                                    return 70 + (Math.log10(playbackSpeed) - Math.log10(1)) / (Math.log10(10) - Math.log10(1)) * 30;
-                                }
-                            })()}
-                            onChange={(e) => {
-                                // Convert slider position to logarithmic speed
-                                const position = parseFloat(e.target.value);
-                                let speed: number;
-                                if (position <= 70) {
-                                    // 0-70: map to 0.1x - 1x logarithmically
-                                    const t = position / 70;
-                                    speed = Math.pow(10, Math.log10(0.1) + t * (Math.log10(1) - Math.log10(0.1)));
-                                } else {
-                                    // 70-100: map to 1x - 10x logarithmically
-                                    const t = (position - 70) / 30;
-                                    speed = Math.pow(10, Math.log10(1) + t * (Math.log10(10) - Math.log10(1)));
-                                }
-                                setPlaybackSpeed(Math.round(speed * 10) / 10);
-                            }}
-                            className="w-32 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                            title="Playback speed control (logarithmic scale)"
-                        />
-                        <span className="text-xs text-slate-600 dark:text-slate-300 min-w-[40px] font-mono tabular-nums">{playbackSpeed.toFixed(1)}x</span>
+                        {/* Live/Slow toggle button */}
+                        <button
+                            onClick={() => setIsSlowMode(!isSlowMode)}
+                            className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
+                                isSlowMode
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                    : 'bg-green-500 text-white hover:bg-green-600'
+                            }`}
+                            title={isSlowMode ? 'Switch to live mode' : 'Switch to slow mode'}
+                        >
+                            {isSlowMode ? 'Slow' : 'Live'}
+                        </button>
+
+                        {/* Rate slider (only when in slow mode) */}
+                        {isSlowMode && (
+                            <>
+                                <input
+                                    type="range"
+                                    min="1"
+                                    max="30"
+                                    value={displayRate}
+                                    onChange={(e) => setDisplayRate(Number(e.target.value))}
+                                    className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                    title="Display rate (entries per second)"
+                                />
+                                <span className="text-xs text-slate-600 dark:text-slate-300 min-w-[32px] font-mono tabular-nums">
+                                    {displayRate}/s
+                                </span>
+                                <span className="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap font-mono tabular-nums">
+                                    Buf: {playbackBuffer.length}/1000
+                                </span>
+                            </>
+                        )}
 
                         {/* Speedometer - show current stream speed */}
                         {selectedChannel && streamSpeed[selectedChannel] !== undefined && (
                             <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap font-mono tabular-nums">
                                 {streamSpeed[selectedChannel].toFixed(1)}/s
-                            </span>
-                        )}
-
-                        {/* Buffer indicator (show when buffering OR when in slow mode) */}
-                        {playbackSpeed < 1 && (
-                            <span className="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                                Buf: {playbackBuffer.length}/1000
-                                {bufferDropCount > 0 && ` (-${bufferDropCount})`}
                             </span>
                         )}
                     </div>
