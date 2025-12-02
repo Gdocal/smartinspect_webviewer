@@ -189,6 +189,22 @@ export interface LegacyHighlightCondition {
 }
 
 // View = predefined filter set with highlighting rules
+// VirtualLogGrid column configuration (replaces AG Grid ColumnState)
+export type VlgColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content';
+
+export interface VlgColumnConfig {
+    id: string;
+    field: string;
+    header: string;
+    type: VlgColumnType;
+    width?: number;
+    minWidth?: number;
+    flex?: number;
+    hidden?: boolean;
+    pinned?: 'left' | 'right';
+    align?: 'left' | 'center' | 'right';
+}
+
 export interface View {
     id: string;
     name: string;
@@ -197,7 +213,8 @@ export interface View {
     filter: Filter;
     highlightRules: HighlightRule[];
     useGlobalHighlights: boolean; // Whether to also apply global highlight rules
-    columnState?: ColumnState[];
+    columnState?: ColumnState[]; // Legacy AG Grid column state (kept for backwards compatibility)
+    columnConfig?: VlgColumnConfig[]; // VirtualLogGrid column configuration
     autoScroll: boolean;
     alternatingRows?: boolean; // Show alternating row colors for better readability
 }
@@ -418,6 +435,11 @@ interface LogState {
     // View editing
     setEditingViewId: (id: string | null) => void;
 
+    // Runtime view state (not persisted)
+    viewStuckToBottom: Map<string, boolean>;
+    setViewStuckToBottom: (viewId: string, stuckToBottom: boolean) => void;
+    getViewStuckToBottom: (viewId: string) => boolean;
+
     // Theme
     setTheme: (theme: 'light' | 'dark') => void;
     toggleTheme: () => void;
@@ -519,6 +541,9 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
     editingViewId: null,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
+
+    // Runtime view state (not persisted - tracks stuckToBottom per view)
+    viewStuckToBottom: new Map<string, boolean>(),
 
     // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
     detailPanelHeightPercent: 25,
@@ -790,6 +815,17 @@ export const useLogStore = create<LogState>((set, get) => ({
 
     // View editing
     setEditingViewId: (id) => set({ editingViewId: id }),
+
+    // Runtime view state (stuckToBottom per view)
+    setViewStuckToBottom: (viewId, stuckToBottom) => set((state) => {
+        const newMap = new Map(state.viewStuckToBottom);
+        newMap.set(viewId, stuckToBottom);
+        return { viewStuckToBottom: newMap };
+    }),
+    getViewStuckToBottom: (viewId) => {
+        const state = get();
+        return state.viewStuckToBottom.get(viewId) ?? true; // Default to true (at bottom)
+    },
 
     // Theme
     setTheme: (theme) => {

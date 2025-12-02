@@ -15,12 +15,16 @@ export function FilterBar() {
         activeViewId,
         setEditingViewId,
         views,
-        updateView
+        updateView,
+        viewStuckToBottom
     } = useLogStore();
 
     // Get the active view's autoScroll setting
     const activeView = views.find(v => v.id === activeViewId);
     const autoScroll = activeView?.autoScroll ?? true;
+
+    // Get the stuckToBottom state for the active view (for 3-state button)
+    const stuckToBottom = activeViewId ? (viewStuckToBottom.get(activeViewId) ?? true) : true;
 
     const setAutoScroll = (value: boolean) => {
         if (activeViewId) {
@@ -80,16 +84,24 @@ export function FilterBar() {
                     )}
                 </button>
 
-                {/* AutoScroll button - per view */}
+                {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                 <button
                     onClick={() => setAutoScroll(!autoScroll)}
                     disabled={!activeViewId}
                     className={`p-1.5 rounded transition-colors ${
-                        autoScroll
-                            ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
-                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        !autoScroll
+                            ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            : stuckToBottom
+                                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                                : 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800'
                     }`}
-                    title={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+                    title={
+                        !autoScroll
+                            ? 'Enable auto-scroll'
+                            : stuckToBottom
+                                ? 'Auto-scroll active (click to disable)'
+                                : 'Auto-scroll paused - scroll to bottom to resume (click to disable)'
+                    }
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />

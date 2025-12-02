@@ -4,11 +4,10 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter } from '../store/logStore';
+import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter, VlgColumnConfig } from '../store/logStore';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 import { ViewGrid } from './ViewGrid';
-import { ColumnState, FilterModel } from 'ag-grid-community';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 
@@ -811,7 +810,7 @@ export function ViewTabs() {
             useGlobalHighlights: view.useGlobalHighlights,
             autoScroll: view.autoScroll,
             alternatingRows: view.alternatingRows,
-            columnState: view.columnState ? [...view.columnState] : undefined
+            columnConfig: view.columnConfig ? [...view.columnConfig] : undefined
         };
         addView(clonedViewData, true); // Activate the cloned view
         markDirty(); // Mark project as dirty when view is cloned
@@ -1088,19 +1087,15 @@ export function ViewTabs() {
  *
  * Each view gets its own ViewGrid component that:
  * - Stays mounted but hidden when not active (CSS visibility)
- * - Maintains its own AG Grid column filter state
+ * - Maintains its own column state
  * - Preserves scroll position when switching tabs
  */
 interface ViewGridContainerProps {
-    onColumnStateChange?: (viewId: string, state: ColumnState[]) => void;
-    onFilterModelChange?: (viewId: string, model: FilterModel) => void;
-    onScrollChange?: (viewId: string, scrollTop: number) => void;
+    onColumnStateChange?: (viewId: string, columns: VlgColumnConfig[]) => void;
 }
 
 export function ViewGridContainer({
-    onColumnStateChange,
-    onFilterModelChange,
-    onScrollChange
+    onColumnStateChange
 }: ViewGridContainerProps) {
     const { views, activeViewId, isStreamsMode } = useLogStore();
     const [mountedViews, setMountedViews] = useState<Set<string>>(new Set());
@@ -1123,8 +1118,6 @@ export function ViewGridContainer({
                         view={view}
                         isActive={false}
                         onColumnStateChange={onColumnStateChange}
-                        onFilterModelChange={onFilterModelChange}
-                        onScrollChange={onScrollChange}
                     />
                 ))}
             </div>
@@ -1146,8 +1139,6 @@ export function ViewGridContainer({
                         view={view}
                         isActive={isActive}
                         onColumnStateChange={onColumnStateChange}
-                        onFilterModelChange={onFilterModelChange}
-                        onScrollChange={onScrollChange}
                     />
                 );
             })}

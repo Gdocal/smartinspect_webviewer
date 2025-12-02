@@ -3,35 +3,16 @@
  * Left: Stream channel list (30%)
  * Right: Entries table for selected stream (70%)
  * Uses shared DetailPanel for entry details
- * Uses AG Grid Enterprise for consistent look with All Logs view
+ * Uses VirtualLogGrid for consistent look with All Logs view
  */
 
-import { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
-import { AgGridReact } from 'ag-grid-react';
-import {
-    ColDef,
-    GridReadyEvent,
-    ICellRendererParams,
-    RowClickedEvent,
-    GridApi,
-    SideBarDef,
-    ModuleRegistry,
-    AllCommunityModule
-} from 'ag-grid-community';
-import { AllEnterpriseModule, LicenseManager } from 'ag-grid-enterprise';
-
-// Register AG Grid modules (required for v34+)
-ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
-
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLogStore, StreamEntry } from '../store/logStore';
 import { HighlightRulesPanel } from './HighlightRulesPanel';
 import { format } from 'date-fns';
-
-// Set license key if available
-const licenseKey = import.meta.env.VITE_AG_GRID_LICENSE;
-if (licenseKey) {
-    LicenseManager.setLicenseKey(licenseKey);
-}
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useAutoScroll } from './VirtualLogGrid/useAutoScroll';
+import { useScrollDetection } from './VirtualLogGrid/useScrollDetection';
 
 // Format timestamp for display
 function formatTime(timestamp: string): string {
@@ -42,52 +23,24 @@ function formatTime(timestamp: string): string {
     }
 }
 
-// Content cell renderer - truncate long content
-const ContentCellRenderer = memo(function ContentCellRenderer(props: ICellRendererParams<StreamEntry>) {
-    const data = props.value as string;
-    if (!data) return null;
-
-    // Try to detect JSON and show preview
-    const trimmed = data.trim();
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-        try {
-            const parsed = JSON.parse(trimmed);
-            const preview = JSON.stringify(parsed).substring(0, 100);
-            return (
-                <span className="font-mono text-xs text-slate-700 dark:text-slate-200">
-                    {preview}{preview.length >= 100 ? '...' : ''}
-                </span>
-            );
-        } catch {
-            // Not valid JSON
-        }
-    }
-
-    return (
-        <span className="text-xs text-slate-800 dark:text-slate-100">
-            {data.length > 100 ? data.substring(0, 100) + '...' : data}
-        </span>
-    );
-});
-
 interface StreamsViewProps {
     onSelectEntry: (entry: StreamEntry | null) => void;
     selectedEntryId: number | null;
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, clearAllStreams, clearStream, theme, streamsVersion, getPendingStreamEntries } = useLogStore();
+    const { streams, clearAllStreams, clearStream, theme } = useLogStore();
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [paused, setPaused] = useState(false);
     const [autoScroll, setAutoScroll] = useState(true);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
-    const gridApiRef = useRef<GridApi | null>(null);
-    const lastEntryCountRef = useRef(0);
 
-    // Transaction API: track initialization and channel changes
-    const isInitializedRef = useRef(false);
-    const lastChannelRef = useRef<string | null>(null);
+    // Grid container ref for virtualization
+    const parentRef = useRef<HTMLDivElement>(null);
+
+    // Internal state for smooth auto-scroll
+    const [stuckToBottom, setStuckToBottom] = useState(true);
 
     // Resizable panel width
     const [listWidth, setListWidth] = useState(280);
@@ -153,14 +106,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Filter entries
     const filteredEntries = useMemo(() => {
-        if (paused) {
-            // When paused, don't update the list
-            return [];
-        }
         if (!filterText) return entries;
         const lower = filterText.toLowerCase();
         return entries.filter(e => e.data.toLowerCase().includes(lower));
-    }, [entries, filterText, paused]);
+    }, [entries, filterText]);
 
     // Store paused entries separately
     const [pausedEntries, setPausedEntries] = useState<StreamEntry[]>([]);
@@ -170,184 +119,89 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         if (paused) {
             setPausedEntries(filteredEntries);
         }
-    }, [paused]);
+    }, [paused, filteredEntries]);
 
     const displayedEntries = paused ? pausedEntries : filteredEntries;
 
-    // Auto-scroll to bottom when new entries arrive
-    useEffect(() => {
-        if (autoScroll && !paused && gridApiRef.current && displayedEntries.length > lastEntryCountRef.current) {
-            setTimeout(() => {
-                if (gridApiRef.current) {
-                    gridApiRef.current.ensureIndexVisible(displayedEntries.length - 1, 'bottom');
-                }
-            }, 50);
-        }
-        lastEntryCountRef.current = displayedEntries.length;
-    }, [displayedEntries.length, autoScroll, paused]);
+    // Row height for virtualization
+    const ROW_HEIGHT = 32;
 
-    // Column definitions - Content first, Type, Time at the end
-    const columnDefs = useMemo<ColDef<StreamEntry>[]>(() => [
-        {
-            headerName: 'Content',
-            field: 'data',
-            flex: 1,
-            minWidth: 200,
-            cellRenderer: ContentCellRenderer,
-            sortable: false,
-            filter: 'agTextColumnFilter',
+    // Virtualization
+    const rowVirtualizer = useVirtualizer({
+        count: displayedEntries.length,
+        getScrollElement: () => parentRef.current,
+        estimateSize: () => ROW_HEIGHT,
+        overscan: 20,
+    });
+
+    // Effective autoscroll = user wants it AND scrollbar is at bottom
+    const effectiveAutoScroll = autoScroll && stuckToBottom && !paused;
+
+    // Smooth auto-scroll hook
+    const {
+        markUserScroll,
+        markStuckToBottom,
+        isProgrammaticScroll,
+        instantScrollToBottom,
+    } = useAutoScroll({
+        scrollElement: parentRef.current,
+        entriesCount: displayedEntries.length,
+        autoScrollEnabled: effectiveAutoScroll,
+        onUserScrollUp: () => {
+            setStuckToBottom(false);
         },
-        {
-            headerName: 'Type',
-            field: 'streamType',
-            width: 100,
-            minWidth: 60,
-            filter: 'agTextColumnFilter',
-            cellClass: 'text-xs text-slate-600 dark:text-slate-300',
-        },
-        {
-            headerName: 'Time',
-            field: 'timestamp',
-            width: 110,
-            minWidth: 90,
-            valueFormatter: (params) => formatTime(params.value),
-            filter: 'agTextColumnFilter',
-        },
-    ], []);
+    });
 
-    const defaultColDef = useMemo<ColDef>(() => ({
-        resizable: true,
-        sortable: false,
-        filter: true,
-        suppressHeaderMenuButton: true,
-    }), []);
+    // Scroll detection hook
+    useScrollDetection({
+        scrollElement: parentRef.current,
+        onUserScrollUp: useCallback(() => {
+            markUserScroll();
+            setStuckToBottom(false);
+        }, [markUserScroll]),
+        onScrollToBottom: useCallback(() => {
+            markStuckToBottom();
+            setStuckToBottom(true);
+        }, [markStuckToBottom]),
+        isProgrammaticScroll,
+    });
 
-    // Sidebar with column tool panel - same as LogGrid
-    const sideBar = useMemo<SideBarDef>(() => ({
-        toolPanels: [
-            {
-                id: 'columns',
-                labelDefault: 'Columns',
-                labelKey: 'columns',
-                iconKey: 'columns',
-                toolPanel: 'agColumnsToolPanel',
-                toolPanelParams: {
-                    suppressRowGroups: true,
-                    suppressValues: true,
-                    suppressPivots: true,
-                    suppressPivotMode: true,
-                },
-            },
-            {
-                id: 'filters',
-                labelDefault: 'Filters',
-                labelKey: 'filters',
-                iconKey: 'filter',
-                toolPanel: 'agFiltersToolPanel',
-            },
-        ],
-        defaultToolPanel: '',
-    }), []);
+    // Handler for "Jump to bottom" button
+    const handleJumpToBottom = useCallback(() => {
+        setStuckToBottom(true);
+        markStuckToBottom();
+        instantScrollToBottom();
+    }, [markStuckToBottom, instantScrollToBottom]);
 
-    const onGridReady = useCallback((params: GridReadyEvent) => {
-        gridApiRef.current = params.api;
-
-        // Set initial data using setGridOption (not rowData prop)
-        params.api.setGridOption('rowData', displayedEntries);
-
-        // Mark as initialized and track current channel
-        isInitializedRef.current = true;
-        lastChannelRef.current = selectedChannel;
-    }, [displayedEntries, selectedChannel]);
+    // Handle row click
+    const handleRowClick = useCallback((entry: StreamEntry) => {
+        onSelectEntry(entry);
+    }, [onSelectEntry]);
 
     // Handle keyboard navigation
-    const handleKeyDown = useCallback((event: KeyboardEvent) => {
-        if (!gridApiRef.current) return;
-
-        const api = gridApiRef.current;
-        const focusedCell = api.getFocusedCell();
-
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-
-            const rowCount = api.getDisplayedRowCount();
-            if (rowCount === 0) return;
-
-            let currentIndex = focusedCell?.rowIndex ?? -1;
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const currentIndex = displayedEntries.findIndex(entry => entry.id === selectedEntryId);
             let newIndex: number;
 
-            if (event.key === 'ArrowDown') {
-                newIndex = currentIndex < rowCount - 1 ? currentIndex + 1 : currentIndex;
+            if (e.key === 'ArrowDown') {
+                newIndex = currentIndex < displayedEntries.length - 1 ? currentIndex + 1 : currentIndex;
             } else {
                 newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
             }
 
-            // Navigate to new row
-            api.setFocusedCell(newIndex, 'data');
-            api.ensureIndexVisible(newIndex);
-
-            // Select the row and update details
-            const rowNode = api.getDisplayedRowAtIndex(newIndex);
-            if (rowNode?.data) {
-                onSelectEntry(rowNode.data);
+            if (newIndex >= 0 && newIndex < displayedEntries.length) {
+                const entry = displayedEntries[newIndex];
+                onSelectEntry(entry);
+                rowVirtualizer.scrollToIndex(newIndex, { align: 'auto' });
             }
         }
-    }, [onSelectEntry]);
-
-    // Add keyboard event listener to grid container
-    useEffect(() => {
-        const gridContainer = document.querySelector('.streams-grid-container');
-        if (gridContainer) {
-            gridContainer.addEventListener('keydown', handleKeyDown as EventListener);
-            return () => gridContainer.removeEventListener('keydown', handleKeyDown as EventListener);
-        }
-    }, [handleKeyDown]);
-
-    const onRowClicked = useCallback((event: RowClickedEvent<StreamEntry>) => {
-        if (event.data) {
-            onSelectEntry(event.data);
-        }
-    }, [onSelectEntry]);
-
-    const getRowStyle = useCallback((params: { data?: StreamEntry }) => {
-        if (params.data?.id === selectedEntryId) {
-            return { backgroundColor: '#dbeafe' };
-        }
-        return undefined;
-    }, [selectedEntryId]);
-
-    // Transaction-based updates for AG Grid performance optimization
-    // This effect handles incremental updates via applyTransactionAsync instead of rowData prop
-    useEffect(() => {
-        const api = gridApiRef.current;
-        if (!api || !isInitializedRef.current || !selectedChannel || paused) return;
-
-        // Check if channel changed - if so, do full refresh
-        const channelChanged = lastChannelRef.current !== selectedChannel;
-        if (channelChanged) {
-            // Channel changed - full refresh needed
-            api.setGridOption('rowData', displayedEntries);
-            lastChannelRef.current = selectedChannel;
-            return;
-        }
-
-        // Get pending entries for this channel
-        const pendingEntries = getPendingStreamEntries(selectedChannel);
-
-        // Apply transaction for new entries (no filtering needed for streams - already per-channel)
-        if (pendingEntries.length > 0) {
-            // Apply filter if there's a filter text
-            const toAdd = filterText
-                ? pendingEntries.filter(e => e.data.toLowerCase().includes(filterText.toLowerCase()))
-                : pendingEntries;
-
-            if (toAdd.length > 0) {
-                api.applyTransactionAsync({ add: toAdd });
-            }
-        }
-    }, [streamsVersion, selectedChannel, displayedEntries, getPendingStreamEntries, paused, filterText]);
+    }, [displayedEntries, selectedEntryId, onSelectEntry, rowVirtualizer]);
 
     const totalCount = channels.reduce((sum, ch) => sum + (streams[ch]?.length || 0), 0);
+
+    const virtualItems = rowVirtualizer.getVirtualItems();
 
     return (
         <div className="h-full flex">
@@ -488,15 +342,23 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             )}
                         </button>
 
-                        {/* AutoScroll button */}
+                        {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                         <button
                             onClick={() => setAutoScroll(!autoScroll)}
                             className={`p-1.5 rounded transition-colors ${
-                                autoScroll
-                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/60'
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                !autoScroll
+                                    ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    : stuckToBottom
+                                        ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/60'
+                                        : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
                             }`}
-                            title={autoScroll ? 'Disable auto-scroll' : 'Enable auto-scroll'}
+                            title={
+                                !autoScroll
+                                    ? 'Enable auto-scroll'
+                                    : stuckToBottom
+                                        ? 'Auto-scroll active (click to disable)'
+                                        : 'Auto-scroll paused - scroll to bottom to resume'
+                            }
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -532,36 +394,118 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                 {/* Entries grid */}
                 {selectedChannel ? (
-                    <div className={`flex-1 streams-grid-container ${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }} tabIndex={0}>
-                        <AgGridReact
-                            theme="legacy"
-                            columnDefs={columnDefs}
-                            defaultColDef={defaultColDef}
-                            getRowId={(params) => String(params.data.id)}
-                            getRowStyle={getRowStyle}
-                            onGridReady={onGridReady}
-                            onRowClicked={onRowClicked}
-                            // PERFORMANCE OPTIMIZATIONS - same as LogGrid
-                            animateRows={false}
-                            rowSelection={{ mode: 'singleRow', enableClickSelection: true, hideDisabledCheckboxes: true, checkboxes: false }}
-                            sideBar={sideBar}
-                            cellSelection={true}
-                            suppressCellFocus={true}
-                            rowBuffer={50}
-                            suppressColumnVirtualisation={false}
-                            suppressRowVirtualisation={false}
-                            debounceVerticalScrollbar={true}
-                            suppressAnimationFrame={false}
-                            asyncTransactionWaitMillis={50}
-                            tooltipShowDelay={500}
-                            overlayNoRowsTemplate='<span class="text-slate-400">No stream entries</span>'
-                            statusBar={{
-                                statusPanels: [
-                                    { statusPanel: 'agTotalRowCountComponent', align: 'left' },
-                                    { statusPanel: 'agFilteredRowCountComponent', align: 'left' },
-                                ]
+                    <div
+                        className={`flex-1 streams-grid-container virtual-log-grid ${theme === 'dark' ? 'dark' : 'light'}`}
+                        tabIndex={0}
+                        onKeyDown={handleKeyDown}
+                    >
+                        {/* Header row */}
+                        <div className="vlg-header" style={{ display: 'flex', height: 32, borderBottom: '1px solid var(--vlg-border)' }}>
+                            <div className="vlg-header-cell" style={{ flex: 1, minWidth: 200, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                                Content
+                            </div>
+                            <div className="vlg-header-cell" style={{ width: 100, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                                Type
+                            </div>
+                            <div className="vlg-header-cell" style={{ width: 110, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                                Time
+                            </div>
+                        </div>
+
+                        {/* Virtualized body */}
+                        <div
+                            ref={parentRef}
+                            className="vlg-body"
+                            style={{
+                                height: 'calc(100% - 32px)',
+                                overflow: 'auto',
+                                contain: 'strict'
                             }}
-                        />
+                        >
+                            <div
+                                style={{
+                                    height: `${rowVirtualizer.getTotalSize()}px`,
+                                    width: '100%',
+                                    position: 'relative',
+                                }}
+                            >
+                                {virtualItems.map((virtualRow) => {
+                                    const entry = displayedEntries[virtualRow.index];
+                                    const isSelected = entry.id === selectedEntryId;
+                                    const isOdd = virtualRow.index % 2 === 1;
+
+                                    return (
+                                        <div
+                                            key={entry.id}
+                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''}`}
+                                            style={{
+                                                position: 'absolute',
+                                                top: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                height: `${virtualRow.size}px`,
+                                                transform: `translateY(${virtualRow.start}px)`,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                cursor: 'pointer',
+                                            }}
+                                            onClick={() => handleRowClick(entry)}
+                                        >
+                                            {/* Content cell */}
+                                            <div
+                                                className="vlg-cell"
+                                                style={{ flex: 1, minWidth: 200, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                title={entry.data}
+                                            >
+                                                <StreamContentCell data={entry.data} />
+                                            </div>
+                                            {/* Type cell */}
+                                            <div
+                                                className="vlg-cell"
+                                                style={{ width: 100, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--vlg-text-muted)' }}
+                                            >
+                                                {entry.streamType}
+                                            </div>
+                                            {/* Time cell */}
+                                            <div
+                                                className="vlg-cell"
+                                                style={{ width: 110, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                            >
+                                                {formatTime(entry.timestamp)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Status bar */}
+                        <div className="vlg-status-bar" style={{
+                            height: 24,
+                            borderTop: '1px solid var(--vlg-border)',
+                            padding: '0 8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            fontSize: '11px',
+                            color: 'var(--vlg-text-muted)'
+                        }}>
+                            {displayedEntries.length} entries
+                            {filterText && ` (filtered from ${entries.length})`}
+                        </div>
+
+                        {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up */}
+                        {autoScroll && !stuckToBottom && (
+                            <button
+                                onClick={handleJumpToBottom}
+                                className="vlg-jump-to-bottom"
+                                title="Resume auto-scroll"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                </svg>
+                                <span>Resume</span>
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="flex-1 flex items-center justify-center bg-white dark:bg-slate-800">
@@ -580,5 +524,32 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                 <HighlightRulesPanel onClose={() => setShowHighlightRules(false)} />
             )}
         </div>
+    );
+}
+
+// Content cell renderer - detects JSON and shows preview
+function StreamContentCell({ data }: { data: string }) {
+    if (!data) return <span className="vlg-empty-data">-</span>;
+
+    // Try to detect JSON and show preview
+    const trimmed = data.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            const preview = JSON.stringify(parsed).substring(0, 100);
+            return (
+                <span className="font-mono text-xs">
+                    {preview}{preview.length >= 100 ? '...' : ''}
+                </span>
+            );
+        } catch {
+            // Not valid JSON
+        }
+    }
+
+    return (
+        <span className="text-xs">
+            {data.length > 100 ? data.substring(0, 100) + '...' : data}
+        </span>
     );
 }

@@ -13,7 +13,7 @@ export interface VirtualLogGridProps {
   onKeyboardNavigate?: (entryId: number) => void;
 }
 
-export type ColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp';
+export type ColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content';
 
 export interface ColumnConfig {
   id: string;

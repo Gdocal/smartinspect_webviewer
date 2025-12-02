@@ -766,3 +766,87 @@ svg.vlg-menu-icon {
     background: #e2e8f0;
 }
 
+/* Row selected (for detail panel indication) */
+.vlg-row.row-selected {
+    background: rgba(59, 130, 246, 0.15) !important; /* blue-500 with low opacity */
+    box-shadow: inset 3px 0 0 0 #3b82f6; /* blue-500 left border indicator */
+}
+
+.vlg-row.row-selected:hover {
+    background: rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Light theme row-selected */
+.virtual-log-grid.light .vlg-row.row-selected {
+    background: rgba(59, 130, 246, 0.12) !important;
+    box-shadow: inset 3px 0 0 0 #3b82f6;
+}
+
+.virtual-log-grid.light .vlg-row.row-selected:hover {
+    background: rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Row-selected + highlighted - preserve highlight but add left indicator */
+.vlg-row.highlighted.row-selected {
+    box-shadow: inset 3px 0 0 0 #3b82f6 !important;
+}
+
+/* Stream content cell styles */
+.vlg-empty-data {
+    color: var(--vlg-text-muted);
+    font-style: italic;
+}
+
+.vlg-binary-data {
+    color: #f97316; /* orange-500 */
+    font-style: italic;
+}
+
+/* "Jump to Bottom" floating button - appears when autoscroll is paused */
+.vlg-jump-to-bottom {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    background: rgba(59, 130, 246, 0.75); /* blue-500 with more transparency */
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+}
+
+.vlg-jump-to-bottom:hover {
+    background: rgba(37, 99, 235, 0.9); /* blue-600 */
+    transform: translateX(-50%) translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vlg-jump-to-bottom:active {
+    transform: translateX(-50%) translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.vlg-jump-to-bottom svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+/* Light theme jump button */
+.virtual-log-grid.light .vlg-jump-to-bottom {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.virtual-log-grid.light .vlg-jump-to-bottom:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+

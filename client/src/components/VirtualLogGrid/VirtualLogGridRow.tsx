@@ -20,6 +20,8 @@ export interface VirtualLogGridRowProps {
     isLeft: boolean;
     isRight: boolean;
   };
+  /** Whether this row is selected (for detail panel indication) */
+  isRowSelected?: boolean;
 }
 
 // Log entry type to icon mapping - matches ViewGrid
@@ -144,6 +146,20 @@ function getCellValue(entry: LogEntry, field: string): string {
   }
 }
 
+// Stream content cell renderer - truncates and handles binary
+function StreamContentCell({ entry }: { entry: LogEntry }) {
+  if (!entry.data) return <span className="vlg-empty-data">-</span>;
+
+  // Handle binary data
+  if (entry.dataEncoding === 'base64') {
+    return <span className="vlg-binary-data">[Binary]</span>;
+  }
+
+  // Truncate long content
+  const content = entry.data.length > 300 ? entry.data.substring(0, 300) + '...' : entry.data;
+  return <span>{content}</span>;
+}
+
 // Render cell content based on column type
 function renderCell(entry: LogEntry, column: ColumnConfig) {
   switch (column.type) {
@@ -151,6 +167,8 @@ function renderCell(entry: LogEntry, column: ColumnConfig) {
       return <IconCell entry={entry} />;
     case 'level':
       return <LevelCell level={entry.level} />;
+    case 'stream-content':
+      return <StreamContentCell entry={entry} />;
     default:
       return getCellValue(entry, column.field);
   }
@@ -167,6 +185,7 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   onCellMouseDown,
   isCellSelected,
   getCellPosition,
+  isRowSelected,
 }: VirtualLogGridRowProps) {
   // Merge highlight style with row classes - avoid spread if no highlight
   const rowStyle: CSSProperties = highlightStyle
@@ -177,6 +196,7 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   let className = 'vlg-row';
   if (isOdd && !highlightStyle) className += ' odd';
   if (highlightStyle) className += ' highlighted';
+  if (isRowSelected) className += ' row-selected';
 
   return (
     <div className={className} style={rowStyle}>
@@ -221,5 +241,6 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   prev.isOdd === next.isOdd &&
   prev.highlightStyle === next.highlightStyle &&
   prev.columns === next.columns &&
-  prev.selection === next.selection
+  prev.selection === next.selection &&
+  prev.isRowSelected === next.isRowSelected
 );

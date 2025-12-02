@@ -9,7 +9,7 @@ import { useLayout } from './hooks/useLayout';
 import { useViewsSync } from './hooks/useViewsSync';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { useProjectPersistence } from './hooks/useProjectPersistence';
-import { useLogStore, StreamEntry } from './store/logStore';
+import { useLogStore, StreamEntry, VlgColumnConfig } from './store/logStore';
 import { FilterBar } from './components/FilterBar';
 import { WatchPanel } from './components/WatchPanel';
 import { StreamPanel } from './components/StreamPanel';
@@ -21,11 +21,9 @@ import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ProjectDropdown } from './components/ProjectDropdown';
-import { ColumnState, FilterModel } from 'ag-grid-community';
 
 export function App() {
     const {
-        saveLayout,
         getDetailPanelHeightPx,
         getWatchPanelWidthPx,
         updateDetailPanelHeightFromPx,
@@ -96,25 +94,12 @@ export function App() {
     const { markDirty } = useProjectPersistence();
 
     // Per-view grid state handlers
-    const handleViewColumnStateChange = useCallback((viewId: string, state: ColumnState[]) => {
-        // Save column state to the specific view in the store
-        updateView(viewId, { columnState: state });
-        // Also save to global layout for backward compatibility
-        saveLayout({ columnState: state });
+    const handleViewColumnStateChange = useCallback((viewId: string, columns: VlgColumnConfig[]) => {
+        // Save column config to the specific view in the store
+        updateView(viewId, { columnConfig: columns });
         // Mark project as dirty (markDirty respects skipCount during project load)
         markDirty();
-    }, [updateView, saveLayout, markDirty]);
-
-    const handleViewFilterModelChange = useCallback((_viewId: string, _model: FilterModel) => {
-        // Per-view filter model will be saved in Phase 5
-        // For now, just log for debugging
-        // console.log('[ViewGrid] Filter model changed for view:', viewId, model);
-    }, []);
-
-    const handleViewScrollChange = useCallback((_viewId: string, _scrollTop: number) => {
-        // Per-view scroll position will be saved in Phase 5
-        // For now, just ignore
-    }, []);
+    }, [updateView, markDirty]);
 
     // Resize handlers - now update percentage-based sizes
     const startResize = useCallback((type: 'detail' | 'watch', e: React.MouseEvent) => {
@@ -279,8 +264,6 @@ export function App() {
                         <div className={`absolute inset-0 ${isStreamsMode ? 'invisible' : ''}`}>
                             <ViewGridContainer
                                 onColumnStateChange={handleViewColumnStateChange}
-                                onFilterModelChange={handleViewFilterModelChange}
-                                onScrollChange={handleViewScrollChange}
                             />
                         </div>
                     </div>

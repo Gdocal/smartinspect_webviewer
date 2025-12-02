@@ -36,6 +36,12 @@ export interface VirtualLogGridProps {
   columns?: ColumnConfig[];
   onColumnsChange?: (columns: ColumnConfig[]) => void;
   highlightRules?: HighlightRule[];
+  /** Called when user clicks on a row (not during drag selection) */
+  onRowClick?: (entry: LogEntry, rowIndex: number) => void;
+  /** ID of the row to highlight as "selected" (for detail panel, etc.) */
+  selectedRowId?: number | null;
+  /** Called when stuckToBottom state changes (for UI feedback about autoscroll) */
+  onStuckToBottomChange?: (stuckToBottom: boolean) => void;
 }
 
 // Get normalized range (start <= end)
@@ -88,6 +94,9 @@ export function VirtualLogGrid({
   columns = DEFAULT_COLUMNS,
   onColumnsChange,
   highlightRules = [],
+  onRowClick,
+  selectedRowId,
+  onStuckToBottomChange,
 }: VirtualLogGridProps) {
   void _onAutoScrollChange;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -109,6 +118,7 @@ export function VirtualLogGrid({
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ row: number; col: number } | null>(null);
   const autoScrollIntervalRef = useRef<number | null>(null);
+  const clickStartRef = useRef<{ row: number; time: number } | null>(null);
 
   // Effective autoscroll = user wants it AND scrollbar is at bottom
   const effectiveAutoScroll = autoScroll && stuckToBottom && !isDragging;
@@ -118,6 +128,7 @@ export function VirtualLogGrid({
     markUserScroll,
     markStuckToBottom,
     isProgrammaticScroll,
+    instantScrollToBottom,
   } = useAutoScroll({
     scrollElement: scrollContainerRef.current,
     entriesCount: entries.length,
@@ -126,6 +137,13 @@ export function VirtualLogGrid({
       setStuckToBottom(false);
     },
   });
+
+  // Handler for "Jump to bottom" button - for re-enabling autoscroll at high data rates
+  const handleJumpToBottom = useCallback(() => {
+    setStuckToBottom(true);
+    markStuckToBottom();
+    instantScrollToBottom();
+  }, [markStuckToBottom, instantScrollToBottom]);
 
   // Scroll detection hook
   useScrollDetection({
@@ -169,6 +187,11 @@ export function VirtualLogGrid({
 
     return () => resizeObserver.disconnect();
   }, [entries.length]);
+
+  // Notify parent when stuckToBottom changes
+  useEffect(() => {
+    onStuckToBottomChange?.(stuckToBottom);
+  }, [stuckToBottom, onStuckToBottomChange]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -273,6 +296,7 @@ export function VirtualLogGrid({
     e.preventDefault();
     setIsDragging(true);
     dragStartRef.current = { row: rowIndex, col: colIndex };
+    clickStartRef.current = { row: rowIndex, time: Date.now() };
 
     if (onSelectionChange) {
       onSelectionChange({
@@ -318,9 +342,22 @@ export function VirtualLogGrid({
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      // Check if this was a click (not a drag) - same row and quick (<200ms)
+      if (clickStartRef.current && onRowClick) {
+        const rowIndex = getRowIndexFromY(e.clientY);
+        const elapsed = Date.now() - clickStartRef.current.time;
+        const sameRow = rowIndex === clickStartRef.current.row;
+
+        // Fire onRowClick if it was a quick click on the same row
+        if (sameRow && elapsed < 200 && entries[rowIndex]) {
+          onRowClick(entries[rowIndex], rowIndex);
+        }
+      }
+
       setIsDragging(false);
       dragStartRef.current = null;
+      clickStartRef.current = null;
       stopAutoScroll();
     };
 
@@ -332,7 +369,7 @@ export function VirtualLogGrid({
       document.removeEventListener('mouseup', handleMouseUp);
       stopAutoScroll();
     };
-  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll]);
+  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll, onRowClick, entries]);
 
   // Get selected entries for copy/context menu
   const selectedEntries = useMemo(() => {
@@ -507,6 +544,7 @@ export function VirtualLogGrid({
                 onCellMouseDown={handleCellMouseDown}
                 isCellSelected={isCellSelected}
                 getCellPosition={getCellPosition}
+                isRowSelected={entry.id === selectedRowId}
               />
             );
           })}
@@ -521,6 +559,20 @@ export function VirtualLogGrid({
           columns={selectedColumns}
           onClose={handleCloseContextMenu}
         />
+      )}
+
+      {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up */}
+      {autoScroll && !stuckToBottom && (
+        <button
+          onClick={handleJumpToBottom}
+          className="vlg-jump-to-bottom"
+          title="Resume auto-scroll"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+          <span>Resume</span>
+        </button>
       )}
     </div>
   );
