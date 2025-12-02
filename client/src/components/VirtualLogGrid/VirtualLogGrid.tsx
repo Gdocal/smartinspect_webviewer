@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry, HighlightRule, matchesHighlightRule } from '../../store/logStore';
 import { VirtualLogGridRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
+import { RowContextMenu, formatEntriesForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
 import { ROW_HEIGHT, OVERSCAN } from './constants';
@@ -16,39 +17,101 @@ const MAX_CACHE_SIZE = 100;
 const rowStyleCache = new Map<string, CSSProperties>();
 const ROW_STYLE_CACHE_SIZE = 200;
 
+// Cell selection range
+export interface CellRange {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}
+
 export interface VirtualLogGridProps {
   entries: LogEntry[];
   autoScroll: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
-  selectedEntryId: number | null;
-  onSelectEntry?: (entry: LogEntry) => void;
+  selection?: CellRange | null;
+  onSelectionChange?: (range: CellRange | null) => void;
   theme?: 'light' | 'dark';
   alternatingRows?: boolean;
   columns?: ColumnConfig[];
+  onColumnsChange?: (columns: ColumnConfig[]) => void;
   highlightRules?: HighlightRule[];
+}
+
+// Get normalized range (start <= end)
+function normalizeRange(range: CellRange): CellRange {
+  return {
+    startRow: Math.min(range.startRow, range.endRow),
+    startCol: Math.min(range.startCol, range.endCol),
+    endRow: Math.max(range.startRow, range.endRow),
+    endCol: Math.max(range.startCol, range.endCol),
+  };
+}
+
+// Check if a cell is within the selection range
+function isCellSelected(rowIndex: number, colIndex: number, range: CellRange | null): boolean {
+  if (!range) return false;
+  const norm = normalizeRange(range);
+  return (
+    rowIndex >= norm.startRow &&
+    rowIndex <= norm.endRow &&
+    colIndex >= norm.startCol &&
+    colIndex <= norm.endCol
+  );
+}
+
+// Get cell selection position within range (for border rendering)
+function getCellPosition(rowIndex: number, colIndex: number, range: CellRange | null): {
+  isTop: boolean;
+  isBottom: boolean;
+  isLeft: boolean;
+  isRight: boolean;
+} {
+  if (!range) return { isTop: false, isBottom: false, isLeft: false, isRight: false };
+  const norm = normalizeRange(range);
+  return {
+    isTop: rowIndex === norm.startRow,
+    isBottom: rowIndex === norm.endRow,
+    isLeft: colIndex === norm.startCol,
+    isRight: colIndex === norm.endCol,
+  };
 }
 
 export function VirtualLogGrid({
   entries,
   autoScroll,
-  onAutoScrollChange: _onAutoScrollChange, // Kept for API compatibility, not used internally
-  selectedEntryId,
-  onSelectEntry,
+  onAutoScrollChange: _onAutoScrollChange,
+  selection,
+  onSelectionChange,
   theme = 'dark',
   alternatingRows = true,
   columns = DEFAULT_COLUMNS,
+  onColumnsChange,
   highlightRules = [],
 }: VirtualLogGridProps) {
-  void _onAutoScrollChange; // Suppress unused warning
+  void _onAutoScrollChange;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Internal state: is the scrollbar at the bottom?
-  // This is separate from the user's autoScroll preference (button)
   const [stuckToBottom, setStuckToBottom] = useState(true);
 
+  // Track if scrollbar is visible
+  const [hasScrollbar, setHasScrollbar] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    position: { x: number; y: number };
+  }>({ isOpen: false, position: { x: 0, y: 0 } });
+
+  // Drag selection state
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ row: number; col: number } | null>(null);
+  const autoScrollIntervalRef = useRef<number | null>(null);
+
   // Effective autoscroll = user wants it AND scrollbar is at bottom
-  const effectiveAutoScroll = autoScroll && stuckToBottom;
+  const effectiveAutoScroll = autoScroll && stuckToBottom && !isDragging;
 
   // Autoscroll hook
   const {
@@ -64,8 +127,7 @@ export function VirtualLogGrid({
     },
   });
 
-  // Scroll detection hook - only updates internal stuckToBottom state
-  // Does NOT change the user's autoScroll preference
+  // Scroll detection hook
   useScrollDetection({
     scrollElement: scrollContainerRef.current,
     onUserScrollUp: useCallback(() => {
@@ -85,8 +147,28 @@ export function VirtualLogGrid({
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: OVERSCAN,
-    getItemKey: (index) => entries[index].id,
+    getItemKey: (index) => entries[index]?.id ?? index,
   });
+
+  // Detect scrollbar visibility
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const checkScrollbar = () => {
+      const hasVerticalScrollbar = container.scrollHeight > container.clientHeight;
+      setHasScrollbar(hasVerticalScrollbar);
+    };
+
+    // Check initially and when entries change
+    checkScrollbar();
+
+    // Use ResizeObserver to detect size changes
+    const resizeObserver = new ResizeObserver(checkScrollbar);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, [entries.length]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -94,13 +176,12 @@ export function VirtualLogGrid({
     [highlightRules]
   );
 
-  // Get highlight style with caching to reduce allocations
+  // Get highlight style with caching
   const getHighlightStyle = useCallback((entry: LogEntry): CSSProperties | undefined => {
     if (sortedHighlightRules.length === 0) return undefined;
 
     for (const rule of sortedHighlightRules) {
       if (matchesHighlightRule(entry, rule)) {
-        // Use rule id as cache key
         const cacheKey = rule.id;
         let style = highlightStyleCache.get(cacheKey);
 
@@ -111,7 +192,6 @@ export function VirtualLogGrid({
           if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
           if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle as CSSProperties['fontStyle'];
 
-          // Limit cache size
           if (highlightStyleCache.size >= MAX_CACHE_SIZE) {
             const firstKey = highlightStyleCache.keys().next().value;
             if (firstKey) highlightStyleCache.delete(firstKey);
@@ -124,10 +204,155 @@ export function VirtualLogGrid({
     return undefined;
   }, [sortedHighlightRules]);
 
-  // Handle row click
-  const handleRowClick = useCallback((entry: LogEntry) => {
-    onSelectEntry?.(entry);
-  }, [onSelectEntry]);
+  // Get visible columns
+  const visibleColumns = useMemo(
+    () => columns.filter(col => !col.hidden),
+    [columns]
+  );
+
+  // Find column index from mouse position by measuring actual header cell widths
+  const getColumnIndexFromX = useCallback((clientX: number): number => {
+    const container = containerRef.current;
+    if (!container) return 0;
+
+    // Get the header cells to measure actual widths
+    const headerCells = container.querySelectorAll('.vlg-header-cell');
+    if (headerCells.length === 0) return 0;
+
+    const containerRect = container.getBoundingClientRect();
+    const x = clientX - containerRect.left;
+
+    // Find which column the x position falls within
+    let accumulatedWidth = 0;
+    for (let i = 0; i < headerCells.length; i++) {
+      const cellRect = headerCells[i].getBoundingClientRect();
+      const cellWidth = cellRect.width;
+      accumulatedWidth += cellWidth;
+      if (x < accumulatedWidth) {
+        return i;
+      }
+    }
+    return Math.max(0, headerCells.length - 1);
+  }, []);
+
+  // Find row index from mouse position
+  const getRowIndexFromY = useCallback((clientY: number): number => {
+    const container = scrollContainerRef.current;
+    if (!container) return 0;
+
+    const rect = container.getBoundingClientRect();
+    const y = clientY - rect.top + container.scrollTop;
+    const rowIndex = Math.floor(y / ROW_HEIGHT);
+    return Math.max(0, Math.min(rowIndex, entries.length - 1));
+  }, [entries.length]);
+
+  // Auto-scroll during drag
+  const startAutoScroll = useCallback((direction: 'up' | 'down') => {
+    if (autoScrollIntervalRef.current) return;
+
+    const scrollAmount = direction === 'up' ? -ROW_HEIGHT : ROW_HEIGHT;
+    autoScrollIntervalRef.current = window.setInterval(() => {
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.scrollTop += scrollAmount;
+      }
+    }, 50);
+  }, []);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollIntervalRef.current) {
+      clearInterval(autoScrollIntervalRef.current);
+      autoScrollIntervalRef.current = null;
+    }
+  }, []);
+
+  // Handle mouse down on cell - start selection
+  const handleCellMouseDown = useCallback((rowIndex: number, colIndex: number, e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only left click
+
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = { row: rowIndex, col: colIndex };
+
+    if (onSelectionChange) {
+      onSelectionChange({
+        startRow: rowIndex,
+        startCol: colIndex,
+        endRow: rowIndex,
+        endCol: colIndex,
+      });
+    }
+  }, [onSelectionChange]);
+
+  // Handle mouse move during drag
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragStartRef.current || !onSelectionChange) return;
+
+      const rowIndex = getRowIndexFromY(e.clientY);
+      const colIndex = getColumnIndexFromX(e.clientX);
+
+      onSelectionChange({
+        startRow: dragStartRef.current.row,
+        startCol: dragStartRef.current.col,
+        endRow: rowIndex,
+        endCol: colIndex,
+      });
+
+      // Auto-scroll when near edges
+      const container = scrollContainerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const nearTop = e.clientY < rect.top + 30;
+        const nearBottom = e.clientY > rect.bottom - 30;
+
+        if (nearTop) {
+          startAutoScroll('up');
+        } else if (nearBottom) {
+          startAutoScroll('down');
+        } else {
+          stopAutoScroll();
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+      stopAutoScroll();
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      stopAutoScroll();
+    };
+  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll]);
+
+  // Get selected entries for copy/context menu
+  const selectedEntries = useMemo(() => {
+    if (!selection) return [];
+    const norm = normalizeRange(selection);
+    const selected: LogEntry[] = [];
+    for (let i = norm.startRow; i <= norm.endRow; i++) {
+      if (entries[i]) {
+        selected.push(entries[i]);
+      }
+    }
+    return selected;
+  }, [entries, selection]);
+
+  // Get selected columns for copy
+  const selectedColumns = useMemo(() => {
+    if (!selection) return visibleColumns;
+    const norm = normalizeRange(selection);
+    return visibleColumns.slice(norm.startCol, norm.endCol + 1);
+  }, [selection, visibleColumns]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -135,37 +360,86 @@ export function VirtualLogGrid({
     if (!container) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      if (!onSelectionChange) return;
 
       e.preventDefault();
 
-      if (entries.length === 0) return;
+      const currentSelection = selection || { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+      let newRow = currentSelection.endRow;
+      let newCol = currentSelection.endCol;
 
-      let currentIndex = selectedEntryId
-        ? entries.findIndex(entry => entry.id === selectedEntryId)
-        : -1;
+      switch (e.key) {
+        case 'ArrowDown':
+          newRow = Math.min(currentSelection.endRow + 1, entries.length - 1);
+          break;
+        case 'ArrowUp':
+          newRow = Math.max(currentSelection.endRow - 1, 0);
+          break;
+        case 'ArrowRight':
+          newCol = Math.min(currentSelection.endCol + 1, visibleColumns.length - 1);
+          break;
+        case 'ArrowLeft':
+          newCol = Math.max(currentSelection.endCol - 1, 0);
+          break;
+      }
 
-      let newIndex: number;
-      if (e.key === 'ArrowDown') {
-        newIndex = currentIndex < entries.length - 1 ? currentIndex + 1 : currentIndex;
-        if (currentIndex === -1) newIndex = 0;
+      if (e.shiftKey) {
+        // Extend selection
+        onSelectionChange({
+          startRow: currentSelection.startRow,
+          startCol: currentSelection.startCol,
+          endRow: newRow,
+          endCol: newCol,
+        });
       } else {
-        newIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+        // Move selection
+        onSelectionChange({
+          startRow: newRow,
+          startCol: newCol,
+          endRow: newRow,
+          endCol: newCol,
+        });
       }
 
-      if (newIndex !== currentIndex && entries[newIndex]) {
-        onSelectEntry?.(entries[newIndex]);
-        // Scroll to make row visible
-        virtualizer.scrollToIndex(newIndex, { align: 'auto' });
-      }
+      virtualizer.scrollToIndex(newRow, { align: 'auto' });
     };
 
     container.addEventListener('keydown', handleKeyDown);
     return () => container.removeEventListener('keydown', handleKeyDown);
-  }, [entries, selectedEntryId, onSelectEntry, virtualizer]);
+  }, [entries.length, selection, visibleColumns.length, onSelectionChange, virtualizer]);
 
-  // Memoize columns to prevent unnecessary re-renders
-  const visibleColumns = useMemo(() => columns, [columns]);
+  // Ctrl+C to copy selected cells
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleCopy = async (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (selectedEntries.length === 0) return;
+
+        e.preventDefault();
+        const text = formatEntriesForCopy(selectedEntries, selectedColumns);
+        await copyToClipboard(text);
+      }
+    };
+
+    container.addEventListener('keydown', handleCopy);
+    return () => container.removeEventListener('keydown', handleCopy);
+  }, [selectedEntries, selectedColumns]);
+
+  // Handle context menu on rows
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }, []);
+
+  const handleCloseContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, isOpen: false }));
+  }, []);
 
   // Get cached row style to avoid allocations
   const getRowStyle = useCallback((start: number, size: number): CSSProperties => {
@@ -181,7 +455,6 @@ export function VirtualLogGrid({
         transform: `translateY(${start}px)`,
       };
       if (rowStyleCache.size >= ROW_STYLE_CACHE_SIZE) {
-        // Clear old entries
         const keys = Array.from(rowStyleCache.keys()).slice(0, 50);
         keys.forEach(k => rowStyleCache.delete(k));
       }
@@ -207,33 +480,48 @@ export function VirtualLogGrid({
   return (
     <div
       ref={containerRef}
-      className={`virtual-log-grid ${theme}`}
+      className={`virtual-log-grid ${theme}${isDragging ? ' selecting' : ''}`}
       tabIndex={0}
     >
-      <VirtualLogGridHeader columns={visibleColumns} />
+      <VirtualLogGridHeader columns={columns} onColumnsChange={onColumnsChange} hasScrollbar={hasScrollbar} />
       <div
         ref={scrollContainerRef}
         className="vlg-scroll-container"
         style={scrollContainerStyle}
+        onContextMenu={handleContextMenu}
       >
         <div style={innerStyle}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const entry = entries[virtualRow.index];
+            if (!entry) return null;
             return (
               <VirtualLogGridRow
                 key={virtualRow.key}
                 entry={entry}
+                rowIndex={virtualRow.index}
                 style={getRowStyle(virtualRow.start, virtualRow.size)}
-                isSelected={entry.id === selectedEntryId}
                 isOdd={alternatingRows && virtualRow.index % 2 === 1}
-                onClick={handleRowClick}
                 columns={visibleColumns}
                 highlightStyle={getHighlightStyle(entry)}
+                selection={selection}
+                onCellMouseDown={handleCellMouseDown}
+                isCellSelected={isCellSelected}
+                getCellPosition={getCellPosition}
               />
             );
           })}
         </div>
       </div>
+
+      {contextMenu.isOpen && (
+        <RowContextMenu
+          position={contextMenu.position}
+          selectedEntries={selectedEntries}
+          entries={entries}
+          columns={selectedColumns}
+          onClose={handleCloseContextMenu}
+        />
+      )}
     </div>
   );
 }

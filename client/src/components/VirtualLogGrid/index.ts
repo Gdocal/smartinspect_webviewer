@@ -1,5 +1,5 @@
 export { VirtualLogGrid } from './VirtualLogGrid';
-export type { VirtualLogGridProps } from './VirtualLogGrid';
+export type { VirtualLogGridProps, CellRange } from './VirtualLogGrid';
 export { VirtualLogGridRow } from './VirtualLogGridRow';
 export type { VirtualLogGridRowProps } from './VirtualLogGridRow';
 export { VirtualLogGridHeader } from './VirtualLogGridHeader';

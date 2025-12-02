@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { VirtualLogGrid, MAX_ROWS, DEFAULT_COLUMNS } from './components/VirtualLogGrid';
+import { VirtualLogGrid, MAX_ROWS, DEFAULT_COLUMNS, ColumnConfig, CellRange } from './components/VirtualLogGrid';
 import { LogEntry, Level, LogEntryType, HighlightRule, defaultHighlightFilter } from './store/logStore';
 
 const sessionNames = ['Main', 'Worker', 'Database', 'Network', 'UI', 'API'];
@@ -66,16 +66,17 @@ export function VirtualLogGridTest() {
   const [isAutoAdding, setIsAutoAdding] = useState(false);
   const [addRate, setAddRate] = useState(100);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<CellRange | null>(null);
   const [useHighlights, setUseHighlights] = useState(true);
+  const [filterText, setFilterText] = useState('');
   const nextIdRef = useRef(1);
 
-  // Column configuration with Level column shown
-  const columns = useMemo(() => {
-    return DEFAULT_COLUMNS.map(col =>
+  // Column configuration with Level column shown - use state so it can be modified
+  const [columns, setColumns] = useState<ColumnConfig[]>(() =>
+    DEFAULT_COLUMNS.map(col =>
       col.id === 'level' ? { ...col, hidden: false } : col
-    );
-  }, []);
+    )
+  );
 
   // Generate a test entry with varied types
   const generateEntry = useCallback((): LogEntry => {
@@ -157,13 +158,31 @@ export function VirtualLogGridTest() {
   const clearEntries = useCallback(() => {
     setEntries([]);
     nextIdRef.current = 1;
-    setSelectedEntryId(null);
+    setSelection(null);
   }, []);
 
-  // Handle entry selection
-  const handleSelectEntry = useCallback((entry: LogEntry) => {
-    setSelectedEntryId(entry.id);
+  // Handle selection change
+  const handleSelectionChange = useCallback((range: CellRange | null) => {
+    setSelection(range);
   }, []);
+
+  // Filter entries based on filter text (case-insensitive search in title)
+  const filteredEntries = useMemo(() => {
+    if (!filterText.trim()) return entries;
+    const lowerFilter = filterText.toLowerCase();
+    return entries.filter(entry =>
+      entry.title?.toLowerCase().includes(lowerFilter) ||
+      entry.sessionName?.toLowerCase().includes(lowerFilter)
+    );
+  }, [entries, filterText]);
+
+  // Calculate selection info for display
+  const selectionInfo = useMemo(() => {
+    if (!selection) return null;
+    const rows = Math.abs(selection.endRow - selection.startRow) + 1;
+    const cols = Math.abs(selection.endCol - selection.startCol) + 1;
+    return { rows, cols, cells: rows * cols };
+  }, [selection]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-900 text-slate-100">
@@ -266,9 +285,11 @@ export function VirtualLogGridTest() {
           }`}>
             {addRate < 10 ? 'Smooth' : 'Instant'} scroll
           </span>
-          {selectedEntryId && (
+          {selectionInfo && (
             <span className="text-sm text-slate-400">
-              Selected: <span className="font-mono text-slate-200">#{selectedEntryId}</span>
+              Selected: <span className="font-mono text-slate-200">
+                {selectionInfo.rows}x{selectionInfo.cols} ({selectionInfo.cells} cell{selectionInfo.cells > 1 ? 's' : ''})
+              </span>
             </span>
           )}
         </div>
@@ -276,20 +297,45 @@ export function VirtualLogGridTest() {
 
       {/* Keyboard hint */}
       <div className="px-4 py-1 bg-slate-800/50 text-xs text-slate-500 border-b border-slate-700">
-        Tip: Click grid and use Arrow Up/Down to navigate rows
+        Tip: Click and drag to select cells | Arrow keys to navigate | Shift+Arrows to extend selection | Ctrl+C to copy
+      </div>
+
+      {/* Filter Control */}
+      <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700 flex items-center gap-2">
+        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          placeholder="Filter logs..."
+          className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-500 outline-none"
+        />
+        {filterText && (
+          <button
+            onClick={() => setFilterText('')}
+            className="text-slate-500 hover:text-slate-300"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Grid Container */}
       <div className="flex-1 overflow-hidden">
         <VirtualLogGrid
-          entries={entries}
+          entries={filteredEntries}
           autoScroll={autoScroll}
           onAutoScrollChange={setAutoScroll}
-          selectedEntryId={selectedEntryId}
-          onSelectEntry={handleSelectEntry}
+          selection={selection}
+          onSelectionChange={handleSelectionChange}
           theme="dark"
           alternatingRows={true}
           columns={columns}
+          onColumnsChange={setColumns}
           highlightRules={useHighlights ? testHighlightRules : []}
         />
       </div>

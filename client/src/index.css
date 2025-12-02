@@ -328,7 +328,7 @@ html, body, #root {
 
 /* Dark theme variables */
 .virtual-log-grid.dark {
-    --vlg-border: #334155;
+    --vlg-border: #475569;
     --vlg-row-bg: #1e293b;
     --vlg-odd-bg: #243244;
     --vlg-hover-bg: #334155;
@@ -350,6 +350,59 @@ html, body, #root {
     --vlg-text-muted: #64748b;
 }
 
+/* Filter bar */
+.vlg-filter-bar {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 8px;
+    background: var(--vlg-header-bg);
+    border-bottom: 1px solid var(--vlg-border);
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.vlg-filter-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--vlg-text-muted);
+    flex-shrink: 0;
+}
+
+.vlg-filter-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--vlg-text);
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+.vlg-filter-input::placeholder {
+    color: var(--vlg-text-muted);
+}
+
+.vlg-filter-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: none;
+    border: none;
+    color: var(--vlg-text-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    border-radius: 2px;
+}
+
+.vlg-filter-clear:hover {
+    background: var(--vlg-hover-bg);
+    color: var(--vlg-text);
+}
+
 /* Header */
 .vlg-header {
     display: flex;
@@ -360,6 +413,7 @@ html, body, #root {
     font-weight: 600;
     color: var(--vlg-text);
     flex-shrink: 0;
+    /* paddingRight is set dynamically via JS based on scrollbar visibility */
 }
 
 .vlg-header-cell {
@@ -367,6 +421,22 @@ html, body, #root {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* Vertical separator between header columns */
+    border-right: 1px solid var(--vlg-border);
+}
+
+.vlg-header-cell:first-child {
+    border-left: 1px solid var(--vlg-border);
+}
+
+.vlg-header-cell.dragging {
+    opacity: 0.5;
+    background-color: #1e3a5f;
+}
+
+.vlg-header-cell.drop-target {
+    background-color: #1e4a3f;
+    border-left: 2px solid #60a5fa;
 }
 
 /* Scroll container */
@@ -379,12 +449,13 @@ html, body, #root {
 /* Rows */
 .vlg-row {
     display: flex;
-    align-items: center;
-    border-bottom: 1px solid var(--vlg-border);
+    align-items: stretch; /* Stretch cells to fill row height */
     background: var(--vlg-row-bg);
     cursor: pointer;
     color: var(--vlg-text);
     box-sizing: border-box;
+    /* Horizontal line between rows */
+    border-bottom: 1px solid var(--vlg-border);
 }
 
 .vlg-row.odd {
@@ -406,6 +477,15 @@ html, body, #root {
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
+    /* Vertical separator */
+    border-right: 1px solid var(--vlg-border);
+    /* Vertically center content since row uses align-items: stretch */
+    display: flex;
+    align-items: center;
+}
+
+.vlg-cell:first-child {
+    border-left: 1px solid var(--vlg-border);
 }
 
 .vlg-cell-icon {
@@ -413,7 +493,11 @@ html, body, #root {
     align-items: center;
     justify-content: center;
     font-size: 10px;
+    /* Show right border as separator after icon column */
+    border-right-color: var(--vlg-border);
 }
+
+/* Header icon cell already has border-right from .vlg-header-cell */
 
 .vlg-cell-timestamp {
     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
@@ -432,42 +516,215 @@ html, body, #root {
 
 /* Hover on highlighted rows - add subtle brightness increase */
 .vlg-row.highlighted:hover {
-    filter: brightness(1.2);
+    filter: brightness(1.1);
 }
 
-/* Selected row - brightness + light blue left border */
-.vlg-row.selected {
-    filter: brightness(1.25);
-    box-shadow: inset 3px 0 0 0 #93c5fd; /* blue-300 - light blue */
+/* Cell selection - background highlight only (no border for now) */
+.vlg-cell.selected {
+    background: rgba(59, 130, 246, 0.2); /* blue-500 with transparency */
 }
 
-/* Selected row on hover - even brighter */
+/* Disable text selection during drag */
+.virtual-log-grid.selecting {
+    user-select: none;
+}
+
+.virtual-log-grid.selecting .vlg-scroll-container {
+    cursor: crosshair;
+}
+
+/* Selected row on hover */
 .vlg-row.selected:hover {
-    filter: brightness(1.35);
+    outline-color: #93c5fd; /* blue-300 - even lighter on hover */
 }
 
-/* Highlighted + selected - brighter than just highlighted hover */
+/* Highlighted + selected */
 .vlg-row.highlighted.selected {
-    filter: brightness(1.3);
-    box-shadow: inset 3px 0 0 0 #93c5fd; /* blue-300 */
+    outline: 1px solid #60a5fa;
+    outline-offset: -1px;
+    filter: brightness(1.1);
 }
 
 .vlg-row.highlighted.selected:hover {
-    filter: brightness(1.4);
+    filter: brightness(1.2);
 }
 
 /* Light theme */
 .virtual-log-grid.light .vlg-row.selected {
-    filter: brightness(0.92);
-    box-shadow: inset 3px 0 0 0 #3b82f6; /* blue-500 */
+    outline: 1px solid #3b82f6; /* blue-500 */
+    outline-offset: -1px;
 }
 
 .virtual-log-grid.light .vlg-row.selected:hover {
-    filter: brightness(0.88);
+    outline-color: #60a5fa;
 }
 
 .virtual-log-grid.light .vlg-row.highlighted.selected {
-    filter: brightness(0.9);
-    box-shadow: inset 3px 0 0 0 #3b82f6;
+    filter: brightness(0.95);
+    outline: 1px solid #3b82f6;
+    outline-offset: -1px;
+}
+
+/* Column Menu */
+.vlg-column-menu {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 180px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: #e2e8f0;
+}
+
+.vlg-menu-section {
+    padding: 4px 0;
+}
+
+.vlg-menu-section:not(:last-child) {
+    border-bottom: 1px solid #334155;
+}
+
+.vlg-menu-section-title {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vlg-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+.vlg-menu-item:hover:not(:disabled) {
+    background: #334155;
+}
+
+.vlg-menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.vlg-menu-checkbox {
+    gap: 8px;
+}
+
+.vlg-menu-checkbox input[type="checkbox"] {
+    accent-color: #3b82f6;
+    width: 14px;
+    height: 14px;
+}
+
+/* Light theme column menu */
+.virtual-log-grid.light .vlg-column-menu {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    color: #1e293b;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.virtual-log-grid.light .vlg-menu-section:not(:last-child) {
+    border-bottom-color: #e2e8f0;
+}
+
+.virtual-log-grid.light .vlg-menu-section-title {
+    color: #64748b;
+}
+
+.virtual-log-grid.light .vlg-menu-item {
+    color: #1e293b;
+}
+
+.virtual-log-grid.light .vlg-menu-item:hover:not(:disabled) {
+    background: #f1f5f9;
+}
+
+/* Row context menu */
+.vlg-row-context-menu {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 180px;
+    padding: 4px 0;
+}
+
+.vlg-row-context-menu .vlg-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    color: #e2e8f0;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.vlg-row-context-menu .vlg-menu-item:hover:not(:disabled) {
+    background: #334155;
+}
+
+.vlg-row-context-menu .vlg-menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.vlg-menu-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+svg.vlg-menu-icon {
+    fill: currentColor;
+}
+
+.vlg-menu-shortcut {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.vlg-menu-divider {
+    height: 1px;
+    background: #334155;
+    margin: 4px 0;
+}
+
+/* Light theme row context menu */
+.virtual-log-grid.light .vlg-row-context-menu {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.virtual-log-grid.light .vlg-row-context-menu .vlg-menu-item {
+    color: #1e293b;
+}
+
+.virtual-log-grid.light .vlg-row-context-menu .vlg-menu-item:hover:not(:disabled) {
+    background: #f1f5f9;
+}
+
+.virtual-log-grid.light .vlg-menu-shortcut {
+    color: #94a3b8;
+}
+
+.virtual-log-grid.light .vlg-menu-divider {
+    background: #e2e8f0;
 }
 

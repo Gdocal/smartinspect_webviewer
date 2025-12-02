@@ -7,6 +7,7 @@ interface AutoScrollState {
   userDisabledTime: number;
   lastUpdateTime: number;
   averageRate: number;
+  lastEntriesCount: number;
 }
 
 // Threshold: below this rate (updates/sec), use smooth scrolling
@@ -36,6 +37,7 @@ export function useAutoScroll({
     userDisabledTime: 0,
     lastUpdateTime: Date.now(),
     averageRate: 0,
+    lastEntriesCount: 0,
   });
 
   const animationRef = useRef<number | null>(null);
@@ -150,6 +152,12 @@ export function useAutoScroll({
   // Effect: scroll when entries count increases AND autoscroll is enabled
   useEffect(() => {
     if (!autoScrollEnabled || !scrollElement) return;
+
+    const prevCount = stateRef.current.lastEntriesCount;
+    stateRef.current.lastEntriesCount = entriesCount;
+
+    // Only react to new entries being added
+    if (entriesCount <= prevCount) return;
 
     const timeSinceUserScroll = Date.now() - stateRef.current.userScrollTime;
     const timeSinceDisabled = Date.now() - stateRef.current.userDisabledTime;

@@ -2,15 +2,24 @@ import { memo, CSSProperties } from 'react';
 import { format } from 'date-fns';
 import { LogEntry, Level, LogEntryType } from '../../store/logStore';
 import type { ColumnConfig } from './types';
+import type { CellRange } from './VirtualLogGrid';
 
 export interface VirtualLogGridRowProps {
   entry: LogEntry;
+  rowIndex: number;
   style: CSSProperties;
-  isSelected: boolean;
   isOdd: boolean;
-  onClick?: (entry: LogEntry) => void;
   columns: ColumnConfig[];
   highlightStyle?: CSSProperties;
+  selection: CellRange | null | undefined;
+  onCellMouseDown: (rowIndex: number, colIndex: number, e: React.MouseEvent) => void;
+  isCellSelected: (rowIndex: number, colIndex: number, range: CellRange | null) => boolean;
+  getCellPosition: (rowIndex: number, colIndex: number, range: CellRange | null) => {
+    isTop: boolean;
+    isBottom: boolean;
+    isLeft: boolean;
+    isRight: boolean;
+  };
 }
 
 // Log entry type to icon mapping - matches ViewGrid
@@ -47,9 +56,6 @@ const levelConfig: Record<number, { bg: string; text: string; label: string }> =
 // Timestamp formatting with cache
 const timestampCache = new Map<string, string>();
 const CACHE_MAX_SIZE = 5000;
-
-// Cell style cache - keyed by column id
-const cellStyleCache = new Map<string, CSSProperties>();
 
 function formatTimestamp(timestamp: string | undefined): string {
   if (!timestamp) return '';
@@ -152,12 +158,15 @@ function renderCell(entry: LogEntry, column: ColumnConfig) {
 
 export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   entry,
+  rowIndex,
   style,
-  isSelected,
   isOdd,
-  onClick,
   columns,
   highlightStyle,
+  selection,
+  onCellMouseDown,
+  isCellSelected,
+  getCellPosition,
 }: VirtualLogGridRowProps) {
   // Merge highlight style with row classes - avoid spread if no highlight
   const rowStyle: CSSProperties = highlightStyle
@@ -166,37 +175,39 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
 
   // Build class names
   let className = 'vlg-row';
-  if (isSelected) className += ' selected';
   if (isOdd && !highlightStyle) className += ' odd';
   if (highlightStyle) className += ' highlighted';
 
-  // Handle click without creating new function
-  const handleClick = onClick ? () => onClick(entry) : undefined;
-
   return (
-    <div
-      className={className}
-      style={rowStyle}
-      onClick={handleClick}
-    >
-      {columns.filter(col => !col.hidden).map((column) => {
-        // Get cached cell style
-        let cellStyle = cellStyleCache.get(column.id);
-        if (!cellStyle) {
-          cellStyle = {
-            width: column.width,
-            flex: column.flex,
-            minWidth: column.minWidth,
-            textAlign: column.align,
-          };
-          cellStyleCache.set(column.id, cellStyle);
+    <div className={className} style={rowStyle}>
+      {columns.map((column, colIndex) => {
+        const isSelected = isCellSelected(rowIndex, colIndex, selection ?? null);
+        const position = getCellPosition(rowIndex, colIndex, selection ?? null);
+
+        // Build cell class names for selection borders
+        let cellClassName = `vlg-cell vlg-cell-${column.id}`;
+        if (isSelected) {
+          cellClassName += ' selected';
+          if (position.isTop) cellClassName += ' sel-top';
+          if (position.isBottom) cellClassName += ' sel-bottom';
+          if (position.isLeft) cellClassName += ' sel-left';
+          if (position.isRight) cellClassName += ' sel-right';
         }
+
+        const cellStyle: CSSProperties = {
+          width: column.width,
+          flex: column.flex,
+          minWidth: column.minWidth,
+          textAlign: column.align,
+        };
+
         return (
           <div
             key={column.id}
-            className={`vlg-cell vlg-cell-${column.id}`}
+            className={cellClassName}
             style={cellStyle}
             title={column.type === 'text' ? getCellValue(entry, column.field) : undefined}
+            onMouseDown={(e) => onCellMouseDown(rowIndex, colIndex, e)}
           >
             {renderCell(entry, column)}
           </div>
@@ -206,8 +217,9 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   );
 }, (prev, next) =>
   prev.entry.id === next.entry.id &&
-  prev.isSelected === next.isSelected &&
+  prev.rowIndex === next.rowIndex &&
   prev.isOdd === next.isOdd &&
   prev.highlightStyle === next.highlightStyle &&
-  prev.columns === next.columns
+  prev.columns === next.columns &&
+  prev.selection === next.selection
 );

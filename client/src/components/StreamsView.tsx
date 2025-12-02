@@ -76,7 +76,7 @@ interface StreamsViewProps {
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, clearAllStreams, clearStream, theme } = useLogStore();
+    const { streams, clearAllStreams, clearStream, theme, streamsVersion, getPendingStreamEntries } = useLogStore();
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [paused, setPaused] = useState(false);
@@ -84,6 +84,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [showHighlightRules, setShowHighlightRules] = useState(false);
     const gridApiRef = useRef<GridApi | null>(null);
     const lastEntryCountRef = useRef(0);
+
+    // Transaction API: track initialization and channel changes
+    const isInitializedRef = useRef(false);
+    const lastChannelRef = useRef<string | null>(null);
 
     // Resizable panel width
     const [listWidth, setListWidth] = useState(280);
@@ -247,7 +251,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     const onGridReady = useCallback((params: GridReadyEvent) => {
         gridApiRef.current = params.api;
-    }, []);
+
+        // Set initial data using setGridOption (not rowData prop)
+        params.api.setGridOption('rowData', displayedEntries);
+
+        // Mark as initialized and track current channel
+        isInitializedRef.current = true;
+        lastChannelRef.current = selectedChannel;
+    }, [displayedEntries, selectedChannel]);
 
     // Handle keyboard navigation
     const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -304,6 +315,37 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         }
         return undefined;
     }, [selectedEntryId]);
+
+    // Transaction-based updates for AG Grid performance optimization
+    // This effect handles incremental updates via applyTransactionAsync instead of rowData prop
+    useEffect(() => {
+        const api = gridApiRef.current;
+        if (!api || !isInitializedRef.current || !selectedChannel || paused) return;
+
+        // Check if channel changed - if so, do full refresh
+        const channelChanged = lastChannelRef.current !== selectedChannel;
+        if (channelChanged) {
+            // Channel changed - full refresh needed
+            api.setGridOption('rowData', displayedEntries);
+            lastChannelRef.current = selectedChannel;
+            return;
+        }
+
+        // Get pending entries for this channel
+        const pendingEntries = getPendingStreamEntries(selectedChannel);
+
+        // Apply transaction for new entries (no filtering needed for streams - already per-channel)
+        if (pendingEntries.length > 0) {
+            // Apply filter if there's a filter text
+            const toAdd = filterText
+                ? pendingEntries.filter(e => e.data.toLowerCase().includes(filterText.toLowerCase()))
+                : pendingEntries;
+
+            if (toAdd.length > 0) {
+                api.applyTransactionAsync({ add: toAdd });
+            }
+        }
+    }, [streamsVersion, selectedChannel, displayedEntries, getPendingStreamEntries, paused, filterText]);
 
     const totalCount = channels.reduce((sum, ch) => sum + (streams[ch]?.length || 0), 0);
 
@@ -493,7 +535,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     <div className={`flex-1 streams-grid-container ${theme === 'dark' ? 'ag-theme-balham-dark' : 'ag-theme-balham'} h-full w-full`} style={{ fontSize: '13px' }} tabIndex={0}>
                         <AgGridReact
                             theme="legacy"
-                            rowData={displayedEntries}
                             columnDefs={columnDefs}
                             defaultColDef={defaultColDef}
                             getRowId={(params) => String(params.data.id)}
