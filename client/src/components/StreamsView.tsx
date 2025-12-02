@@ -221,10 +221,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         return streams[selectedChannel] || [];
     }, [selectedChannel, isInSnapshotMode, currentSnapshot, isSlowMode, slowModeDisplayEntries, streams]);
 
-    // Auto-select first channel
-    if (!selectedChannel && channels.length > 0) {
-        setSelectedChannel(channels[0]);
-    }
+    // Auto-select first channel - use useEffect to avoid setState during render
+    useEffect(() => {
+        if (!selectedChannel && channels.length > 0) {
+            setSelectedChannel(channels[0]);
+        }
+    }, [selectedChannel, channels]);
 
     // Get filter text for current channel
     const filterText = selectedChannel ? (filterTextByChannel[selectedChannel] || '') : '';
@@ -238,13 +240,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Store paused entries separately
     const [pausedEntries, setPausedEntries] = useState<StreamEntry[]>([]);
+    const wasPausedRef = useRef(false);
 
-    // Update paused entries when pause state changes
+    // Update paused entries ONLY when transitioning from unpaused to paused
     useEffect(() => {
-        if (paused) {
+        if (paused && !wasPausedRef.current) {
+            // Just paused - capture current entries
             setPausedEntries(filteredEntries);
         }
-    }, [paused, filteredEntries]);
+        wasPausedRef.current = paused;
+    }, [paused]); // Only depend on paused, not filteredEntries
 
     const displayedEntries = paused ? pausedEntries : filteredEntries;
 
@@ -270,22 +275,23 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Ref to track previous slow mode state for transitions
     const wasSlowModeRef = useRef(false);
+    // Use ref to access streams without adding to effect deps
+    const streamsRef = useRef(streams);
+    streamsRef.current = streams;
 
-    // Simple buffering effect - buffers new entries when in slow mode
+    // Effect to handle slow mode transitions (not every stream update)
     useEffect(() => {
         if (!selectedChannel) return;
-        if (isInSnapshotMode) return; // Don't buffer in snapshot mode
+        if (isInSnapshotMode) return;
 
-        const liveEntries = streams[selectedChannel] || [];
+        const liveEntries = streamsRef.current[selectedChannel] || [];
 
         if (!isSlowMode) {
-            // Live mode: reset state and sync to live stream
+            // Exiting slow mode - just reset state, don't sync entries (they come from sourceEntries)
             if (wasSlowModeRef.current) {
-                // Just exited slow mode - clear buffer
                 setPlaybackBuffer([]);
                 lastProcessedRef.current = 0;
             }
-            setSlowModeDisplayEntries(liveEntries);
             wasSlowModeRef.current = false;
             return;
         }
@@ -295,17 +301,22 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             wasSlowModeRef.current = true;
             lastProcessedRef.current = liveEntries.length;
             setPlaybackBuffer([]);
-            setSlowModeDisplayEntries(liveEntries);
+            setSlowModeDisplayEntries([...liveEntries]);
             return;
         }
+    }, [selectedChannel, isSlowMode, isInSnapshotMode]);
 
-        // Already in slow mode: buffer new entries
+    // Separate effect to buffer new entries ONLY when in slow mode
+    useEffect(() => {
+        if (!selectedChannel || !isSlowMode || isInSnapshotMode) return;
+
+        const liveEntries = streams[selectedChannel] || [];
         const newCount = liveEntries.length - lastProcessedRef.current;
+
         if (newCount > 0) {
             const newEntries = liveEntries.slice(lastProcessedRef.current);
             setPlaybackBuffer(prev => {
                 const updated = [...prev, ...newEntries];
-                // Ring buffer: keep last 1000
                 return updated.length > PLAYBACK_BUFFER_MAX
                     ? updated.slice(-PLAYBACK_BUFFER_MAX)
                     : updated;
@@ -338,12 +349,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         return () => clearInterval(timer);
     }, [isSlowMode, displayRate, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
 
-    // Reset playback state when channel changes
+    // Reset playback state when channel changes (only on channel change, not stream updates)
+    const prevChannelRef = useRef<string | null>(null);
     useEffect(() => {
-        lastProcessedRef.current = 0;
-        setPlaybackBuffer([]);
-        setSlowModeDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
-    }, [selectedChannel, streams]);
+        if (selectedChannel !== prevChannelRef.current) {
+            lastProcessedRef.current = 0;
+            setPlaybackBuffer([]);
+            setSlowModeDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
+            prevChannelRef.current = selectedChannel;
+        }
+    }, [selectedChannel]); // Only depend on selectedChannel, access streams via closure
 
     // Row height for virtualization
     const ROW_HEIGHT = 32;
