@@ -42,6 +42,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         entries: StreamEntry[];
         capturedAt: Date;
         frozenSelectedId: number | null;
+        totalAtCapture: number; // Total received at time of snapshot (for badge calculation)
     }>>({});
 
     // Slow mode playback control - absolute rate (entries/sec)
@@ -115,10 +116,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             [selectedChannel]: {
                 entries: [...entriesToSnapshot], // Shallow copy for stability
                 capturedAt: new Date(),
-                frozenSelectedId: selectedEntryId
+                frozenSelectedId: selectedEntryId,
+                totalAtCapture: streamTotalReceived[selectedChannel] || 0
             }
         }));
-    }, [selectedChannel, streams, selectedEntryId, isSlowMode, slowModeDisplayEntries]);
+    }, [selectedChannel, streams, selectedEntryId, isSlowMode, slowModeDisplayEntries, streamTotalReceived]);
 
     const exitSnapshotMode = useCallback(() => {
         if (!selectedChannel) return;
@@ -254,12 +256,13 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const displayedEntries = paused ? pausedEntries : filteredEntries;
 
     // Calculate how many new entries arrived since snapshot
+    // Use streamTotalReceived and snapshot's totalAtCapture (not capped by ring buffer)
     const newEntriesSinceSnapshot = useMemo(() => {
         if (!isInSnapshotMode || !currentSnapshot || !selectedChannel) return 0;
-        const liveCount = (streams[selectedChannel] || []).length;
-        const snapshotCount = currentSnapshot.entries.length;
-        return Math.max(0, liveCount - snapshotCount);
-    }, [isInSnapshotMode, currentSnapshot, selectedChannel, streams]);
+        const currentTotal = streamTotalReceived[selectedChannel] || 0;
+        const snapshotTotal = currentSnapshot.totalAtCapture || 0;
+        return Math.max(0, currentTotal - snapshotTotal);
+    }, [isInSnapshotMode, currentSnapshot, selectedChannel, streamTotalReceived]);
 
     // Auto-cleanup stale snapshots after 5 minutes
     useEffect(() => {
@@ -279,18 +282,23 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const streamsRef = useRef(streams);
     streamsRef.current = streams;
 
+    // Track the total received count at time of entering slow mode
+    const slowModeStartTotalRef = useRef(0);
+
     // Combined effect for slow mode - handles both transitions and buffering
     useEffect(() => {
         if (!selectedChannel) return;
         if (isInSnapshotMode) return;
 
         const liveEntries = streams[selectedChannel] || [];
+        const currentTotal = streamTotalReceived[selectedChannel] || 0;
 
         if (!isSlowMode) {
             // Exiting slow mode - reset state
             if (wasSlowModeRef.current) {
                 setPlaybackBuffer([]);
                 lastProcessedRef.current = 0;
+                slowModeStartTotalRef.current = 0;
             }
             wasSlowModeRef.current = false;
             return;
@@ -299,25 +307,27 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         // Just entered slow mode - capture current state and mark position
         if (!wasSlowModeRef.current) {
             wasSlowModeRef.current = true;
-            lastProcessedRef.current = liveEntries.length;
+            slowModeStartTotalRef.current = currentTotal;
+            lastProcessedRef.current = currentTotal;
             setPlaybackBuffer([]);
             setSlowModeDisplayEntries([...liveEntries]);
             return;
         }
 
-        // Already in slow mode: buffer new entries
-        const newCount = liveEntries.length - lastProcessedRef.current;
+        // Already in slow mode: buffer new entries based on total received counter
+        const newCount = currentTotal - lastProcessedRef.current;
         if (newCount > 0) {
-            const newEntries = liveEntries.slice(lastProcessedRef.current);
+            // Get the last N entries from the live stream (they're the newest)
+            const newEntries = liveEntries.slice(-Math.min(newCount, liveEntries.length));
             setPlaybackBuffer(prev => {
                 const updated = [...prev, ...newEntries];
                 return updated.length > PLAYBACK_BUFFER_MAX
                     ? updated.slice(-PLAYBACK_BUFFER_MAX)
                     : updated;
             });
-            lastProcessedRef.current = liveEntries.length;
+            lastProcessedRef.current = currentTotal;
         }
-    }, [selectedChannel, streams, isSlowMode, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
+    }, [selectedChannel, streams, streamTotalReceived, isSlowMode, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
 
     // Simple consumption timer - displays entries at fixed rate (displayRate entries/sec)
     useEffect(() => {
