@@ -279,15 +279,15 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const streamsRef = useRef(streams);
     streamsRef.current = streams;
 
-    // Effect to handle slow mode transitions (not every stream update)
+    // Combined effect for slow mode - handles both transitions and buffering
     useEffect(() => {
         if (!selectedChannel) return;
         if (isInSnapshotMode) return;
 
-        const liveEntries = streamsRef.current[selectedChannel] || [];
+        const liveEntries = streams[selectedChannel] || [];
 
         if (!isSlowMode) {
-            // Exiting slow mode - just reset state, don't sync entries (they come from sourceEntries)
+            // Exiting slow mode - reset state
             if (wasSlowModeRef.current) {
                 setPlaybackBuffer([]);
                 lastProcessedRef.current = 0;
@@ -296,7 +296,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             return;
         }
 
-        // Just entered slow mode - capture current state
+        // Just entered slow mode - capture current state and mark position
         if (!wasSlowModeRef.current) {
             wasSlowModeRef.current = true;
             lastProcessedRef.current = liveEntries.length;
@@ -304,15 +304,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             setSlowModeDisplayEntries([...liveEntries]);
             return;
         }
-    }, [selectedChannel, isSlowMode, isInSnapshotMode]);
 
-    // Separate effect to buffer new entries ONLY when in slow mode
-    useEffect(() => {
-        if (!selectedChannel || !isSlowMode || isInSnapshotMode) return;
-
-        const liveEntries = streams[selectedChannel] || [];
+        // Already in slow mode: buffer new entries
         const newCount = liveEntries.length - lastProcessedRef.current;
-
         if (newCount > 0) {
             const newEntries = liveEntries.slice(lastProcessedRef.current);
             setPlaybackBuffer(prev => {
