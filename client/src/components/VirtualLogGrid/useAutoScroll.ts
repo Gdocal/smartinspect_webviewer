@@ -173,12 +173,12 @@ export function useAutoScroll({
   useEffect(() => {
     if (autoScrollEnabled && scrollElement) {
       stateRef.current.isStuckToBottom = true;
-      instantScrollToBottom();
+      scrollToBottom();  // Use rate-based decision (smooth vs instant)
     } else {
       // Stop the loop when autoscroll is disabled
       stopSmoothScrollLoop();
     }
-  }, [autoScrollEnabled, scrollElement, instantScrollToBottom, stopSmoothScrollLoop]);
+  }, [autoScrollEnabled, scrollElement, scrollToBottom, stopSmoothScrollLoop]);
 
   // Cleanup animation on unmount
   useEffect(() => {

@@ -51,6 +51,8 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
+    const [bufferFull, setBufferFull] = useState(false); // Track when buffer reaches capacity
+    const [newestEntryId, setNewestEntryId] = useState<string | null>(null); // Track newest entry for animation
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
@@ -103,6 +105,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
         // Clear any buffering state first
         setPlaybackBuffer([]);
+        setBufferFull(false);
         lastProcessedRef.current = 0;
 
         // Snapshot current displayed entries (use slow mode display if active, otherwise live)
@@ -127,6 +130,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
         // Clean exit: reset all playback state
         setPlaybackBuffer([]);
+        setBufferFull(false);
         const liveEntries = streams[selectedChannel] || [];
         lastProcessedRef.current = liveEntries.length;
         setSlowModeDisplayEntries(liveEntries);
@@ -297,6 +301,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             // Exiting slow mode - reset state
             if (wasSlowModeRef.current) {
                 setPlaybackBuffer([]);
+                setBufferFull(false);
                 lastProcessedRef.current = 0;
                 slowModeStartTotalRef.current = 0;
             }
@@ -310,6 +315,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             slowModeStartTotalRef.current = currentTotal;
             lastProcessedRef.current = currentTotal;
             setPlaybackBuffer([]);
+            setBufferFull(false);
             setSlowModeDisplayEntries([...liveEntries]);
             return;
         }
@@ -320,10 +326,27 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             // Get the last N entries from the live stream (they're the newest)
             const newEntries = liveEntries.slice(-Math.min(newCount, liveEntries.length));
             setPlaybackBuffer(prev => {
-                const updated = [...prev, ...newEntries];
-                return updated.length > PLAYBACK_BUFFER_MAX
-                    ? updated.slice(-PLAYBACK_BUFFER_MAX)
-                    : updated;
+                const remaining = PLAYBACK_BUFFER_MAX - prev.length;
+
+                if (remaining <= 0) {
+                    // Buffer is already full - reject all new entries
+                    setBufferFull(true);
+                    return prev;
+                }
+
+                if (newEntries.length <= remaining) {
+                    // All entries fit - add them all
+                    const updated = [...prev, ...newEntries];
+                    if (updated.length >= PLAYBACK_BUFFER_MAX) {
+                        setBufferFull(true);
+                    }
+                    return updated;
+                } else {
+                    // Only some entries fit - add what we can, then stop
+                    const entriesToAdd = newEntries.slice(0, remaining);
+                    setBufferFull(true);
+                    return [...prev, ...entriesToAdd];
+                }
             });
             lastProcessedRef.current = currentTotal;
         }
@@ -352,7 +375,13 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             // Update buffer state
             setPlaybackBuffer(rest);
 
+            // Clear buffer full warning when buffer drains below 90%
+            if (rest.length < PLAYBACK_BUFFER_MAX * 0.9) {
+                setBufferFull(false);
+            }
+
             // Add entry to display - smooth scroll handles visual effect
+            setNewestEntryId(entry.id); // Track for animation
             setSlowModeDisplayEntries(current => {
                 const updated = [...current, entry];
                 return updated.length > PLAYBACK_BUFFER_MAX
@@ -370,6 +399,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         if (selectedChannel !== prevChannelRef.current) {
             lastProcessedRef.current = 0;
             setPlaybackBuffer([]);
+            setBufferFull(false);
             setSlowModeDisplayEntries(selectedChannel ? (streams[selectedChannel] || []) : []);
             prevChannelRef.current = selectedChannel;
         }
@@ -607,17 +637,19 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                     {/* Live/Slow mode toggle and rate control */}
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 dark:bg-slate-700/50 rounded border border-slate-200 dark:border-slate-600">
-                        {/* Live/Slow toggle button */}
+                        {/* Slowdown toggle button */}
                         <button
                             onClick={() => setIsSlowMode(!isSlowMode)}
                             className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
                                 isSlowMode
                                     ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                    : 'bg-green-500 text-white hover:bg-green-600'
+                                    : 'bg-slate-400 text-white hover:bg-slate-500'
                             }`}
-                            title={isSlowMode ? 'Switch to live mode' : 'Switch to slow mode'}
+                            title={isSlowMode
+                                ? 'Resume normal speed - display entries as they arrive'
+                                : 'Slow down - buffer incoming entries and display at controlled rate'}
                         >
-                            {isSlowMode ? 'Slow' : 'Live'}
+                            {isSlowMode ? 'Normal' : 'Slowdown'}
                         </button>
 
                         {/* Rate slider (only when in slow mode) */}
@@ -632,21 +664,19 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
                                     title="Display rate (entries per second)"
                                 />
-                                <span className="text-xs text-slate-600 dark:text-slate-300 min-w-[32px] font-mono tabular-nums">
+                                <span className="text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums min-w-[28px]">
                                     {displayRate}/s
                                 </span>
-                                <span className="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap font-mono tabular-nums">
-                                    Buf: {playbackBuffer.length}/1000
+                                <span className={`text-xs whitespace-nowrap font-mono tabular-nums ${
+                                    bufferFull
+                                        ? 'text-red-600 dark:text-red-400 font-semibold animate-pulse'
+                                        : 'text-amber-600 dark:text-amber-400'
+                                }`}>
+                                    {bufferFull ? 'FULL ' : 'Buf: '}{playbackBuffer.length}/{PLAYBACK_BUFFER_MAX}
                                 </span>
                             </>
                         )}
 
-                        {/* Speedometer - show current stream speed */}
-                        {selectedChannel && streamSpeed[selectedChannel] !== undefined && (
-                            <span className="text-xs text-blue-600 dark:text-blue-400 whitespace-nowrap font-mono tabular-nums">
-                                {streamSpeed[selectedChannel].toFixed(1)}/s
-                            </span>
-                        )}
                     </div>
 
                     {/* Spacer */}
@@ -775,11 +805,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     const entry = displayedEntries[virtualRow.index];
                                     const isSelected = entry.id === selectedEntryId;
                                     const isOdd = virtualRow.index % 2 === 1;
+                                    const isNewest = entry.id === newestEntryId;
 
                                     return (
                                         <div
                                             key={`${entry.id}-${entry.timestamp}-${virtualRow.index}`}
-                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''}`}
+                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''} ${isNewest ? 'new-entry' : ''}`}
                                             style={{
                                                 position: 'absolute',
                                                 top: 0,
@@ -914,6 +945,20 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                 </svg>
                                 <span>Resume</span>
                             </button>
+                        )}
+
+                        {/* Buffer Full Warning - prominent floating banner */}
+                        {isSlowMode && bufferFull && (
+                            <div
+                                className="absolute top-14 right-4 px-3 py-1.5 bg-red-500/95 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-lg animate-pulse"
+                                style={{ zIndex: 1002 }}
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <span>Buffer Full - Data being dropped</span>
+                            </div>
                         )}
                     </div>
                 ) : (

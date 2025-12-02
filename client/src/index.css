@@ -487,6 +487,37 @@ html, body, #root {
     border-bottom: 1px solid var(--vlg-border);
 }
 
+/* New row entry animation - plays when row first renders */
+.vlg-row.new-entry {
+    animation: vlg-row-fade-in 0.15s ease-out;
+}
+
+@keyframes vlg-row-fade-in {
+    from {
+        opacity: 0.5;
+        background-color: rgba(59, 130, 246, 0.15); /* blue tint */
+    }
+    to {
+        opacity: 1;
+        background-color: var(--vlg-row-bg);
+    }
+}
+
+.vlg-row.odd.new-entry {
+    animation: vlg-row-fade-in-odd 0.15s ease-out;
+}
+
+@keyframes vlg-row-fade-in-odd {
+    from {
+        opacity: 0.5;
+        background-color: rgba(59, 130, 246, 0.15);
+    }
+    to {
+        opacity: 1;
+        background-color: var(--vlg-odd-bg);
+    }
+}
+
 .vlg-row.odd {
     background: var(--vlg-odd-bg);
 }
