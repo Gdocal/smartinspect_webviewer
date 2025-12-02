@@ -116,9 +116,9 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
                 {/* Separator */}
                 <span className="text-slate-700">|</span>
 
-                {/* Stats */}
+                {/* Stats - use tabular-nums and min-width to prevent layout shift when count changes digits */}
                 <Tooltip content="Entries loaded in browser / maximum display limit (configurable in Settings)" position="top">
-                    <span className="text-slate-400 cursor-default">
+                    <span className="text-slate-400 cursor-default whitespace-nowrap font-mono tabular-nums">
                         Entries: <span className="text-slate-200">{stats.size.toLocaleString()}</span>
                         <span className="text-slate-500"> / {limits.maxBufferEntries.toLocaleString()}</span>
                     </span>
