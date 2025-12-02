@@ -423,20 +423,44 @@ html, body, #root {
     white-space: nowrap;
     /* Vertical separator between header columns */
     border-right: 1px solid var(--vlg-border);
+    /* Ensure full height for border visibility */
+    height: 100%;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
 }
 
+/* First header cell (icon) gets left border too */
 .vlg-header-cell:first-child {
     border-left: 1px solid var(--vlg-border);
 }
 
+/* --- Column Drag and Drop --- */
+
+/* Source column becomes semi-transparent placeholder */
 .vlg-header-cell.dragging {
-    opacity: 0.5;
-    background-color: #1e3a5f;
+    opacity: 0.3;
 }
 
+/* Drop target - subtle left border indicator */
 .vlg-header-cell.drop-target {
-    background-color: #1e4a3f;
-    border-left: 2px solid #60a5fa;
+    position: relative;
+}
+
+.vlg-header-cell.drop-target::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background-color: var(--vlg-text);
+    opacity: 0.6;
+}
+
+/* Disable text selection during drag */
+.vlg-header.dragging-active {
+    user-select: none;
 }
 
 /* Scroll container */

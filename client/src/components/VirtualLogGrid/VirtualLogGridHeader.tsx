@@ -1,4 +1,5 @@
-import { memo, useState, useCallback, useRef } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { ColumnConfig } from './types';
 import { ColumnMenu } from './ColumnMenu';
 
@@ -6,6 +7,17 @@ interface VirtualLogGridHeaderProps {
   columns: ColumnConfig[];
   onColumnsChange?: (columns: ColumnConfig[]) => void;
   hasScrollbar?: boolean;
+}
+
+interface DragState {
+  columnId: string;
+  columnHeader: string;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  sourceRect: DOMRect;
+  headerStyle: React.CSSProperties;
 }
 
 export const VirtualLogGridHeader = memo(function VirtualLogGridHeader({
@@ -22,10 +34,72 @@ export const VirtualLogGridHeader = memo(function VirtualLogGridHeader({
     position: { x: 0, y: 0 },
   });
 
-  // Drag state
-  const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const dragRef = useRef<{ startX: number; columnId: string } | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const dropTargetRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    dropTargetRef.current = dropTargetId;
+  }, [dropTargetId]);
+
+  // Handle mouse move during drag
+  useEffect(() => {
+    if (!dragState) return;
+
+    const findDropTarget = (clientX: number): string | null => {
+      if (!headerRef.current) return null;
+
+      const cells = headerRef.current.querySelectorAll('.vlg-header-cell');
+      for (const cell of cells) {
+        const rect = cell.getBoundingClientRect();
+        if (clientX >= rect.left && clientX <= rect.right) {
+          // Get column id from data attribute
+          const columnId = (cell as HTMLElement).dataset.columnId;
+          if (columnId && columnId !== 'icon' && columnId !== dragState.columnId) {
+            return columnId;
+          }
+        }
+      }
+      return null;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setDragState(prev => prev ? { ...prev, currentX: e.clientX, currentY: e.clientY } : null);
+      const target = findDropTarget(e.clientX);
+      setDropTargetId(target);
+      dropTargetRef.current = target;
+    };
+
+    const handleMouseUp = () => {
+      const currentDropTarget = dropTargetRef.current;
+
+      if (dragState && currentDropTarget && onColumnsChange) {
+        const sourceIndex = columns.findIndex(col => col.id === dragState.columnId);
+        const targetIndex = columns.findIndex(col => col.id === currentDropTarget);
+
+        if (sourceIndex !== -1 && targetIndex !== -1 && sourceIndex !== targetIndex) {
+          const newColumns = [...columns];
+          const [movedColumn] = newColumns.splice(sourceIndex, 1);
+          newColumns.splice(targetIndex, 0, movedColumn);
+          onColumnsChange(newColumns);
+        }
+      }
+
+      setDragState(null);
+      setDropTargetId(null);
+      dropTargetRef.current = null;
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, columns, onColumnsChange]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, columnId?: string) => {
     e.preventDefault();
@@ -60,12 +134,10 @@ export const VirtualLogGridHeader = memo(function VirtualLogGridHeader({
     const newIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
     if (newIndex < 0 || newIndex >= visibleColumns.length) return;
 
-    // Get the actual indices in the full columns array
     const currentFullIndex = columns.findIndex(col => col.id === columnId);
     const targetColumnId = visibleColumns[newIndex].id;
     const targetFullIndex = columns.findIndex(col => col.id === targetColumnId);
 
-    // Swap columns
     const newColumns = [...columns];
     [newColumns[currentFullIndex], newColumns[targetFullIndex]] =
       [newColumns[targetFullIndex], newColumns[currentFullIndex]];
@@ -73,109 +145,104 @@ export const VirtualLogGridHeader = memo(function VirtualLogGridHeader({
     onColumnsChange(newColumns);
   }, [columns, onColumnsChange]);
 
-  // Drag handlers
-  const handleDragStart = useCallback((e: React.DragEvent, columnId: string, columnType: string) => {
-    // Don't allow dragging the icon column
-    if (columnType === 'icon') {
-      e.preventDefault();
-      return;
-    }
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', columnId);
-    setDraggedColumnId(columnId);
-    dragRef.current = { startX: e.clientX, columnId };
-  }, []);
+  const handleMouseDown = useCallback((e: React.MouseEvent, column: ColumnConfig) => {
+    if (column.type === 'icon') return;
+    if (e.button !== 0) return; // Only left click
 
-  const handleDragOver = useCallback((e: React.DragEvent, columnId: string, columnType: string) => {
+    const cell = e.currentTarget as HTMLElement;
+    const rect = cell.getBoundingClientRect();
+
+    // Get computed styles for the floating clone
+    const computedStyle = window.getComputedStyle(cell);
+
+    setDragState({
+      columnId: column.id,
+      columnHeader: column.header,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      sourceRect: rect,
+      headerStyle: {
+        width: rect.width,
+        height: rect.height,
+        backgroundColor: computedStyle.backgroundColor,
+        color: computedStyle.color,
+        fontWeight: computedStyle.fontWeight,
+        fontSize: computedStyle.fontSize,
+        fontFamily: computedStyle.fontFamily,
+        padding: computedStyle.padding,
+        textAlign: column.align || 'left',
+      },
+    });
+
     e.preventDefault();
-    // Don't allow dropping on icon column
-    if (columnType === 'icon') return;
-    e.dataTransfer.dropEffect = 'move';
-    if (columnId !== draggedColumnId) {
-      setDropTargetId(columnId);
-    }
-  }, [draggedColumnId]);
-
-  const handleDragLeave = useCallback(() => {
-    setDropTargetId(null);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetColumnId: string, targetColumnType: string) => {
-    e.preventDefault();
-    // Don't allow dropping on icon column
-    if (targetColumnType === 'icon') return;
-
-    const sourceColumnId = e.dataTransfer.getData('text/plain');
-    if (!sourceColumnId || sourceColumnId === targetColumnId || !onColumnsChange) {
-      setDraggedColumnId(null);
-      setDropTargetId(null);
-      return;
-    }
-
-    // Find indices and reorder
-    const sourceIndex = columns.findIndex(col => col.id === sourceColumnId);
-    const targetIndex = columns.findIndex(col => col.id === targetColumnId);
-
-    if (sourceIndex === -1 || targetIndex === -1) {
-      setDraggedColumnId(null);
-      setDropTargetId(null);
-      return;
-    }
-
-    // Remove from old position and insert at new
-    const newColumns = [...columns];
-    const [movedColumn] = newColumns.splice(sourceIndex, 1);
-    newColumns.splice(targetIndex, 0, movedColumn);
-
-    onColumnsChange(newColumns);
-    setDraggedColumnId(null);
-    setDropTargetId(null);
-  }, [columns, onColumnsChange]);
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedColumnId(null);
-    setDropTargetId(null);
-    dragRef.current = null;
-  }, []);
-
-  // Scrollbar width - matches ::-webkit-scrollbar width in CSS
   const scrollbarWidth = 8;
+
+  // Calculate floating header position
+  const floatingStyle: React.CSSProperties | null = dragState ? {
+    position: 'fixed',
+    left: dragState.sourceRect.left + (dragState.currentX - dragState.startX),
+    top: dragState.sourceRect.top + (dragState.currentY - dragState.startY),
+    ...dragState.headerStyle,
+    zIndex: 10000,
+    pointerEvents: 'none',
+    opacity: 0.9,
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+    border: '1px solid var(--vlg-border)',
+    display: 'flex',
+    alignItems: 'center',
+    boxSizing: 'border-box',
+    cursor: 'grabbing',
+  } : null;
 
   return (
     <>
       <div
-        className="vlg-header"
+        ref={headerRef}
+        className={`vlg-header${dragState ? ' dragging-active' : ''}`}
         style={{ paddingRight: hasScrollbar ? scrollbarWidth : 0 }}
         onContextMenu={(e) => handleContextMenu(e)}
       >
-        {columns.filter(col => !col.hidden).map((column) => (
-          <div
-            key={column.id}
-            className={`vlg-header-cell vlg-header-${column.id}${
-              draggedColumnId === column.id ? ' dragging' : ''
-            }${dropTargetId === column.id ? ' drop-target' : ''}`}
-            style={{
-              width: column.width,
-              flex: column.flex,
-              minWidth: column.minWidth,
-              textAlign: column.align,
-              cursor: column.type !== 'icon' ? 'grab' : 'default',
-            }}
-            draggable={column.type !== 'icon'}
-            onDragStart={(e) => handleDragStart(e, column.id, column.type)}
-            onDragOver={(e) => handleDragOver(e, column.id, column.type)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, column.id, column.type)}
-            onDragEnd={handleDragEnd}
-            onContextMenu={(e) => {
-              e.stopPropagation();
-              handleContextMenu(e, column.id);
-            }}
-          >
-            {column.header}
-          </div>
-        ))}
+        {columns.filter(col => !col.hidden).map((column) => {
+          const isDragging = dragState?.columnId === column.id;
+          const isDropTarget = dropTargetId === column.id;
+
+          return (
+            <div
+              key={column.id}
+              data-column-id={column.id}
+              className={`vlg-header-cell vlg-header-${column.id}${
+                isDragging ? ' dragging' : ''
+              }${isDropTarget ? ' drop-target' : ''}`}
+              style={{
+                width: column.width,
+                flex: column.flex,
+                minWidth: column.minWidth,
+                textAlign: column.align,
+                cursor: column.type !== 'icon' ? (dragState ? 'grabbing' : 'grab') : 'default',
+              }}
+              onMouseDown={(e) => handleMouseDown(e, column)}
+              onContextMenu={(e) => {
+                e.stopPropagation();
+                handleContextMenu(e, column.id);
+              }}
+            >
+              {column.header}
+            </div>
+          );
+        })}
       </div>
+
+      {/* Floating drag header */}
+      {dragState && floatingStyle && createPortal(
+        <div style={floatingStyle}>
+          {dragState.columnHeader}
+        </div>,
+        document.body
+      )}
 
       {menuState.isOpen && (
         <ColumnMenu
