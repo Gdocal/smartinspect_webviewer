@@ -51,7 +51,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
-    const [newEntryIds, setNewEntryIds] = useState<Set<number>>(new Set()); // Track newly added entries for animation
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
@@ -331,6 +330,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     }, [selectedChannel, streams, streamTotalReceived, isSlowMode, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
 
     // Simple consumption timer - displays entries at fixed rate (displayRate entries/sec)
+    // Use ref-based approach to ensure exactly one entry per tick, avoiding React batching issues
+    const playbackBufferRef = useRef<StreamEntry[]>([]);
+    playbackBufferRef.current = playbackBuffer;
+
     useEffect(() => {
         if (!isSlowMode) return; // Only consume in slow mode
         if (isInSnapshotMode) return; // Don't consume in snapshot mode
@@ -338,26 +341,23 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         const msPerEntry = 1000 / displayRate; // e.g., 5/sec = 200ms per entry
 
         const timer = setInterval(() => {
-            setPlaybackBuffer(prev => {
-                if (prev.length === 0) return prev;
-                const [entry, ...rest] = prev;
-                setSlowModeDisplayEntries(current => {
-                    const updated = [...current, entry];
-                    // Mark entry as new for animation
-                    setNewEntryIds(prevIds => new Set(prevIds).add(entry.id));
-                    // Remove from new entries after animation completes (400ms)
-                    setTimeout(() => {
-                        setNewEntryIds(prevIds => {
-                            const next = new Set(prevIds);
-                            next.delete(entry.id);
-                            return next;
-                        });
-                    }, 400);
-                    return updated.length > PLAYBACK_BUFFER_MAX
-                        ? updated.slice(-PLAYBACK_BUFFER_MAX)
-                        : updated;
-                });
-                return rest;
+            // Read from ref to get latest buffer state without React batching delays
+            const currentBuffer = playbackBufferRef.current;
+            if (currentBuffer.length === 0) return;
+
+            // Take exactly one entry
+            const entry = currentBuffer[0];
+            const rest = currentBuffer.slice(1);
+
+            // Update buffer state
+            setPlaybackBuffer(rest);
+
+            // Add entry to display - smooth scroll handles visual effect
+            setSlowModeDisplayEntries(current => {
+                const updated = [...current, entry];
+                return updated.length > PLAYBACK_BUFFER_MAX
+                    ? updated.slice(-PLAYBACK_BUFFER_MAX)
+                    : updated;
             });
         }, msPerEntry);
 
@@ -779,7 +779,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     return (
                                         <div
                                             key={`${entry.id}-${entry.timestamp}-${virtualRow.index}`}
-                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''} ${newEntryIds.has(entry.id) ? 'new-entry' : ''}`}
+                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''}`}
                                             style={{
                                                 position: 'absolute',
                                                 top: 0,
