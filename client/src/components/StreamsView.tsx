@@ -9,7 +9,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLogStore, StreamEntry } from '../store/logStore';
 import { HighlightRulesPanel } from './HighlightRulesPanel';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAutoScroll } from './VirtualLogGrid/useAutoScroll';
 import { useScrollDetection } from './VirtualLogGrid/useScrollDetection';
@@ -35,6 +35,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [paused, setPaused] = useState(false);
     const [autoScroll, setAutoScroll] = useState(true);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
+
+    // Snapshot mode state - per channel
+    const [snapshotMode, setSnapshotMode] = useState<Record<string, boolean>>({});
+    const [snapshots, setSnapshots] = useState<Record<string, {
+        entries: StreamEntry[];
+        capturedAt: Date;
+        frozenSelectedId: number | null;
+    }>>({});
 
     // Grid container ref for virtualization
     const parentRef = useRef<HTMLDivElement>(null);
@@ -75,6 +83,37 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         document.body.style.userSelect = 'none';
     }, [listWidth]);
 
+    // Snapshot mode handlers
+    const isInSnapshotMode = selectedChannel ? (snapshotMode[selectedChannel] || false) : false;
+    const currentSnapshot = selectedChannel ? snapshots[selectedChannel] : undefined;
+
+    const enterSnapshotMode = useCallback(() => {
+        if (!selectedChannel) return;
+        const liveEntries = streams[selectedChannel] || [];
+        setSnapshots(prev => ({
+            ...prev,
+            [selectedChannel]: {
+                entries: [...liveEntries], // Deep copy = stable reference
+                capturedAt: new Date(),
+                frozenSelectedId: selectedEntryId
+            }
+        }));
+        setSnapshotMode(prev => ({ ...prev, [selectedChannel]: true }));
+    }, [selectedChannel, streams, selectedEntryId]);
+
+    const exitSnapshotMode = useCallback(() => {
+        if (!selectedChannel) return;
+        setSnapshotMode(prev => ({ ...prev, [selectedChannel]: false }));
+        setSnapshots(prev => {
+            const newSnapshots = { ...prev };
+            delete newSnapshots[selectedChannel];
+            return newSnapshots;
+        });
+        // Re-enable auto-scroll when exiting snapshot
+        setAutoScroll(true);
+        setStuckToBottom(true);
+    }, [selectedChannel]);
+
     // Clear selected stream only
     const handleClearSelected = useCallback(() => {
         if (selectedChannel) {
@@ -94,7 +133,15 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     }, [clearAllStreams]);
 
     const channels = Object.keys(streams);
-    const entries = selectedChannel ? (streams[selectedChannel] || []) : [];
+
+    // Get source entries - either from snapshot or live stream
+    const sourceEntries = useMemo(() => {
+        if (!selectedChannel) return [];
+        if (isInSnapshotMode && currentSnapshot) {
+            return currentSnapshot.entries;
+        }
+        return streams[selectedChannel] || [];
+    }, [selectedChannel, isInSnapshotMode, currentSnapshot, streams]);
 
     // Auto-select first channel
     if (!selectedChannel && channels.length > 0) {
@@ -106,10 +153,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Filter entries
     const filteredEntries = useMemo(() => {
-        if (!filterText) return entries;
+        if (!filterText) return sourceEntries;
         const lower = filterText.toLowerCase();
-        return entries.filter(e => e.data.toLowerCase().includes(lower));
-    }, [entries, filterText]);
+        return sourceEntries.filter(e => e.data.toLowerCase().includes(lower));
+    }, [sourceEntries, filterText]);
 
     // Store paused entries separately
     const [pausedEntries, setPausedEntries] = useState<StreamEntry[]>([]);
@@ -122,6 +169,26 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     }, [paused, filteredEntries]);
 
     const displayedEntries = paused ? pausedEntries : filteredEntries;
+
+    // Calculate how many new entries arrived since snapshot
+    const newEntriesSinceSnapshot = useMemo(() => {
+        if (!isInSnapshotMode || !currentSnapshot || !selectedChannel) return 0;
+        const liveCount = (streams[selectedChannel] || []).length;
+        const snapshotCount = currentSnapshot.entries.length;
+        return Math.max(0, liveCount - snapshotCount);
+    }, [isInSnapshotMode, currentSnapshot, selectedChannel, streams]);
+
+    // Auto-cleanup stale snapshots after 5 minutes
+    useEffect(() => {
+        if (!isInSnapshotMode || !currentSnapshot) return;
+
+        const cleanupTimer = setTimeout(() => {
+            console.log('[StreamsView] Auto-cleaning stale snapshot (5 min timeout)');
+            exitSnapshotMode();
+        }, 5 * 60 * 1000); // 5 minutes
+
+        return () => clearTimeout(cleanupTimer);
+    }, [isInSnapshotMode, currentSnapshot, exitSnapshotMode]);
 
     // Row height for virtualization
     const ROW_HEIGHT = 32;
@@ -152,13 +219,17 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         },
     });
 
-    // Scroll detection hook
+    // Scroll detection hook - now with snapshot trigger
     useScrollDetection({
         scrollElement: parentRef.current,
         onUserScrollUp: useCallback(() => {
             markUserScroll();
             setStuckToBottom(false);
-        }, [markUserScroll]),
+            // AUTO-TRIGGER: Enter snapshot when scrolling up (unless already in snapshot or paused)
+            if (!isInSnapshotMode && !paused) {
+                enterSnapshotMode();
+            }
+        }, [markUserScroll, isInSnapshotMode, paused, enterSnapshotMode]),
         onScrollToBottom: useCallback(() => {
             markStuckToBottom();
             setStuckToBottom(true);
@@ -173,10 +244,29 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         instantScrollToBottom();
     }, [markStuckToBottom, instantScrollToBottom]);
 
-    // Handle row click
-    const handleRowClick = useCallback((entry: StreamEntry) => {
+    // Handler for "Jump to Live" button - exits snapshot mode
+    const handleJumpToLive = useCallback(() => {
+        exitSnapshotMode();
+        setStuckToBottom(true);
+        markStuckToBottom();
+        instantScrollToBottom();
+    }, [exitSnapshotMode, markStuckToBottom, instantScrollToBottom]);
+
+    // Handle row click - using useCallback with ref to avoid closure issues during rapid updates
+    const handleRowClickRef = useRef<(entry: StreamEntry) => void>();
+    handleRowClickRef.current = (entry: StreamEntry) => {
+        // Select the entry for detail panel
         onSelectEntry(entry);
-    }, [onSelectEntry]);
+
+        // Enter snapshot mode if not already in it (prevents stream from moving)
+        if (!isInSnapshotMode && !paused) {
+            enterSnapshotMode();
+        }
+    };
+
+    const handleRowClick = useCallback((entry: StreamEntry) => {
+        handleRowClickRef.current?.(entry);
+    }, []);
 
     // Handle keyboard navigation
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -344,7 +434,15 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                         {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                         <button
-                            onClick={() => setAutoScroll(!autoScroll)}
+                            onClick={() => {
+                                const newAutoScroll = !autoScroll;
+                                setAutoScroll(newAutoScroll);
+
+                                // If disabling autoscroll, exit snapshot mode
+                                if (!newAutoScroll && isInSnapshotMode) {
+                                    exitSnapshotMode();
+                                }
+                            }}
                             className={`p-1.5 rounded transition-colors ${
                                 !autoScroll
                                     ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -449,7 +547,18 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                                 alignItems: 'center',
                                                 cursor: 'pointer',
                                             }}
-                                            onClick={() => handleRowClick(entry)}
+                                            onMouseDownCapture={(e) => {
+                                                // Use mousedown with capture phase for maximum reliability during rapid updates
+                                                // Capture phase fires before target phase, ensuring we get the event first
+                                                if (e.button === 0) { // Only left mouse button
+                                                    // Prevent text selection on double-click
+                                                    if (e.detail > 1) e.preventDefault();
+                                                    // Immediately handle the click
+                                                    handleRowClick(entry);
+                                                    // Stop propagation to prevent any interference
+                                                    e.stopPropagation();
+                                                }
+                                            }}
                                         >
                                             {/* Content cell */}
                                             <div
@@ -490,11 +599,68 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             color: 'var(--vlg-text-muted)'
                         }}>
                             {displayedEntries.length} entries
-                            {filterText && ` (filtered from ${entries.length})`}
+                            {filterText && ` (filtered from ${sourceEntries.length})`}
                         </div>
 
-                        {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up */}
-                        {autoScroll && !stuckToBottom && (
+                        {/* Snapshot indicator - shows when in snapshot mode */}
+                        {isInSnapshotMode && currentSnapshot && (
+                            <div className="vlg-snapshot-indicator" style={{
+                                position: 'absolute',
+                                top: 8,
+                                left: '50%',
+                                transform: 'translateX(-50%)',
+                                padding: '6px 12px',
+                                background: 'rgba(139, 92, 246, 0.9)',
+                                color: 'white',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                zIndex: 1001,
+                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+                            }}>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                <span>Snapshot from {formatDistanceToNow(currentSnapshot.capturedAt, {
+                                    addSuffix: true,
+                                    includeSeconds: true
+                                })}</span>
+                            </div>
+                        )}
+
+                        {/* Floating "Jump to Live" button - shows when in snapshot mode */}
+                        {isInSnapshotMode && (
+                            <button
+                                onClick={handleJumpToLive}
+                                className="vlg-jump-to-live"
+                                title="Exit snapshot and jump to live stream"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>Jump to Live</span>
+                                {newEntriesSinceSnapshot > 0 && (
+                                    <span className="vlg-new-entries-badge" style={{
+                                        marginLeft: '4px',
+                                        padding: '2px 6px',
+                                        background: 'rgba(255, 255, 255, 0.25)',
+                                        borderRadius: '10px',
+                                        fontSize: '11px',
+                                        fontWeight: 600
+                                    }}>
+                                        +{newEntriesSinceSnapshot}
+                                    </span>
+                                )}
+                            </button>
+                        )}
+
+                        {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up (only when NOT in snapshot) */}
+                        {!isInSnapshotMode && autoScroll && !stuckToBottom && (
                             <button
                                 onClick={handleJumpToBottom}
                                 className="vlg-jump-to-bottom"

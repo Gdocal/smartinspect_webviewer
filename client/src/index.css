@@ -850,3 +850,51 @@ svg.vlg-menu-icon {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+/* "Jump to Live" floating button - appears when in snapshot mode (matches Resume button) */
+.vlg-jump-to-live {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px;
+    background: rgba(59, 130, 246, 0.75);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+}
+
+.vlg-jump-to-live:hover {
+    background: rgba(37, 99, 235, 0.9);
+    transform: translateX(-50%) translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.vlg-jump-to-live:active {
+    transform: translateX(-50%) translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.vlg-jump-to-live svg {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+}
+
+/* Light theme jump to live button */
+.virtual-log-grid.light .vlg-jump-to-live {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.virtual-log-grid.light .vlg-jump-to-live:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
