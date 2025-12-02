@@ -477,15 +477,12 @@ html, body, #root {
     text-overflow: ellipsis;
     white-space: nowrap;
     box-sizing: border-box;
-    /* Vertical separator */
-    border-right: 1px solid var(--vlg-border);
+    /* No vertical separators between cells */
     /* Vertically center content since row uses align-items: stretch */
     display: flex;
     align-items: center;
-}
-
-.vlg-cell:first-child {
-    border-left: 1px solid var(--vlg-border);
+    /* Prevent text selection - use cell selection instead */
+    user-select: none;
 }
 
 .vlg-cell-icon {
@@ -493,8 +490,8 @@ html, body, #root {
     align-items: center;
     justify-content: center;
     font-size: 10px;
-    /* Show right border as separator after icon column */
-    border-right-color: var(--vlg-border);
+    /* Only icon column has right border separator */
+    border-right: 1px solid var(--vlg-border);
 }
 
 /* Header icon cell already has border-right from .vlg-header-cell */
@@ -519,9 +516,26 @@ html, body, #root {
     filter: brightness(1.1);
 }
 
-/* Cell selection - background highlight only (no border for now) */
+/* Cell selection - background highlight */
 .vlg-cell.selected {
     background: rgba(59, 130, 246, 0.2); /* blue-500 with transparency */
+}
+
+/* Cell selection borders - only on edges of selection range */
+.vlg-cell.sel-top {
+    border-top: 1px solid #3b82f6;
+}
+
+.vlg-cell.sel-bottom {
+    border-bottom: 1px solid #3b82f6;
+}
+
+.vlg-cell.sel-left {
+    border-left: 1px solid #3b82f6;
+}
+
+.vlg-cell.sel-right {
+    border-right: 1px solid #3b82f6;
 }
 
 /* Disable text selection during drag */
