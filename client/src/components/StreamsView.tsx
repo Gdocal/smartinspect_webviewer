@@ -508,14 +508,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     }`}>
                                         {speed}/s
                                     </span>
-                                    {/* Entry count column - fixed width for alignment */}
-                                    <span className={`text-xs font-mono tabular-nums w-12 text-right flex-shrink-0 ml-2 px-1.5 py-0.5 rounded ${
-                                        isSelected
-                                            ? 'bg-purple-600 text-purple-100'
-                                            : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
-                                    }`}>
-                                        {count}
-                                    </span>
+                                    {/* Entry count badge - fixed width container, center-aligned content */}
+                                    <div className="w-14 flex-shrink-0 flex justify-end">
+                                        <span className={`text-xs px-1.5 py-0.5 rounded text-center min-w-[2.5rem] ${
+                                            isSelected
+                                                ? 'bg-purple-600 text-purple-100'
+                                                : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
+                                        }`}>
+                                            {count}
+                                        </span>
+                                    </div>
                                 </button>
                             );
                         })

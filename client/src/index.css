@@ -247,6 +247,11 @@ html, body, #root {
     background: transparent !important;
 }
 
+.json-viewer-wrapper .json-view-child {
+    padding-left: 1.25em;
+    display: block;
+}
+
 .json-viewer-wrapper .json-view-label {
     color: #93c5fd !important; /* blue-300 */
 }
