@@ -21,7 +21,7 @@ const { registerQueryRoutes } = require('./query-api');
 
 // Configuration from environment
 const config = {
-    httpPort: parseInt(process.env.HTTP_PORT) || 3000,
+    httpPort: parseInt(process.env.HTTP_PORT) || 5174,
     tcpPort: parseInt(process.env.TCP_PORT) || 4229,
     authToken: process.env.SI_AUTH_TOKEN || null,
     authRequired: process.env.SI_AUTH_REQUIRED === 'true',

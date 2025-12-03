@@ -52,7 +52,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
     const [bufferFull, setBufferFull] = useState(false); // Track when buffer reaches capacity
-    const [newestEntryId, setNewestEntryId] = useState<string | null>(null); // Track newest entry for animation
+    const [newestEntryId, setNewestEntryId] = useState<number | null>(null); // Track newest entry for animation
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
@@ -153,6 +153,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const handleClearSelected = useCallback(() => {
         if (selectedChannel) {
             clearStream(selectedChannel);
+            // Also clear slow mode state
+            setPlaybackBuffer([]);
+            setBufferFull(false);
+            setSlowModeDisplayEntries([]);
+            setNewestEntryId(null);
+            lastProcessedRef.current = 0;
         }
     }, [selectedChannel, clearStream]);
 
@@ -321,6 +327,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         }
 
         // Already in slow mode: buffer new entries based on total received counter
+        // BUT if buffer is full (locked), don't accept ANY new entries - this prevents data fragmentation
+        if (bufferFull) {
+            // Buffer is locked - skip these entries entirely to prevent gaps
+            // The buffer will unlock when it drains below 50%
+            lastProcessedRef.current = currentTotal; // Mark as "processed" (skipped)
+            return;
+        }
+
         const newCount = currentTotal - lastProcessedRef.current;
         if (newCount > 0) {
             // Get the last N entries from the live stream (they're the newest)
@@ -329,7 +343,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                 const remaining = PLAYBACK_BUFFER_MAX - prev.length;
 
                 if (remaining <= 0) {
-                    // Buffer is already full - reject all new entries
+                    // Buffer just became full - lock it
                     setBufferFull(true);
                     return prev;
                 }
@@ -342,7 +356,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     }
                     return updated;
                 } else {
-                    // Only some entries fit - add what we can, then stop
+                    // Only some entries fit - add what we can, then lock
                     const entriesToAdd = newEntries.slice(0, remaining);
                     setBufferFull(true);
                     return [...prev, ...entriesToAdd];
@@ -350,7 +364,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             });
             lastProcessedRef.current = currentTotal;
         }
-    }, [selectedChannel, streams, streamTotalReceived, isSlowMode, isInSnapshotMode, PLAYBACK_BUFFER_MAX]);
+    }, [selectedChannel, streams, streamTotalReceived, isSlowMode, isInSnapshotMode, bufferFull, PLAYBACK_BUFFER_MAX]);
 
     // Simple consumption timer - displays entries at fixed rate (displayRate entries/sec)
     // Use ref-based approach to ensure exactly one entry per tick, avoiding React batching issues
@@ -375,8 +389,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             // Update buffer state
             setPlaybackBuffer(rest);
 
-            // Clear buffer full warning when buffer drains below 90%
-            if (rest.length < PLAYBACK_BUFFER_MAX * 0.9) {
+            // Unlock buffer when it drains below 50% - this allows batch refilling
+            // and prevents constant fill/drain cycles that cause data gaps
+            if (rest.length < PLAYBACK_BUFFER_MAX * 0.5) {
                 setBufferFull(false);
             }
 
@@ -432,6 +447,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         onUserScrollUp: () => {
             setStuckToBottom(false);
         },
+        lastEntryId: newestEntryId,
     });
 
     // Scroll detection hook - now with snapshot trigger
@@ -807,9 +823,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     const isOdd = virtualRow.index % 2 === 1;
                                     const isNewest = entry.id === newestEntryId;
 
+                                    // Use entry.id as key to force re-render when new entry appears
+                                    // This ensures CSS animation plays for new entries
                                     return (
                                         <div
-                                            key={`${entry.id}-${entry.timestamp}-${virtualRow.index}`}
+                                            key={entry.id}
                                             className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''} ${isNewest ? 'new-entry' : ''}`}
                                             style={{
                                                 position: 'absolute',

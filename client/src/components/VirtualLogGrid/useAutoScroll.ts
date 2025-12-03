@@ -8,6 +8,7 @@ interface AutoScrollState {
   lastUpdateTime: number;
   averageRate: number;
   lastEntriesCount: number;
+  lastEntryId: number | null;
 }
 
 // Threshold: below this rate (updates/sec), use smooth scrolling
@@ -22,6 +23,7 @@ interface UseAutoScrollOptions {
   entriesCount: number;
   autoScrollEnabled: boolean;
   onUserScrollUp?: () => void;
+  lastEntryId?: number | null; // Optional: track content changes when count stays same
 }
 
 export function useAutoScroll({
@@ -29,6 +31,7 @@ export function useAutoScroll({
   entriesCount,
   autoScrollEnabled,
   onUserScrollUp,
+  lastEntryId,
 }: UseAutoScrollOptions) {
   const stateRef = useRef<AutoScrollState>({
     isStuckToBottom: true,
@@ -37,6 +40,7 @@ export function useAutoScroll({
     userDisabledTime: 0,
     lastUpdateTime: Date.now(),
     averageRate: 0,
+    lastEntryId: null,
     lastEntriesCount: 0,
   });
 
@@ -149,15 +153,22 @@ export function useAutoScroll({
     stateRef.current.lastUpdateTime = now;
   }, [entriesCount]);
 
-  // Effect: scroll when entries count increases AND autoscroll is enabled
+  // Effect: scroll when entries count increases OR content changes (when at capacity)
   useEffect(() => {
     if (!autoScrollEnabled || !scrollElement) return;
 
     const prevCount = stateRef.current.lastEntriesCount;
+    const prevEntryId = stateRef.current.lastEntryId;
+
     stateRef.current.lastEntriesCount = entriesCount;
+    stateRef.current.lastEntryId = lastEntryId ?? null;
+
+    // Detect if content changed: either count increased, or lastEntryId changed (grid at capacity)
+    const countIncreased = entriesCount > prevCount;
+    const contentChanged = lastEntryId !== undefined && lastEntryId !== prevEntryId;
 
     // Only react to new entries being added
-    if (entriesCount <= prevCount) return;
+    if (!countIncreased && !contentChanged) return;
 
     const timeSinceUserScroll = Date.now() - stateRef.current.userScrollTime;
     const timeSinceDisabled = Date.now() - stateRef.current.userDisabledTime;
@@ -167,13 +178,20 @@ export function useAutoScroll({
       stateRef.current.isStuckToBottom = true;
       scrollToBottom();
     }
-  }, [entriesCount, autoScrollEnabled, scrollToBottom, scrollElement]);
+  }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, scrollElement]);
 
   // Start/stop scroll loop when autoScrollEnabled changes
   useEffect(() => {
     if (autoScrollEnabled && scrollElement) {
       stateRef.current.isStuckToBottom = true;
-      scrollToBottom();  // Use rate-based decision (smooth vs instant)
+      // Reset grace periods when autoscroll is explicitly enabled
+      // This ensures smooth scroll starts immediately without waiting for grace period
+      stateRef.current.userScrollTime = 0;
+      stateRef.current.userDisabledTime = 0;
+      // Reset rate to 0 so we default to smooth scrolling
+      // The rate will quickly adjust based on actual entry arrival rate
+      stateRef.current.averageRate = 0;
+      scrollToBottom();  // Will use smooth scroll since rate is now 0
     } else {
       // Stop the loop when autoscroll is disabled
       stopSmoothScrollLoop();
