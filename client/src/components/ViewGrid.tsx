@@ -219,7 +219,7 @@ export function ViewGrid({
 }: ViewGridProps) {
     const {
         entries,
-        paused,
+        viewPausedState,
         setSelectedEntryId,
         selectedEntryId,
         globalHighlightRules,
@@ -227,6 +227,9 @@ export function ViewGrid({
         theme,
         setViewStuckToBottom
     } = useLogStore();
+
+    // Per-view pause state
+    const isPaused = viewPausedState[view.id] ?? false;
 
     // Cell selection state
     const [selection, setSelection] = useState<CellRange | null>(null);
@@ -265,6 +268,22 @@ export function ViewGrid({
         return filterEntriesForView(entries, view.filter);
     }, [entries, view.filter, entriesVersion]);
 
+    // Paused entries snapshot - freeze display when paused
+    const [pausedEntries, setPausedEntries] = useState<LogEntry[]>([]);
+    const wasPausedRef = useRef(false);
+
+    // Update paused entries ONLY when transitioning from unpaused to paused
+    useEffect(() => {
+        if (isPaused && !wasPausedRef.current) {
+            // Just paused - capture current entries
+            setPausedEntries(filteredEntries);
+        }
+        wasPausedRef.current = isPaused;
+    }, [isPaused, filteredEntries]);
+
+    // Display either paused snapshot or live entries
+    const displayedEntries = isPaused ? pausedEntries : filteredEntries;
+
     // Handle column changes
     const handleColumnsChange = useCallback((newColumns: ColumnConfig[]) => {
         setColumns(newColumns);
@@ -283,8 +302,8 @@ export function ViewGrid({
         setViewStuckToBottom(view.id, stuckToBottom);
     }, [setViewStuckToBottom, view.id]);
 
-    // Effective autoscroll - respects paused state
-    const effectiveAutoScroll = view.autoScroll && !paused;
+    // Effective autoscroll - NOT affected by pause (pause freezes entries, not scroll)
+    const effectiveAutoScroll = view.autoScroll;
 
     return (
         <div
@@ -299,7 +318,7 @@ export function ViewGrid({
             }}
         >
             <VirtualLogGrid
-                entries={filteredEntries}
+                entries={displayedEntries}
                 autoScroll={effectiveAutoScroll}
                 selection={selection}
                 onSelectionChange={setSelection}

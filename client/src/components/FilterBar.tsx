@@ -9,8 +9,8 @@ export function FilterBar() {
     const {
         filter,
         setFilter,
-        paused,
-        setPaused,
+        viewPausedState,
+        setViewPaused,
         clearEntries,
         activeViewId,
         setEditingViewId,
@@ -22,6 +22,9 @@ export function FilterBar() {
     // Get the active view's autoScroll setting
     const activeView = views.find(v => v.id === activeViewId);
     const autoScroll = activeView?.autoScroll ?? true;
+
+    // Per-view pause state
+    const isPaused = activeViewId ? (viewPausedState[activeViewId] ?? false) : false;
 
     // Get the stuckToBottom state for the active view (for 3-state button)
     const stuckToBottom = activeViewId ? (viewStuckToBottom.get(activeViewId) ?? true) : true;
@@ -62,17 +65,18 @@ export function FilterBar() {
 
             {/* Control buttons - icon only */}
             <div className="flex items-center gap-1">
-                {/* Pause button */}
+                {/* Pause button - per-view pause */}
                 <button
-                    onClick={() => setPaused(!paused)}
+                    onClick={() => activeViewId && setViewPaused(activeViewId, !isPaused)}
+                    disabled={!activeViewId}
                     className={`p-1.5 rounded transition-colors ${
-                        paused
+                        isPaused
                             ? 'bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800'
                             : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
-                    title={paused ? 'Resume' : 'Pause'}
+                    title={isPaused ? 'Resume' : 'Pause'}
                 >
-                    {paused ? (
+                    {isPaused ? (
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

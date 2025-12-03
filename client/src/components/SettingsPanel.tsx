@@ -105,7 +105,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
     const { settings, updateSettings, getServerUrl, defaultSettings } = useSettings();
     const setCurrentUser = useLogStore(state => state.setCurrentUser);
-    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames, limits, setLimits } = useLogStore();
+    const { globalHighlightRules, addHighlightRule, updateHighlightRule, deleteHighlightRule, sessions, appNames, hostNames, limits, setLimits, rowDensity, setRowDensity } = useLogStore();
     const { markDirty } = useProjectPersistence();
 
     // Local form state
@@ -391,9 +391,54 @@ export function SettingsPanel({
 
                     {activeTab === 'display' && (
                         <div className="space-y-4">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                These limits are saved with the current project.
-                            </p>
+                            {/* Appearance section */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
+                                    Row Density
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setRowDensity('compact')}
+                                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            rowDensity === 'compact'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                                        }`}
+                                    >
+                                        Compact
+                                    </button>
+                                    <button
+                                        onClick={() => setRowDensity('default')}
+                                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            rowDensity === 'default'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                                        }`}
+                                    >
+                                        Default
+                                    </button>
+                                    <button
+                                        onClick={() => setRowDensity('comfortable')}
+                                        className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                            rowDensity === 'comfortable'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                                        }`}
+                                    >
+                                        Comfortable
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                                    Controls row height and font size in log grids. Compact shows more rows.
+                                </p>
+                            </div>
+
+                            {/* Project limits section */}
+                            <div className="pt-3 border-t border-slate-200 dark:border-slate-600">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                    Project limits - saved with current project
+                                </p>
+                            </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-1.5">
                                     Initial Load Limit

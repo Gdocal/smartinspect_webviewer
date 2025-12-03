@@ -1,5 +1,20 @@
 import { useRef, useCallback, useEffect } from 'react';
 
+// Debug logging - filter by grid name in console: "[AutoScroll:GridName]"
+// Set DEBUG_ENABLED to a grid name string to enable logging for that grid only
+// Examples: 'StreamsView', 'AllLogs', or true for all grids
+const DEBUG_PREFIX = '[AutoScroll]';
+const DEBUG_ENABLED: boolean | string = false;
+
+const debugLog = (message: string, data?: Record<string, unknown>) => {
+  if (!DEBUG_ENABLED) return;
+  if (data) {
+    console.log(`${DEBUG_PREFIX} ${message}`, data);
+  } else {
+    console.log(`${DEBUG_PREFIX} ${message}`);
+  }
+};
+
 interface AutoScrollState {
   isStuckToBottom: boolean;
   isProgrammaticScroll: boolean;
@@ -26,6 +41,9 @@ interface UseAutoScrollOptions {
   lastEntryId?: number | null; // Optional: track content changes when count stays same
 }
 
+// Lock duration: how long after a wheel-up event to block auto-scroll (ms)
+const WHEEL_LOCK_DURATION = 150;
+
 export function useAutoScroll({
   scrollElement,
   entriesCount,
@@ -46,11 +64,21 @@ export function useAutoScroll({
 
   const animationRef = useRef<number | null>(null);
   const isAnimatingRef = useRef(false);
+  // Direct wheel-up timestamp for race condition prevention
+  const wheelUpTimestampRef = useRef(0);
 
   // Continuous smooth scroll - lerps toward bottom
   const startSmoothScrollLoop = useCallback(() => {
-    if (!scrollElement || isAnimatingRef.current) return;
+    if (!scrollElement) {
+      debugLog('startSmoothScrollLoop: no scrollElement');
+      return;
+    }
+    if (isAnimatingRef.current) {
+      debugLog('startSmoothScrollLoop: already animating, skip');
+      return;
+    }
 
+    debugLog('startSmoothScrollLoop: STARTING smooth scroll loop');
     isAnimatingRef.current = true;
     stateRef.current.isProgrammaticScroll = true;
 
@@ -58,6 +86,16 @@ export function useAutoScroll({
       if (!scrollElement || !isAnimatingRef.current) {
         isAnimatingRef.current = false;
         stateRef.current.isProgrammaticScroll = false;
+        return;
+      }
+
+      // Check for recent wheel-up events - stop animating if user is scrolling
+      const timeSinceWheelUp = Date.now() - wheelUpTimestampRef.current;
+      if (timeSinceWheelUp < WHEEL_LOCK_DURATION) {
+        debugLog('animate: stopping due to wheel-up event');
+        isAnimatingRef.current = false;
+        stateRef.current.isProgrammaticScroll = false;
+        stateRef.current.isStuckToBottom = false;
         return;
       }
 
@@ -82,6 +120,9 @@ export function useAutoScroll({
 
   // Stop smooth scroll loop
   const stopSmoothScrollLoop = useCallback(() => {
+    if (isAnimatingRef.current) {
+      debugLog('stopSmoothScrollLoop: STOPPING smooth scroll loop');
+    }
     isAnimatingRef.current = false;
     if (animationRef.current !== null) {
       cancelAnimationFrame(animationRef.current);
@@ -94,6 +135,7 @@ export function useAutoScroll({
   const instantScrollToBottom = useCallback(() => {
     if (!scrollElement) return;
 
+    debugLog('instantScrollToBottom: using INSTANT scroll');
     stopSmoothScrollLoop();
 
     stateRef.current.isProgrammaticScroll = true;
@@ -109,8 +151,15 @@ export function useAutoScroll({
     if (!scrollElement) return;
 
     const rate = stateRef.current.averageRate;
+    const useSmooth = rate < SMOOTH_SCROLL_RATE_THRESHOLD;
 
-    if (rate < SMOOTH_SCROLL_RATE_THRESHOLD) {
+    debugLog('scrollToBottom: rate decision', {
+      rate: rate.toFixed(2),
+      threshold: SMOOTH_SCROLL_RATE_THRESHOLD,
+      decision: useSmooth ? 'SMOOTH' : 'INSTANT',
+    });
+
+    if (useSmooth) {
       // Low rate - use continuous smooth scrolling
       startSmoothScrollLoop();
     } else {
@@ -173,16 +222,71 @@ export function useAutoScroll({
     const timeSinceUserScroll = Date.now() - stateRef.current.userScrollTime;
     const timeSinceDisabled = Date.now() - stateRef.current.userDisabledTime;
 
+    // Check if we're currently at the bottom (within threshold)
+    // This prevents re-attaching when user is actively scrolling up
+    const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const isAtBottom = distanceFromBottom < 10; // 10px - very strict threshold
+
+    // Check for recent wheel-up events (race condition prevention)
+    const timeSinceWheelUp = Date.now() - wheelUpTimestampRef.current;
+    if (timeSinceWheelUp < WHEEL_LOCK_DURATION) {
+      debugLog('entriesEffect: BLOCKED by recent wheel-up event', {
+        timeSinceWheelUp,
+        lockDuration: WHEEL_LOCK_DURATION,
+      });
+      return;
+    }
+
     // Grace periods to avoid fighting user interaction
-    if (timeSinceUserScroll > 300 && timeSinceDisabled > 2000) {
-      stateRef.current.isStuckToBottom = true;
-      scrollToBottom();
+    // REQUIRE isStuckToBottom state - this is only true when:
+    // 1. Initially (never scrolled), OR
+    // 2. User manually scrolled back to bottom, OR
+    // 3. User clicked "Resume" button
+    if (timeSinceUserScroll > 300 && timeSinceDisabled > 2000 && stateRef.current.isStuckToBottom) {
+      // Use requestAnimationFrame to delay scroll slightly
+      // This allows any pending wheel events to fire first, preventing race conditions
+      requestAnimationFrame(() => {
+        // Re-check for recent wheel events inside the frame
+        const timeSinceWheelUpInFrame = Date.now() - wheelUpTimestampRef.current;
+        if (timeSinceWheelUpInFrame < WHEEL_LOCK_DURATION) {
+          debugLog('entriesEffect: CANCELLED in rAF - recent wheel-up', { timeSinceWheelUpInFrame });
+          return;
+        }
+        // Re-check isStuckToBottom after wheel events have had a chance to fire
+        if (!stateRef.current.isStuckToBottom) {
+          debugLog('entriesEffect: CANCELLED - user scrolled during frame');
+          return;
+        }
+        debugLog('entriesEffect: content changed, triggering scroll', {
+          entriesCount,
+          lastEntryId,
+          countIncreased,
+          contentChanged,
+          isAnimating: isAnimatingRef.current,
+          distanceFromBottom,
+        });
+        scrollToBottom();
+      });
+    } else {
+      debugLog('entriesEffect: BLOCKED by grace period or not stuck', {
+        timeSinceUserScroll,
+        timeSinceDisabled,
+        countIncreased,
+        contentChanged,
+        distanceFromBottom,
+        isAtBottom,
+        isStuckToBottom: stateRef.current.isStuckToBottom,
+      });
     }
   }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, scrollElement]);
 
   // Start/stop scroll loop when autoScrollEnabled changes
   useEffect(() => {
     if (autoScrollEnabled && scrollElement) {
+      debugLog('autoScrollEnabled changed: ENABLED - resetting state and starting scroll', {
+        prevRate: stateRef.current.averageRate.toFixed(2),
+      });
       stateRef.current.isStuckToBottom = true;
       // Reset grace periods when autoscroll is explicitly enabled
       // This ensures smooth scroll starts immediately without waiting for grace period
@@ -193,10 +297,28 @@ export function useAutoScroll({
       stateRef.current.averageRate = 0;
       scrollToBottom();  // Will use smooth scroll since rate is now 0
     } else {
+      debugLog('autoScrollEnabled changed: DISABLED - stopping scroll loop');
       // Stop the loop when autoscroll is disabled
       stopSmoothScrollLoop();
     }
   }, [autoScrollEnabled, scrollElement, scrollToBottom, stopSmoothScrollLoop]);
+
+  // Direct wheel event listener for race condition prevention
+  // This captures wheel-up events synchronously before React state can update
+  useEffect(() => {
+    if (!scrollElement) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        // User is scrolling UP - immediately mark the timestamp
+        wheelUpTimestampRef.current = Date.now();
+        debugLog('wheelUpTimestampRef: wheel-up detected', { timestamp: wheelUpTimestampRef.current });
+      }
+    };
+
+    scrollElement.addEventListener('wheel', handleWheel, { passive: true });
+    return () => scrollElement.removeEventListener('wheel', handleWheel);
+  }, [scrollElement]);
 
   // Cleanup animation on unmount
   useEffect(() => {

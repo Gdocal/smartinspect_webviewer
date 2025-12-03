@@ -365,6 +365,7 @@ interface LogState {
     isStreamsMode: boolean; // True when Streams tab is active
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
+    rowDensity: 'compact' | 'default' | 'comfortable'; // Row density for grids
 
     // Project tracking (shared state for dirty indicator)
     loadedProjectId: string | null; // Which server project is loaded (null = fresh)
@@ -441,9 +442,17 @@ interface LogState {
     setViewStuckToBottom: (viewId: string, stuckToBottom: boolean) => void;
     getViewStuckToBottom: (viewId: string) => boolean;
 
+    // Per-view pause state (not persisted)
+    viewPausedState: Record<string, boolean>;
+    setViewPaused: (viewId: string, paused: boolean) => void;
+    isViewPaused: (viewId: string) => boolean;
+
     // Theme
     setTheme: (theme: 'light' | 'dark') => void;
     toggleTheme: () => void;
+
+    // Row density
+    setRowDensity: (density: 'compact' | 'default' | 'comfortable') => void;
 
     // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
@@ -543,9 +552,13 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
     editingViewId: null,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
+    rowDensity: (localStorage.getItem('si-row-density') as 'compact' | 'default' | 'comfortable') || 'compact',
 
     // Runtime view state (not persisted - tracks stuckToBottom per view)
     viewStuckToBottom: new Map<string, boolean>(),
+
+    // Per-view pause state (not persisted)
+    viewPausedState: {},
 
     // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
     detailPanelHeightPercent: 25,
@@ -834,6 +847,15 @@ export const useLogStore = create<LogState>((set, get) => ({
         return state.viewStuckToBottom.get(viewId) ?? true; // Default to true (at bottom)
     },
 
+    // Per-view pause state
+    setViewPaused: (viewId, paused) => set((state) => ({
+        viewPausedState: { ...state.viewPausedState, [viewId]: paused }
+    })),
+    isViewPaused: (viewId) => {
+        const state = get();
+        return state.viewPausedState[viewId] ?? false; // Default to not paused
+    },
+
     // Theme
     setTheme: (theme) => {
         localStorage.setItem('si-theme', theme);
@@ -844,6 +866,12 @@ export const useLogStore = create<LogState>((set, get) => ({
         localStorage.setItem('si-theme', newTheme);
         return { theme: newTheme };
     }),
+
+    // Row density
+    setRowDensity: (density) => {
+        localStorage.setItem('si-row-density', density);
+        set({ rowDensity: density });
+    },
 
     // Layout size actions
     setDetailPanelHeightPercent: (percent) => set({

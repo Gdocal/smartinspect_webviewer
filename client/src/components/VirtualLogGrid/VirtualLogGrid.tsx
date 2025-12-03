@@ -1,12 +1,12 @@
 import { useRef, useCallback, useEffect, useMemo, useState, CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { LogEntry, HighlightRule, matchesHighlightRule } from '../../store/logStore';
+import { LogEntry, HighlightRule, matchesHighlightRule, useLogStore } from '../../store/logStore';
 import { VirtualLogGridRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatEntriesForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
-import { ROW_HEIGHT, OVERSCAN } from './constants';
+import { OVERSCAN, getRowHeight, getFontSize, getHeaderHeight } from './constants';
 import { DEFAULT_COLUMNS, ColumnConfig } from './types';
 
 // Cache for highlight styles to avoid recreating objects
@@ -102,8 +102,17 @@ export function VirtualLogGrid({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Get row density from store
+  const rowDensity = useLogStore((state) => state.rowDensity);
+  const rowHeight = getRowHeight(rowDensity);
+  const fontSize = getFontSize(rowDensity);
+  const headerHeight = getHeaderHeight(rowDensity);
+
   // Internal state: is the scrollbar at the bottom?
   const [stuckToBottom, setStuckToBottom] = useState(true);
+
+  // Track number of rows below visible viewport (updated on scroll)
+  const [rowsBelowViewport, setRowsBelowViewport] = useState(0);
 
   // Track if scrollbar is visible
   const [hasScrollbar, setHasScrollbar] = useState(false);
@@ -141,6 +150,7 @@ export function VirtualLogGrid({
   // Handler for "Jump to bottom" button - for re-enabling autoscroll at high data rates
   const handleJumpToBottom = useCallback(() => {
     setStuckToBottom(true);
+    setRowsBelowViewport(0);
     markStuckToBottom();
     instantScrollToBottom();
   }, [markStuckToBottom, instantScrollToBottom]);
@@ -155,6 +165,7 @@ export function VirtualLogGrid({
     onScrollToBottom: useCallback(() => {
       markStuckToBottom();
       setStuckToBottom(true);
+      setRowsBelowViewport(0);
     }, [markStuckToBottom]),
     isProgrammaticScroll,
   });
@@ -163,7 +174,7 @@ export function VirtualLogGrid({
   const virtualizer = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: OVERSCAN,
     getItemKey: (index) => entries[index]?.id ?? index,
   });
@@ -192,6 +203,29 @@ export function VirtualLogGrid({
   useEffect(() => {
     onStuckToBottomChange?.(stuckToBottom);
   }, [stuckToBottom, onStuckToBottomChange]);
+
+  // Calculate rows below viewport dynamically on scroll and entries change
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const calculateRowsBelow = () => {
+      const { scrollTop, clientHeight } = container;
+      const totalHeight = entries.length * rowHeight;
+      const visibleBottom = scrollTop + clientHeight;
+      const hiddenHeight = totalHeight - visibleBottom;
+      const rowsBelow = Math.max(0, Math.floor(hiddenHeight / rowHeight));
+      setRowsBelowViewport(rowsBelow);
+    };
+
+    // Calculate initially
+    calculateRowsBelow();
+
+    // Listen to scroll events
+    container.addEventListener('scroll', calculateRowsBelow, { passive: true });
+
+    return () => container.removeEventListener('scroll', calculateRowsBelow);
+  }, [entries.length, rowHeight]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -265,22 +299,22 @@ export function VirtualLogGrid({
 
     const rect = container.getBoundingClientRect();
     const y = clientY - rect.top + container.scrollTop;
-    const rowIndex = Math.floor(y / ROW_HEIGHT);
+    const rowIndex = Math.floor(y / rowHeight);
     return Math.max(0, Math.min(rowIndex, entries.length - 1));
-  }, [entries.length]);
+  }, [entries.length, rowHeight]);
 
   // Auto-scroll during drag
   const startAutoScroll = useCallback((direction: 'up' | 'down') => {
     if (autoScrollIntervalRef.current) return;
 
-    const scrollAmount = direction === 'up' ? -ROW_HEIGHT : ROW_HEIGHT;
+    const scrollAmount = direction === 'up' ? -rowHeight : rowHeight;
     autoScrollIntervalRef.current = window.setInterval(() => {
       const container = scrollContainerRef.current;
       if (container) {
         container.scrollTop += scrollAmount;
       }
     }, 50);
-  }, []);
+  }, [rowHeight]);
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollIntervalRef.current) {
@@ -517,7 +551,8 @@ export function VirtualLogGrid({
   return (
     <div
       ref={containerRef}
-      className={`virtual-log-grid ${theme}${isDragging ? ' selecting' : ''}`}
+      className={`virtual-log-grid ${theme}${isDragging ? ' selecting' : ''} density-${rowDensity}`}
+      style={{ '--vlg-row-height': `${rowHeight}px`, '--vlg-font-size': `${fontSize}px`, '--vlg-header-height': `${headerHeight}px` } as React.CSSProperties}
       tabIndex={0}
     >
       <VirtualLogGridHeader columns={columns} onColumnsChange={onColumnsChange} hasScrollbar={hasScrollbar} />
@@ -561,17 +596,22 @@ export function VirtualLogGrid({
         />
       )}
 
-      {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up */}
+      {/* Floating "Go to bottom" button - shows when autoscroll is enabled but user scrolled up */}
       {autoScroll && !stuckToBottom && (
         <button
           onClick={handleJumpToBottom}
           className="vlg-jump-to-bottom"
-          title="Resume auto-scroll"
+          title="Go to bottom and resume auto-scroll"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
-          <span>Resume</span>
+          <span>Go to bottom</span>
+          {rowsBelowViewport > 0 && (
+            <span className="vlg-new-entries-badge">
+              {rowsBelowViewport > 999 ? '999+' : rowsBelowViewport}
+            </span>
+          )}
         </button>
       )}
     </div>

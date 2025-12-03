@@ -13,6 +13,20 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAutoScroll } from './VirtualLogGrid/useAutoScroll';
 import { useScrollDetection } from './VirtualLogGrid/useScrollDetection';
+import { getStreamRowHeight, getFontSize, getHeaderHeight } from './VirtualLogGrid/constants';
+
+// Debug logging - filter by grid name in console: "[StreamsView]"
+const DEBUG_PREFIX = '[StreamsView]';
+const DEBUG_ENABLED = false; // Set to true to enable logging for this grid
+
+const debugLog = (message: string, data?: Record<string, unknown>) => {
+  if (!DEBUG_ENABLED) return;
+  if (data) {
+    console.log(`${DEBUG_PREFIX} ${message}`, data);
+  } else {
+    console.log(`${DEBUG_PREFIX} ${message}`);
+  }
+};
 
 // Format timestamp for display
 function formatTime(timestamp: string): string {
@@ -29,10 +43,20 @@ interface StreamsViewProps {
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme } = useLogStore();
+    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity } = useLogStore();
+    const rowHeight = getStreamRowHeight(rowDensity);
+    const fontSize = getFontSize(rowDensity);
+    const headerHeight = getHeaderHeight(rowDensity);
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
-    const [paused, setPaused] = useState(false);
+    // Per-channel pause state
+    const [pausedChannels, setPausedChannels] = useState<Record<string, boolean>>({});
+    const paused = selectedChannel ? (pausedChannels[selectedChannel] ?? false) : false;
+    const setPaused = (value: boolean) => {
+        if (selectedChannel) {
+            setPausedChannels(prev => ({ ...prev, [selectedChannel]: value }));
+        }
+    };
     const [autoScroll, setAutoScroll] = useState(true);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
 
@@ -62,6 +86,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Internal state for smooth auto-scroll
     const [stuckToBottom, setStuckToBottom] = useState(true);
+
+    // Track number of rows below visible viewport (updated on scroll)
+    const [rowsBelowViewport, setRowsBelowViewport] = useState(0);
 
     // Resizable panel width
     const [listWidth, setListWidth] = useState(280);
@@ -103,6 +130,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const enterSnapshotMode = useCallback(() => {
         if (!selectedChannel) return;
 
+        debugLog('STATE: Entering snapshot mode', {
+            channel: selectedChannel,
+            isSlowMode,
+            displayEntriesCount: isSlowMode ? slowModeDisplayEntries.length : (streams[selectedChannel]?.length || 0),
+        });
+
         // Clear any buffering state first
         setPlaybackBuffer([]);
         setBufferFull(false);
@@ -128,10 +161,15 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const exitSnapshotMode = useCallback(() => {
         if (!selectedChannel) return;
 
+        const liveEntries = streams[selectedChannel] || [];
+        debugLog('STATE: Exiting snapshot mode', {
+            channel: selectedChannel,
+            liveEntriesCount: liveEntries.length,
+        });
+
         // Clean exit: reset all playback state
         setPlaybackBuffer([]);
         setBufferFull(false);
-        const liveEntries = streams[selectedChannel] || [];
         lastProcessedRef.current = liveEntries.length;
         setSlowModeDisplayEntries(liveEntries);
 
@@ -152,6 +190,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Clear selected stream only
     const handleClearSelected = useCallback(() => {
         if (selectedChannel) {
+            debugLog('USER ACTION: Clear selected stream', {
+                channel: selectedChannel,
+                wasInSlowMode: isSlowMode,
+                bufferSize: playbackBuffer.length,
+                displaySize: slowModeDisplayEntries.length,
+            });
             clearStream(selectedChannel);
             // Also clear slow mode state
             setPlaybackBuffer([]);
@@ -160,7 +204,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             setNewestEntryId(null);
             lastProcessedRef.current = 0;
         }
-    }, [selectedChannel, clearStream]);
+    }, [selectedChannel, clearStream, isSlowMode, playbackBuffer.length, slowModeDisplayEntries.length]);
 
     // Clear all streams (for footer button)
     const handleClearAll = useCallback(async () => {
@@ -306,6 +350,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         if (!isSlowMode) {
             // Exiting slow mode - reset state
             if (wasSlowModeRef.current) {
+                debugLog('STATE: Exiting slow mode', {
+                    channel: selectedChannel,
+                    liveEntriesCount: liveEntries.length,
+                });
                 setPlaybackBuffer([]);
                 setBufferFull(false);
                 lastProcessedRef.current = 0;
@@ -317,6 +365,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
         // Just entered slow mode - capture current state and mark position
         if (!wasSlowModeRef.current) {
+            debugLog('STATE: Entering slow mode', {
+                channel: selectedChannel,
+                liveEntriesCount: liveEntries.length,
+                currentTotal,
+            });
             wasSlowModeRef.current = true;
             slowModeStartTotalRef.current = currentTotal;
             lastProcessedRef.current = currentTotal;
@@ -331,6 +384,13 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         if (bufferFull) {
             // Buffer is locked - skip these entries entirely to prevent gaps
             // The buffer will unlock when it drains below 50%
+            const skippedCount = currentTotal - lastProcessedRef.current;
+            if (skippedCount > 0) {
+                debugLog('BUFFER FULL: Dropping entries', {
+                    skippedCount,
+                    totalDroppedSinceFull: currentTotal - slowModeStartTotalRef.current,
+                });
+            }
             lastProcessedRef.current = currentTotal; // Mark as "processed" (skipped)
             return;
         }
@@ -344,6 +404,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                 if (remaining <= 0) {
                     // Buffer just became full - lock it
+                    debugLog('BUFFER: Hit capacity - locking', {
+                        bufferSize: prev.length,
+                        maxSize: PLAYBACK_BUFFER_MAX,
+                        newEntriesRejected: newEntries.length,
+                    });
                     setBufferFull(true);
                     return prev;
                 }
@@ -352,12 +417,21 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     // All entries fit - add them all
                     const updated = [...prev, ...newEntries];
                     if (updated.length >= PLAYBACK_BUFFER_MAX) {
+                        debugLog('BUFFER: Reached capacity after adding entries - locking', {
+                            newSize: updated.length,
+                            maxSize: PLAYBACK_BUFFER_MAX,
+                        });
                         setBufferFull(true);
                     }
                     return updated;
                 } else {
                     // Only some entries fit - add what we can, then lock
                     const entriesToAdd = newEntries.slice(0, remaining);
+                    debugLog('BUFFER: Partial add, then locking', {
+                        added: entriesToAdd.length,
+                        rejected: newEntries.length - entriesToAdd.length,
+                        newSize: prev.length + entriesToAdd.length,
+                    });
                     setBufferFull(true);
                     return [...prev, ...entriesToAdd];
                 }
@@ -391,7 +465,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
             // Unlock buffer when it drains below 50% - this allows batch refilling
             // and prevents constant fill/drain cycles that cause data gaps
-            if (rest.length < PLAYBACK_BUFFER_MAX * 0.5) {
+            if (rest.length < PLAYBACK_BUFFER_MAX * 0.5 && playbackBufferRef.current.length >= PLAYBACK_BUFFER_MAX * 0.5) {
+                debugLog('BUFFER: Drained below 50% - unlocking', {
+                    currentSize: rest.length,
+                    threshold: PLAYBACK_BUFFER_MAX * 0.5,
+                });
                 setBufferFull(false);
             }
 
@@ -399,9 +477,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             setNewestEntryId(entry.id); // Track for animation
             setSlowModeDisplayEntries(current => {
                 const updated = [...current, entry];
-                return updated.length > PLAYBACK_BUFFER_MAX
-                    ? updated.slice(-PLAYBACK_BUFFER_MAX)
-                    : updated;
+                if (updated.length > PLAYBACK_BUFFER_MAX) {
+                    debugLog('GRID: Display at capacity - oldest entry removed', {
+                        displaySize: PLAYBACK_BUFFER_MAX,
+                        newestEntryId: entry.id,
+                    });
+                    return updated.slice(-PLAYBACK_BUFFER_MAX);
+                }
+                return updated;
             });
         }, msPerEntry);
 
@@ -420,14 +503,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         }
     }, [selectedChannel]); // Only depend on selectedChannel, access streams via closure
 
-    // Row height for virtualization
-    const ROW_HEIGHT = 32;
-
     // Virtualization
     const rowVirtualizer = useVirtualizer({
         count: displayedEntries.length,
         getScrollElement: () => parentRef.current,
-        estimateSize: () => ROW_HEIGHT,
+        estimateSize: () => rowHeight,
         overscan: 20,
     });
 
@@ -454,6 +534,10 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     useScrollDetection({
         scrollElement: parentRef.current,
         onUserScrollUp: useCallback(() => {
+            debugLog('USER ACTION: Scrolled up - disabling stuckToBottom', {
+                wasInSnapshotMode: isInSnapshotMode,
+                wasPaused: paused,
+            });
             markUserScroll();
             setStuckToBottom(false);
             // AUTO-TRIGGER: Enter snapshot when scrolling up (unless already in snapshot or paused)
@@ -462,21 +546,49 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             }
         }, [markUserScroll, isInSnapshotMode, paused, enterSnapshotMode]),
         onScrollToBottom: useCallback(() => {
+            debugLog('STATE: Scrolled to bottom - enabling stuckToBottom');
             markStuckToBottom();
             setStuckToBottom(true);
+            setRowsBelowViewport(0);
         }, [markStuckToBottom]),
         isProgrammaticScroll,
     });
 
     // Handler for "Jump to bottom" button
     const handleJumpToBottom = useCallback(() => {
+        debugLog('USER ACTION: Jump to bottom clicked');
         setStuckToBottom(true);
+        setRowsBelowViewport(0);
         markStuckToBottom();
         instantScrollToBottom();
     }, [markStuckToBottom, instantScrollToBottom]);
 
+    // Calculate rows below viewport dynamically on scroll and entries change
+    useEffect(() => {
+        const container = parentRef.current;
+        if (!container) return;
+
+        const calculateRowsBelow = () => {
+            const { scrollTop, clientHeight } = container;
+            const totalHeight = displayedEntries.length * rowHeight;
+            const visibleBottom = scrollTop + clientHeight;
+            const hiddenHeight = totalHeight - visibleBottom;
+            const rowsBelow = Math.max(0, Math.floor(hiddenHeight / rowHeight));
+            setRowsBelowViewport(rowsBelow);
+        };
+
+        // Calculate initially
+        calculateRowsBelow();
+
+        // Listen to scroll events
+        container.addEventListener('scroll', calculateRowsBelow, { passive: true });
+
+        return () => container.removeEventListener('scroll', calculateRowsBelow);
+    }, [displayedEntries.length, rowHeight]);
+
     // Handler for "Jump to Live" button - exits snapshot mode
     const handleJumpToLive = useCallback(() => {
+        debugLog('USER ACTION: Jump to Live clicked');
         exitSnapshotMode();
         setStuckToBottom(true);
         markStuckToBottom();
@@ -655,7 +767,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 dark:bg-slate-700/50 rounded border border-slate-200 dark:border-slate-600">
                         {/* Slowdown toggle button */}
                         <button
-                            onClick={() => setIsSlowMode(!isSlowMode)}
+                            onClick={() => {
+                                const newMode = !isSlowMode;
+                                debugLog('USER ACTION: Slow mode toggle', {
+                                    from: isSlowMode ? 'SLOW' : 'NORMAL',
+                                    to: newMode ? 'SLOW' : 'NORMAL',
+                                });
+                                setIsSlowMode(newMode);
+                            }}
                             className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
                                 isSlowMode
                                     ? 'bg-amber-500 text-white hover:bg-amber-600'
@@ -676,7 +795,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     min="1"
                                     max="30"
                                     value={displayRate}
-                                    onChange={(e) => setDisplayRate(Number(e.target.value))}
+                                    onChange={(e) => {
+                                        const newRate = Number(e.target.value);
+                                        debugLog('USER ACTION: Display rate changed', {
+                                            from: displayRate,
+                                            to: newRate,
+                                        });
+                                        setDisplayRate(newRate);
+                                    }}
                                     className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
                                     title="Display rate (entries per second)"
                                 />
@@ -726,6 +852,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         <button
                             onClick={() => {
                                 const newAutoScroll = !autoScroll;
+                                debugLog('USER ACTION: AutoScroll toggle', {
+                                    from: autoScroll,
+                                    to: newAutoScroll,
+                                    stuckToBottom,
+                                    isInSnapshotMode,
+                                });
                                 setAutoScroll(newAutoScroll);
 
                                 // If disabling autoscroll, exit snapshot mode
@@ -783,19 +915,20 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                 {/* Entries grid */}
                 {selectedChannel ? (
                     <div
-                        className={`flex-1 streams-grid-container virtual-log-grid ${theme === 'dark' ? 'dark' : 'light'}`}
+                        className={`flex-1 streams-grid-container virtual-log-grid ${theme === 'dark' ? 'dark' : 'light'} density-${rowDensity}`}
+                        style={{ '--vlg-row-height': `${rowHeight}px`, '--vlg-font-size': `${fontSize}px`, '--vlg-header-height': `${headerHeight}px` } as React.CSSProperties}
                         tabIndex={0}
                         onKeyDown={handleKeyDown}
                     >
                         {/* Header row */}
-                        <div className="vlg-header" style={{ display: 'flex', height: 32, borderBottom: '1px solid var(--vlg-border)' }}>
-                            <div className="vlg-header-cell" style={{ flex: 1, minWidth: 200, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                        <div className="vlg-header">
+                            <div className="vlg-header-cell" style={{ flex: 1, minWidth: 200 }}>
                                 Content
                             </div>
-                            <div className="vlg-header-cell" style={{ width: 100, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                            <div className="vlg-header-cell" style={{ width: 100 }}>
                                 Type
                             </div>
-                            <div className="vlg-header-cell" style={{ width: 110, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                            <div className="vlg-header-cell" style={{ width: 110 }}>
                                 Time
                             </div>
                         </div>
@@ -821,14 +954,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     const entry = displayedEntries[virtualRow.index];
                                     const isSelected = entry.id === selectedEntryId;
                                     const isOdd = virtualRow.index % 2 === 1;
-                                    const isNewest = entry.id === newestEntryId;
 
-                                    // Use entry.id as key to force re-render when new entry appears
-                                    // This ensures CSS animation plays for new entries
                                     return (
                                         <div
                                             key={entry.id}
-                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''} ${isNewest ? 'new-entry' : ''}`}
+                                            className={`vlg-row ${isOdd ? 'odd' : ''} ${isSelected ? 'row-selected' : ''}`}
                                             style={{
                                                 position: 'absolute',
                                                 top: 0,
@@ -951,17 +1081,22 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             </button>
                         )}
 
-                        {/* Floating "Jump to Bottom" button - shows when autoscroll is enabled but user scrolled up (only when NOT in snapshot) */}
+                        {/* Floating "Go to bottom" button - shows when autoscroll is enabled but user scrolled up (only when NOT in snapshot) */}
                         {!isInSnapshotMode && autoScroll && !stuckToBottom && (
                             <button
                                 onClick={handleJumpToBottom}
                                 className="vlg-jump-to-bottom"
-                                title="Resume auto-scroll"
+                                title="Go to bottom and resume auto-scroll"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                 </svg>
-                                <span>Resume</span>
+                                <span>Go to bottom</span>
+                                {rowsBelowViewport > 0 && (
+                                    <span className="vlg-new-entries-badge">
+                                        {rowsBelowViewport > 999 ? '999+' : rowsBelowViewport}
+                                    </span>
+                                )}
                             </button>
                         )}
 
