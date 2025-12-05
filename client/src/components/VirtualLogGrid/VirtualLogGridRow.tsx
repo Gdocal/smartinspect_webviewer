@@ -2,7 +2,7 @@ import { memo, CSSProperties } from 'react';
 import { format } from 'date-fns';
 import { LogEntry, Level, LogEntryType } from '../../store/logStore';
 import type { ColumnConfig } from './types';
-import type { CellRange } from './VirtualLogGrid';
+import type { MultiSelection } from './VirtualLogGrid';
 
 export interface VirtualLogGridRowProps {
   entry: LogEntry;
@@ -11,10 +11,10 @@ export interface VirtualLogGridRowProps {
   isOdd: boolean;
   columns: ColumnConfig[];
   highlightStyle?: CSSProperties;
-  selection: CellRange | null | undefined;
+  selection: MultiSelection | null | undefined;
   onCellMouseDown: (rowIndex: number, colIndex: number, e: React.MouseEvent) => void;
-  isCellSelected: (rowIndex: number, colIndex: number, range: CellRange | null) => boolean;
-  getCellPosition: (rowIndex: number, colIndex: number, range: CellRange | null) => {
+  isCellSelected: (rowIndex: number, colIndex: number, selection: MultiSelection | null) => boolean;
+  getCellPosition: (rowIndex: number, colIndex: number, selection: MultiSelection | null) => {
     isTop: boolean;
     isBottom: boolean;
     isLeft: boolean;
@@ -135,7 +135,7 @@ function getCellValue(entry: LogEntry, field: string): string {
       if (entry.dataEncoding === 'base64') {
         try {
           const decoded = atob(entry.data);
-          return decoded.length > 200 ? decoded.substring(0, 200) + '...' : decoded;
+          return decoded.length > 400 ? decoded.substring(0, 400) + '...' : decoded;
         } catch {
           return '[Binary Data]';
         }
@@ -155,8 +155,8 @@ function StreamContentCell({ entry }: { entry: LogEntry }) {
     return <span className="vlg-binary-data">[Binary]</span>;
   }
 
-  // Truncate long content
-  const content = entry.data.length > 300 ? entry.data.substring(0, 300) + '...' : entry.data;
+  // Truncate long content (show more in table, full text in detail panel)
+  const content = entry.data.length > 600 ? entry.data.substring(0, 600) + '...' : entry.data;
   return <span>{content}</span>;
 }
 

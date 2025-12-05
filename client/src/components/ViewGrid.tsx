@@ -10,7 +10,7 @@
 
 import { useMemo, useRef, useCallback, useState, useEffect } from 'react';
 import { useLogStore, LogEntry, View, Filter, ListTextFilter, TextFilter, VlgColumnConfig } from '../store/logStore';
-import { VirtualLogGrid, CellRange } from './VirtualLogGrid/VirtualLogGrid';
+import { VirtualLogGrid, MultiSelection } from './VirtualLogGrid/VirtualLogGrid';
 import { ColumnConfig, DEFAULT_COLUMNS } from './VirtualLogGrid/types';
 
 // Track stuckToBottom per view
@@ -231,8 +231,8 @@ export function ViewGrid({
     // Per-view pause state
     const isPaused = viewPausedState[view.id] ?? false;
 
-    // Cell selection state
-    const [selection, setSelection] = useState<CellRange | null>(null);
+    // Cell selection state (multi-selection support)
+    const [selection, setSelection] = useState<MultiSelection | null>(null);
 
     // Column state - use view's column state or defaults
     const [columns, setColumns] = useState<ColumnConfig[]>(() => {

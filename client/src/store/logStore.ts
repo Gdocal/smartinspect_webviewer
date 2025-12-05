@@ -339,6 +339,12 @@ interface LogState {
         lastEntryId: number;
     };
 
+    // TCP client count (log sources connected to current room)
+    tcpClientCount: number;
+
+    // Performance monitoring - true when message queue is backlogged
+    backlogged: boolean;
+
     // Views (user-defined filter presets)
     views: View[];
     activeViewId: string | null;
@@ -353,6 +359,21 @@ interface LogState {
     streams: Record<string, StreamEntry[]>;
     streamTotalReceived: Record<string, number>; // Total entries received per channel (for speedometer)
     streamMaxEntries: number;
+
+    // Stream subscriptions - tracks which streams the user is subscribed to
+    streamSubscriptions: Record<string, { subscribed: boolean; paused: boolean }>;
+    autoPausedStreams: Set<string>; // Streams that were auto-paused due to high rate
+    manualOverrides: Set<string>; // Streams user manually resumed (skip auto-pause)
+
+    // Notifications for auto-pause alerts
+    notifications: Array<{
+        id: string;
+        type: 'info' | 'warning' | 'error';
+        message: string;
+        channel?: string;
+        timestamp: Date;
+        dismissed: boolean;
+    }>;
 
     // UI state
     paused: boolean;
@@ -401,6 +422,10 @@ interface LogState {
     clearWatches: () => void;
     setSessions: (sessions: Record<string, number>) => void;
     setStats: (stats: LogState['stats']) => void;
+    setTcpClientCount: (count: number) => void;
+    incrementTcpClientCount: () => void;
+    decrementTcpClientCount: () => void;
+    setBacklogged: (backlogged: boolean) => void;
     setLimits: (limits: Partial<ProjectLimits>) => void;
     setAppNames: (appNames: Record<string, number>) => void;
     setHostNames: (hostNames: Record<string, number>) => void;
@@ -428,6 +453,21 @@ interface LogState {
     addStreamEntry: (channel: string, entry: Omit<StreamEntry, 'id'>) => void;
     clearStream: (channel: string) => void;
     clearAllStreams: () => void;
+
+    // Stream subscription actions
+    setStreamSubscription: (channel: string, state: { subscribed: boolean; paused: boolean }) => void;
+    removeStreamSubscription: (channel: string) => void;
+    setAllStreamSubscriptions: (subscriptions: Record<string, { subscribed: boolean; paused: boolean }>) => void;
+    addAutoPausedStream: (channel: string) => void;
+    removeAutoPausedStream: (channel: string) => void;
+    addManualOverride: (channel: string) => void;
+    removeManualOverride: (channel: string) => void;
+    clearManualOverrides: () => void;
+
+    // Notification actions
+    addNotification: (notification: Omit<LogState['notifications'][0], 'id' | 'timestamp' | 'dismissed'>) => void;
+    dismissNotification: (id: string) => void;
+    clearNotifications: () => void;
 
     // Panel visibility
     setShowDetailPanel: (show: boolean) => void;
@@ -528,6 +568,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     appNames: {},
     hostNames: {},
     stats: { size: 0, maxEntries: 100000, lastEntryId: 0 },
+    tcpClientCount: 0,
+    backlogged: false,
 
     // Views
     views: defaultViews,
@@ -540,6 +582,12 @@ export const useLogStore = create<LogState>((set, get) => ({
     streams: {},
     streamTotalReceived: {},
     streamMaxEntries: 1000,
+
+    // Stream subscriptions
+    streamSubscriptions: {},
+    autoPausedStreams: new Set<string>(),
+    manualOverrides: new Set<string>(),
+    notifications: [],
 
     // UI
     paused: false,
@@ -713,6 +761,10 @@ export const useLogStore = create<LogState>((set, get) => ({
     clearWatches: () => set({ watches: {} }),
     setSessions: (sessions) => set({ sessions }),
     setStats: (stats) => set({ stats }),
+    setTcpClientCount: (count) => set({ tcpClientCount: count }),
+    incrementTcpClientCount: () => set((s) => ({ tcpClientCount: s.tcpClientCount + 1 })),
+    decrementTcpClientCount: () => set((s) => ({ tcpClientCount: Math.max(0, s.tcpClientCount - 1) })),
+    setBacklogged: (backlogged) => set({ backlogged }),
     setLimits: (limitsUpdate) => set((state) => ({
         limits: { ...state.limits, ...limitsUpdate }
     })),
@@ -855,6 +907,63 @@ export const useLogStore = create<LogState>((set, get) => ({
     })),
 
     clearAllStreams: () => set({ streams: {}, streamTotalReceived: {} }),
+
+    // Stream subscription actions
+    setStreamSubscription: (channel, state) => set((s) => ({
+        streamSubscriptions: { ...s.streamSubscriptions, [channel]: state }
+    })),
+
+    removeStreamSubscription: (channel) => set((s) => {
+        const newSubs = { ...s.streamSubscriptions };
+        delete newSubs[channel];
+        return { streamSubscriptions: newSubs };
+    }),
+
+    setAllStreamSubscriptions: (subscriptions) => set({ streamSubscriptions: subscriptions }),
+
+    addAutoPausedStream: (channel) => set((s) => {
+        const newSet = new Set(s.autoPausedStreams);
+        newSet.add(channel);
+        return { autoPausedStreams: newSet };
+    }),
+
+    removeAutoPausedStream: (channel) => set((s) => {
+        const newSet = new Set(s.autoPausedStreams);
+        newSet.delete(channel);
+        return { autoPausedStreams: newSet };
+    }),
+
+    addManualOverride: (channel) => set((s) => {
+        const newSet = new Set(s.manualOverrides);
+        newSet.add(channel);
+        return { manualOverrides: newSet };
+    }),
+
+    removeManualOverride: (channel) => set((s) => {
+        const newSet = new Set(s.manualOverrides);
+        newSet.delete(channel);
+        return { manualOverrides: newSet };
+    }),
+
+    clearManualOverrides: () => set({ manualOverrides: new Set<string>() }),
+
+    // Notification actions
+    addNotification: (notification) => set((s) => ({
+        notifications: [...s.notifications, {
+            ...notification,
+            id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date(),
+            dismissed: false
+        }]
+    })),
+
+    dismissNotification: (id) => set((s) => ({
+        notifications: s.notifications.map(n =>
+            n.id === id ? { ...n, dismissed: true } : n
+        )
+    })),
+
+    clearNotifications: () => set({ notifications: [] }),
 
     // Panel visibility
     setShowDetailPanel: (show) => set({ showDetailPanel: show }),

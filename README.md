@@ -48,13 +48,17 @@ si.stream('events', 'User logged in', 'text');
 ## Key Features
 
 - **High-performance virtual grid** - Custom-built in-house grid with TanStack Virtual for smooth rendering of 100K+ entries
-- **Real-time streaming** via WebSocket with batched updates
+- **Real-time streaming** via WebSocket with batched updates and server-side throttling
 - **Advanced filtering** by sessions, levels, text patterns, time ranges
 - **Customizable views** with tabs for different filter combinations
-- **Smart auto-scroll** - Smooth scrolling with automatic rate detection (lerp for slow updates, instant for high-speed)
-- **Watch panel** for live variable monitoring
+- **Smart auto-scroll** - Rate-adaptive scrolling (smooth lerp for slow updates, instant for high-speed or initial load)
+- **Multi-cell selection** - Click and drag, Ctrl+Click to add/toggle, Shift+Click for range selection
+- **Smart copy** - Ctrl+C with intelligent formatting for non-contiguous selections (includes headers and gap indicators)
+- **Watch panel** for live variable monitoring with throttled updates
 - **Stream panel** for high-frequency data channels with type categorization
 - **Highlighting rules** with custom styling and priority system
+- **Auto-pause** - Automatically pauses updates when browser tab loses focus to save resources
+- **Row density settings** - Compact, default, and comfortable row heights
 - **Project management** with save/load/export/import
 - **Multi-room support** for team isolation
 - **Dark/Light theme** with customizable layouts

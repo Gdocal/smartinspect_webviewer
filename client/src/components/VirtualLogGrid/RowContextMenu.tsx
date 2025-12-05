@@ -43,6 +43,43 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+// Selection info for smart copy
+interface CellRange {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}
+
+interface MultiSelection {
+  ranges: CellRange[];
+  anchor?: { row: number; col: number };
+}
+
+// Normalize a range so start <= end
+function normalizeRange(range: CellRange): CellRange {
+  return {
+    startRow: Math.min(range.startRow, range.endRow),
+    startCol: Math.min(range.startCol, range.endCol),
+    endRow: Math.max(range.startRow, range.endRow),
+    endCol: Math.max(range.startCol, range.endCol),
+  };
+}
+
+// Check if a cell is selected in the given selection
+function isCellInSelection(rowIndex: number, colIndex: number, selection: MultiSelection | null): boolean {
+  if (!selection || selection.ranges.length === 0) return false;
+  return selection.ranges.some(range => {
+    const norm = normalizeRange(range);
+    return (
+      rowIndex >= norm.startRow &&
+      rowIndex <= norm.endRow &&
+      colIndex >= norm.startCol &&
+      colIndex <= norm.endCol
+    );
+  });
+}
+
 // Format entries for text copy (multiple entries supported)
 function formatEntriesForCopy(entries: LogEntry[], columns: ColumnConfig[]): string {
   const visibleColumns = columns.filter(col => !col.hidden && col.type !== 'icon');
@@ -50,6 +87,83 @@ function formatEntriesForCopy(entries: LogEntry[], columns: ColumnConfig[]): str
     const values = visibleColumns.map(col => getCellText(entry, col.field));
     return values.join('\t');
   }).join('\n');
+}
+
+/**
+ * Smart format for non-contiguous selections
+ * Shows headers for all selected columns, values only in selected cells,
+ * with "..." to indicate gaps between row groups
+ *
+ * @param allEntries - The full entries array (for row lookup by index)
+ * @param visibleColumns - The visible columns array AS USED BY THE GRID (indices must match selection)
+ * @param selection - The multi-selection with row/col indices into visibleColumns
+ */
+function formatSelectionForCopy(
+  allEntries: LogEntry[],
+  visibleColumns: ColumnConfig[],
+  selection: MultiSelection | null
+): string {
+  if (!selection || selection.ranges.length === 0) return '';
+
+  // Find all selected rows and columns (by index in visibleColumns)
+  const selectedRows = new Set<number>();
+  const selectedColIndices = new Set<number>();
+
+  for (const range of selection.ranges) {
+    const norm = normalizeRange(range);
+    for (let r = norm.startRow; r <= norm.endRow; r++) {
+      selectedRows.add(r);
+    }
+    for (let c = norm.startCol; c <= norm.endCol; c++) {
+      selectedColIndices.add(c);
+    }
+  }
+
+  // Sort rows and columns
+  const sortedRows = Array.from(selectedRows).sort((a, b) => a - b);
+  const sortedColIndices = Array.from(selectedColIndices).sort((a, b) => a - b);
+
+  // Filter out icon columns from output (but keep indices aligned)
+  // We skip icon columns in output but use original indices for cell lookup
+  const colIndicesToShow = sortedColIndices.filter(idx => {
+    const col = visibleColumns[idx];
+    return col && col.type !== 'icon';
+  });
+
+  if (colIndicesToShow.length === 0 || sortedRows.length === 0) return '';
+
+  // Build output lines
+  const lines: string[] = [];
+
+  // Add header row
+  const headers = colIndicesToShow.map(idx => visibleColumns[idx]?.header || '');
+  lines.push(headers.join('\t'));
+
+  // Process rows with gap indicators
+  let lastRowIndex = -2; // Track for gap detection
+  for (const rowIndex of sortedRows) {
+    const entry = allEntries[rowIndex];
+    if (!entry) continue;
+
+    // Add gap indicator if there's a break in row sequence
+    if (lastRowIndex >= 0 && rowIndex > lastRowIndex + 1) {
+      lines.push('...');
+    }
+    lastRowIndex = rowIndex;
+
+    // Build row values - only include values for cells that are actually selected
+    const values = colIndicesToShow.map(colIdx => {
+      if (isCellInSelection(rowIndex, colIdx, selection)) {
+        const col = visibleColumns[colIdx];
+        return col ? getCellText(entry, col.field) : '';
+      }
+      return ''; // Empty for non-selected cells
+    });
+
+    lines.push(values.join('\t'));
+  }
+
+  return lines.join('\n');
 }
 
 // Format entries with headers for copy
@@ -259,4 +373,4 @@ export const RowContextMenu = memo(function RowContextMenu({
 });
 
 // Export utility functions for use in keyboard shortcuts
-export { formatEntriesForCopy, formatEntriesWithHeaders, copyToClipboard };
+export { formatEntriesForCopy, formatEntriesWithHeaders, formatSelectionForCopy, copyToClipboard };

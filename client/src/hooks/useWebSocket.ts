@@ -1,11 +1,56 @@
 /**
  * WebSocket Hook - Connects to server and handles real-time updates
  * OPTIMIZED: Batches messages with requestAnimationFrame to reduce React re-renders
+ * STREAMS: Supports per-stream subscriptions with localStorage persistence
  */
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useLogStore, LogEntry, WatchValue } from '../store/logStore';
 import { getWebSocket, isInitialized as isEarlyInitialized } from '../services/earlyWebSocket';
+import { getPerformanceSettings } from './useSettings';
+
+// localStorage key for stream subscriptions
+const STREAM_SUBSCRIPTIONS_KEY = 'si-stream-subscriptions';
+
+interface StoredSubscriptions {
+    version: 1;
+    channels: Record<string, { subscribed: boolean; paused: boolean }>;
+}
+
+// Load subscriptions from localStorage
+function loadSubscriptionsFromStorage(): Record<string, { subscribed: boolean; paused: boolean }> {
+    try {
+        const stored = localStorage.getItem(STREAM_SUBSCRIPTIONS_KEY);
+        if (stored) {
+            const data: StoredSubscriptions = JSON.parse(stored);
+            if (data.version === 1 && data.channels) {
+                return data.channels;
+            }
+        }
+    } catch (err) {
+        console.warn('[WS] Failed to load stream subscriptions from localStorage:', err);
+    }
+    return {};
+}
+
+// Save subscriptions to localStorage (debounced)
+let saveTimeout: number | null = null;
+function saveSubscriptionsToStorage(subscriptions: Record<string, { subscribed: boolean; paused: boolean }>) {
+    if (saveTimeout) {
+        clearTimeout(saveTimeout);
+    }
+    saveTimeout = window.setTimeout(() => {
+        try {
+            const data: StoredSubscriptions = {
+                version: 1,
+                channels: subscriptions
+            };
+            localStorage.setItem(STREAM_SUBSCRIPTIONS_KEY, JSON.stringify(data));
+        } catch (err) {
+            console.warn('[WS] Failed to save stream subscriptions to localStorage:', err);
+        }
+    }, 500); // Debounce 500ms
+}
 
 interface UseWebSocketOptions {
     token?: string;
@@ -54,6 +99,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const flushScheduledRef = useRef<boolean>(false);
     const lastLoadedEntryIdRef = useRef<number>(0);
     const fetchAbortControllerRef = useRef<AbortController | null>(null);
+    const lastWatchFlushRef = useRef<number>(0);
 
     // Store refs for callbacks to avoid dependency issues
     const storeRef = useRef(useLogStore.getState());
@@ -73,10 +119,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             batch.entries = [];
         }
 
-        // Process watches
+        // Process watches with optional throttling
         if (batch.watches.size > 0) {
-            store.updateWatchBatch(Object.fromEntries(batch.watches));
-            batch.watches.clear();
+            const perfSettings = getPerformanceSettings();
+            const now = performance.now();
+
+            if (perfSettings.watchThrottleMode === 'throttled') {
+                const minInterval = 1000 / perfSettings.watchMaxUpdatesPerSecond;
+                if (now - lastWatchFlushRef.current >= minInterval) {
+                    // Enough time has passed, flush watches
+                    store.updateWatchBatch(Object.fromEntries(batch.watches));
+                    batch.watches.clear();
+                    lastWatchFlushRef.current = now;
+                }
+                // If not enough time has passed, keep the latest values in batch for next flush
+            } else {
+                // Realtime mode - flush immediately
+                store.updateWatchBatch(Object.fromEntries(batch.watches));
+                batch.watches.clear();
+                lastWatchFlushRef.current = now;
+            }
         }
 
         // Process control commands
@@ -128,10 +190,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                     stats: { size: number; maxEntries: number; lastEntryId: number };
                     watches: Record<string, { value: string; timestamp: string }>;
                     sessions: Record<string, number>;
+                    tcpClientCount?: number;
                 };
                 store.setStats(initData.stats);
                 store.setWatches(initData.watches);
                 store.setSessions(initData.sessions);
+                if (initData.tcpClientCount !== undefined) {
+                    console.log('[WS] Init: setting tcpClientCount to', initData.tcpClientCount);
+                    store.setTcpClientCount(initData.tcpClientCount);
+                } else {
+                    console.log('[WS] Init: tcpClientCount not in message');
+                }
                 break;
             }
 
@@ -177,7 +246,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             }
 
             case 'clientConnect':
+                console.log('[WS] TCP client connected, incrementing count');
+                store.incrementTcpClientCount();
+                break;
+
             case 'clientDisconnect':
+                console.log('[WS] TCP client disconnected, decrementing count');
+                store.decrementTcpClientCount();
                 break;
 
             case 'rooms': {
@@ -201,6 +276,52 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                     batchRef.current.controlCommands.push('clearWatches');
                 }
                 scheduleFlush();
+                break;
+            }
+
+            // Stream subscription confirmations from server
+            case 'streamSubscribed': {
+                const data = message as unknown as { channel: string };
+                console.log(`[WS] Stream subscribed: ${data.channel}`);
+                store.setStreamSubscription(data.channel, { subscribed: true, paused: false });
+                saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+                break;
+            }
+
+            case 'streamUnsubscribed': {
+                const data = message as unknown as { channel: string };
+                console.log(`[WS] Stream unsubscribed: ${data.channel}`);
+                store.removeStreamSubscription(data.channel);
+                saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+                break;
+            }
+
+            case 'streamPaused': {
+                const data = message as unknown as { channel: string };
+                console.log(`[WS] Stream paused: ${data.channel}`);
+                const currentSub = store.streamSubscriptions[data.channel];
+                if (currentSub) {
+                    store.setStreamSubscription(data.channel, { ...currentSub, paused: true });
+                    saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+                }
+                break;
+            }
+
+            case 'streamResumed': {
+                const data = message as unknown as { channel: string };
+                console.log(`[WS] Stream resumed: ${data.channel}`);
+                const currentSub = store.streamSubscriptions[data.channel];
+                if (currentSub) {
+                    store.setStreamSubscription(data.channel, { ...currentSub, paused: false });
+                    saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+                }
+                break;
+            }
+
+            case 'streamSubscriptions': {
+                // Server response with current subscriptions
+                const data = message as unknown as { subscriptions: Array<{ channel: string; paused: boolean }> };
+                console.log(`[WS] Got stream subscriptions from server:`, data.subscriptions);
                 break;
             }
         }
@@ -320,6 +441,32 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 // Clear room switching state - we're now connected to the new room
                 store.setRoomSwitching(false);
             }
+
+            // Restore stream subscriptions from localStorage after connection is fully established
+            // Small delay to ensure server is ready for subscription messages
+            setTimeout(() => {
+                const stored = loadSubscriptionsFromStorage();
+                const channels = Object.keys(stored);
+                if (channels.length > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+                    console.log(`[WS] Restoring ${channels.length} stream subscriptions from localStorage`);
+                    for (const channel of channels) {
+                        const sub = stored[channel];
+                        if (sub.subscribed) {
+                            wsRef.current.send(JSON.stringify({ type: 'subscribeStream', channel }));
+                            if (sub.paused) {
+                                // Slight delay for pause to ensure subscribe completes first
+                                setTimeout(() => {
+                                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                        wsRef.current.send(JSON.stringify({ type: 'pauseStream', channel }));
+                                    }
+                                }, 50);
+                            }
+                        }
+                    }
+                    // Restore state in store
+                    useLogStore.getState().setAllStreamSubscriptions(stored);
+                }
+            }, 200);
         };
 
         ws.onclose = (event) => {
@@ -388,6 +535,98 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             wsRef.current.send(JSON.stringify(message));
         }
     }, []);
+
+    // Stream subscription methods
+    const subscribeToStream = useCallback((channel: string) => {
+        send({ type: 'subscribeStream', channel });
+        // Optimistic update - server will confirm
+        const store = storeRef.current;
+        store.setStreamSubscription(channel, { subscribed: true, paused: false });
+        saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+    }, [send]);
+
+    const unsubscribeFromStream = useCallback((channel: string) => {
+        send({ type: 'unsubscribeStream', channel });
+        // Optimistic update
+        const store = storeRef.current;
+        store.removeStreamSubscription(channel);
+        // Also remove from auto-paused and manual overrides
+        store.removeAutoPausedStream(channel);
+        store.removeManualOverride(channel);
+        saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+    }, [send]);
+
+    const pauseStream = useCallback((channel: string) => {
+        send({ type: 'pauseStream', channel });
+        // Optimistic update
+        const store = storeRef.current;
+        const currentSub = store.streamSubscriptions[channel];
+        if (currentSub) {
+            store.setStreamSubscription(channel, { ...currentSub, paused: true });
+            saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+        }
+    }, [send]);
+
+    const resumeStream = useCallback((channel: string) => {
+        send({ type: 'resumeStream', channel });
+        // Optimistic update
+        const store = storeRef.current;
+        const currentSub = store.streamSubscriptions[channel];
+        if (currentSub) {
+            store.setStreamSubscription(channel, { ...currentSub, paused: false });
+            saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
+        }
+        // Remove from auto-paused if manually resumed
+        store.removeAutoPausedStream(channel);
+        store.addManualOverride(channel);
+    }, [send]);
+
+    const pauseAllStreams = useCallback(() => {
+        const store = storeRef.current;
+        const subscriptions = store.streamSubscriptions;
+        for (const channel of Object.keys(subscriptions)) {
+            if (subscriptions[channel].subscribed && !subscriptions[channel].paused) {
+                pauseStream(channel);
+            }
+        }
+    }, [pauseStream]);
+
+    const resumeAllStreams = useCallback(() => {
+        const store = storeRef.current;
+        const subscriptions = store.streamSubscriptions;
+        for (const channel of Object.keys(subscriptions)) {
+            if (subscriptions[channel].subscribed && subscriptions[channel].paused) {
+                resumeStream(channel);
+            }
+        }
+    }, [resumeStream]);
+
+    // Restore subscriptions from localStorage and send to server
+    const restoreSubscriptions = useCallback(() => {
+        const stored = loadSubscriptionsFromStorage();
+        const channels = Object.keys(stored);
+        if (channels.length === 0) return;
+
+        console.log(`[WS] Restoring ${channels.length} stream subscriptions from localStorage`);
+
+        for (const channel of channels) {
+            const sub = stored[channel];
+            if (sub.subscribed) {
+                // Send subscribe message to server
+                send({ type: 'subscribeStream', channel });
+                // If it was paused, pause it again
+                if (sub.paused) {
+                    setTimeout(() => {
+                        send({ type: 'pauseStream', channel });
+                    }, 100);
+                }
+            }
+        }
+
+        // Restore state in store
+        const store = storeRef.current;
+        store.setAllStreamSubscriptions(stored);
+    }, [send]);
 
     // Subscribe to paused state changes
     useEffect(() => {
@@ -470,6 +709,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         connect,
         disconnect,
         send,
-        isConnected: wsRef.current?.readyState === WebSocket.OPEN
+        isConnected: wsRef.current?.readyState === WebSocket.OPEN,
+        // Stream subscription methods
+        subscribeToStream,
+        unsubscribeFromStream,
+        pauseStream,
+        resumeStream,
+        pauseAllStreams,
+        resumeAllStreams,
+        restoreSubscriptions
     };
 }

@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry, HighlightRule, matchesHighlightRule, useLogStore } from '../../store/logStore';
 import { VirtualLogGridRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
-import { RowContextMenu, formatEntriesForCopy, copyToClipboard } from './RowContextMenu';
+import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
 import { OVERSCAN, getRowHeight, getFontSize, getHeaderHeight } from './constants';
@@ -25,12 +25,19 @@ export interface CellRange {
   endCol: number;
 }
 
+// Multi-selection: array of ranges for non-contiguous selections
+export interface MultiSelection {
+  ranges: CellRange[];
+  // Anchor point for Shift+Click range extension
+  anchor?: { row: number; col: number };
+}
+
 export interface VirtualLogGridProps {
   entries: LogEntry[];
   autoScroll: boolean;
   onAutoScrollChange?: (enabled: boolean) => void;
-  selection?: CellRange | null;
-  onSelectionChange?: (range: CellRange | null) => void;
+  selection?: MultiSelection | null;
+  onSelectionChange?: (selection: MultiSelection | null) => void;
   theme?: 'light' | 'dark';
   alternatingRows?: boolean;
   columns?: ColumnConfig[];
@@ -56,32 +63,51 @@ function normalizeRange(range: CellRange): CellRange {
   };
 }
 
-// Check if a cell is within the selection range
-function isCellSelected(rowIndex: number, colIndex: number, range: CellRange | null): boolean {
-  if (!range) return false;
-  const norm = normalizeRange(range);
-  return (
-    rowIndex >= norm.startRow &&
-    rowIndex <= norm.endRow &&
-    colIndex >= norm.startCol &&
-    colIndex <= norm.endCol
-  );
+// Check if a cell is within any selection range
+function isCellSelected(rowIndex: number, colIndex: number, selection: MultiSelection | null): boolean {
+  if (!selection || selection.ranges.length === 0) return false;
+  return selection.ranges.some(range => {
+    const norm = normalizeRange(range);
+    return (
+      rowIndex >= norm.startRow &&
+      rowIndex <= norm.endRow &&
+      colIndex >= norm.startCol &&
+      colIndex <= norm.endCol
+    );
+  });
 }
 
-// Get cell selection position within range (for border rendering)
-function getCellPosition(rowIndex: number, colIndex: number, range: CellRange | null): {
+// Find which range contains the cell (for border rendering)
+function findContainingRange(rowIndex: number, colIndex: number, selection: MultiSelection | null): CellRange | null {
+  if (!selection || selection.ranges.length === 0) return null;
+  for (const range of selection.ranges) {
+    const norm = normalizeRange(range);
+    if (
+      rowIndex >= norm.startRow &&
+      rowIndex <= norm.endRow &&
+      colIndex >= norm.startCol &&
+      colIndex <= norm.endCol
+    ) {
+      return norm;
+    }
+  }
+  return null;
+}
+
+// Get cell selection position within its containing range (for border rendering)
+function getCellPosition(rowIndex: number, colIndex: number, selection: MultiSelection | null): {
   isTop: boolean;
   isBottom: boolean;
   isLeft: boolean;
   isRight: boolean;
 } {
+  const range = findContainingRange(rowIndex, colIndex, selection);
   if (!range) return { isTop: false, isBottom: false, isLeft: false, isRight: false };
-  const norm = normalizeRange(range);
   return {
-    isTop: rowIndex === norm.startRow,
-    isBottom: rowIndex === norm.endRow,
-    isLeft: colIndex === norm.startCol,
-    isRight: colIndex === norm.endCol,
+    isTop: rowIndex === range.startRow,
+    isBottom: rowIndex === range.endRow,
+    isLeft: colIndex === range.startCol,
+    isRight: colIndex === range.endCol,
   };
 }
 
@@ -334,23 +360,80 @@ export function VirtualLogGrid({
   }, []);
 
   // Handle mouse down on cell - start selection
+  // Standard keyboard modifiers:
+  // - Plain click: Clear all, select single cell
+  // - Shift+Click: Extend selection from anchor to clicked cell
+  // - Ctrl+Click (Cmd on Mac): Add new range / toggle cell
   const handleCellMouseDown = useCallback((rowIndex: number, colIndex: number, e: React.MouseEvent) => {
     if (e.button !== 0) return; // Only left click
 
     e.preventDefault();
+
+    // Focus container so it can receive keyboard events (like Ctrl+C)
+    containerRef.current?.focus();
+
     setIsDragging(true);
     dragStartRef.current = { row: rowIndex, col: colIndex };
     clickStartRef.current = { row: rowIndex, time: Date.now() };
 
     if (onSelectionChange) {
-      onSelectionChange({
+      const newRange: CellRange = {
         startRow: rowIndex,
         startCol: colIndex,
         endRow: rowIndex,
         endCol: colIndex,
-      });
+      };
+
+      if (e.shiftKey && selection?.anchor) {
+        // Shift+Click: Extend from anchor to clicked cell
+        const extendedRange: CellRange = {
+          startRow: selection.anchor.row,
+          startCol: selection.anchor.col,
+          endRow: rowIndex,
+          endCol: colIndex,
+        };
+        // Replace last range with extended range, keep anchor
+        const newRanges = selection.ranges.length > 0
+          ? [...selection.ranges.slice(0, -1), extendedRange]
+          : [extendedRange];
+        onSelectionChange({
+          ranges: newRanges,
+          anchor: selection.anchor,
+        });
+      } else if (e.ctrlKey || e.metaKey) {
+        // Ctrl/Cmd+Click: Add new range or toggle
+        const existingRanges = selection?.ranges || [];
+        // Check if cell is already selected - if so, we could deselect (for single cells)
+        const cellSelected = isCellSelected(rowIndex, colIndex, selection ?? null);
+        if (cellSelected) {
+          // Remove the range containing this cell (simple toggle for now)
+          const filteredRanges = existingRanges.filter(range => {
+            const norm = normalizeRange(range);
+            // Keep ranges that don't contain just this single cell
+            const isSingleCell = norm.startRow === norm.endRow && norm.startCol === norm.endCol;
+            const isThisCell = norm.startRow === rowIndex && norm.startCol === colIndex;
+            return !(isSingleCell && isThisCell);
+          });
+          onSelectionChange({
+            ranges: filteredRanges.length > 0 ? filteredRanges : [newRange],
+            anchor: { row: rowIndex, col: colIndex },
+          });
+        } else {
+          // Add new range
+          onSelectionChange({
+            ranges: [...existingRanges, newRange],
+            anchor: { row: rowIndex, col: colIndex },
+          });
+        }
+      } else {
+        // Plain click: Clear all, select single cell
+        onSelectionChange({
+          ranges: [newRange],
+          anchor: { row: rowIndex, col: colIndex },
+        });
+      }
     }
-  }, [onSelectionChange]);
+  }, [onSelectionChange, selection]);
 
   // Handle mouse move during drag
   useEffect(() => {
@@ -362,11 +445,23 @@ export function VirtualLogGrid({
       const rowIndex = getRowIndexFromY(e.clientY);
       const colIndex = getColumnIndexFromX(e.clientX);
 
-      onSelectionChange({
+      // Update the last range in the selection (the one being dragged)
+      const existingRanges = selection?.ranges || [];
+      const updatedRange: CellRange = {
         startRow: dragStartRef.current.row,
         startCol: dragStartRef.current.col,
         endRow: rowIndex,
         endCol: colIndex,
+      };
+
+      // Replace last range with updated one, keep others
+      const newRanges = existingRanges.length > 0
+        ? [...existingRanges.slice(0, -1), updatedRange]
+        : [updatedRange];
+
+      onSelectionChange({
+        ranges: newRanges,
+        anchor: selection?.anchor,
       });
 
       // Auto-scroll when near edges
@@ -413,26 +508,34 @@ export function VirtualLogGrid({
       document.removeEventListener('mouseup', handleMouseUp);
       stopAutoScroll();
     };
-  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll, onRowClick, entries]);
+  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll, onRowClick, entries, selection]);
 
-  // Get selected entries for copy/context menu
+  // Get selected entries for copy/context menu (from all ranges)
   const selectedEntries = useMemo(() => {
-    if (!selection) return [];
-    const norm = normalizeRange(selection);
-    const selected: LogEntry[] = [];
-    for (let i = norm.startRow; i <= norm.endRow; i++) {
-      if (entries[i]) {
-        selected.push(entries[i]);
+    if (!selection || selection.ranges.length === 0) return [];
+    const selectedRowSet = new Set<number>();
+    for (const range of selection.ranges) {
+      const norm = normalizeRange(range);
+      for (let i = norm.startRow; i <= norm.endRow; i++) {
+        selectedRowSet.add(i);
       }
     }
-    return selected;
+    const sortedRows = Array.from(selectedRowSet).sort((a, b) => a - b);
+    return sortedRows.map(i => entries[i]).filter(Boolean);
   }, [entries, selection]);
 
-  // Get selected columns for copy
+  // Get selected columns for copy (union of all ranges)
   const selectedColumns = useMemo(() => {
-    if (!selection) return visibleColumns;
-    const norm = normalizeRange(selection);
-    return visibleColumns.slice(norm.startCol, norm.endCol + 1);
+    if (!selection || selection.ranges.length === 0) return visibleColumns;
+    const selectedColSet = new Set<number>();
+    for (const range of selection.ranges) {
+      const norm = normalizeRange(range);
+      for (let i = norm.startCol; i <= norm.endCol; i++) {
+        selectedColSet.add(i);
+      }
+    }
+    const sortedCols = Array.from(selectedColSet).sort((a, b) => a - b);
+    return sortedCols.map(i => visibleColumns[i]).filter(Boolean);
   }, [selection, visibleColumns]);
 
   // Keyboard navigation
@@ -446,40 +549,55 @@ export function VirtualLogGrid({
 
       e.preventDefault();
 
-      const currentSelection = selection || { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
-      let newRow = currentSelection.endRow;
-      let newCol = currentSelection.endCol;
+      // Use the last range for current position
+      const lastRange = selection?.ranges[selection.ranges.length - 1];
+      const currentRange = lastRange || { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+      let newRow = currentRange.endRow;
+      let newCol = currentRange.endCol;
 
       switch (e.key) {
         case 'ArrowDown':
-          newRow = Math.min(currentSelection.endRow + 1, entries.length - 1);
+          newRow = Math.min(currentRange.endRow + 1, entries.length - 1);
           break;
         case 'ArrowUp':
-          newRow = Math.max(currentSelection.endRow - 1, 0);
+          newRow = Math.max(currentRange.endRow - 1, 0);
           break;
         case 'ArrowRight':
-          newCol = Math.min(currentSelection.endCol + 1, visibleColumns.length - 1);
+          newCol = Math.min(currentRange.endCol + 1, visibleColumns.length - 1);
           break;
         case 'ArrowLeft':
-          newCol = Math.max(currentSelection.endCol - 1, 0);
+          newCol = Math.max(currentRange.endCol - 1, 0);
           break;
       }
 
       if (e.shiftKey) {
-        // Extend selection
-        onSelectionChange({
-          startRow: currentSelection.startRow,
-          startCol: currentSelection.startCol,
+        // Extend selection from anchor
+        const anchor = selection?.anchor || { row: currentRange.startRow, col: currentRange.startCol };
+        const extendedRange: CellRange = {
+          startRow: anchor.row,
+          startCol: anchor.col,
           endRow: newRow,
           endCol: newCol,
+        };
+        // Replace last range with extended range
+        const newRanges = selection && selection.ranges.length > 0
+          ? [...selection.ranges.slice(0, -1), extendedRange]
+          : [extendedRange];
+        onSelectionChange({
+          ranges: newRanges,
+          anchor,
         });
       } else {
-        // Move selection
-        onSelectionChange({
+        // Move selection - clear to single cell
+        const newRange: CellRange = {
           startRow: newRow,
           startCol: newCol,
           endRow: newRow,
           endCol: newCol,
+        };
+        onSelectionChange({
+          ranges: [newRange],
+          anchor: { row: newRow, col: newCol },
         });
       }
 
@@ -490,24 +608,27 @@ export function VirtualLogGrid({
     return () => container.removeEventListener('keydown', handleKeyDown);
   }, [entries.length, selection, visibleColumns.length, onSelectionChange, virtualizer]);
 
-  // Ctrl+C to copy selected cells
+  // Ctrl+C to copy selected cells (with smart formatting for non-contiguous selections)
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleCopy = async (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (selectedEntries.length === 0) return;
+        if (!selection || selection.ranges.length === 0) return;
 
         e.preventDefault();
-        const text = formatEntriesForCopy(selectedEntries, selectedColumns);
-        await copyToClipboard(text);
+        // Use smart format that handles non-contiguous selections with headers
+        const text = formatSelectionForCopy(entries, visibleColumns, selection);
+        if (text) {
+          await copyToClipboard(text);
+        }
       }
     };
 
     container.addEventListener('keydown', handleCopy);
     return () => container.removeEventListener('keydown', handleCopy);
-  }, [selectedEntries, selectedColumns]);
+  }, [entries, visibleColumns, selection]);
 
   // Handle context menu on rows
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

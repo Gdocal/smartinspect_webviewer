@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSettings, AppSettings } from '../hooks/useSettings';
+import { useSettings, AppSettings, usePerformanceSettings, PerformanceSettings } from '../hooks/useSettings';
 import { useLogStore, HighlightRule, ProjectLimits, defaultLimits } from '../store/logStore';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { reconnect } from '../services/earlyWebSocket';
@@ -113,7 +113,11 @@ export function SettingsPanel({
     const [limitsFormState, setLimitsFormState] = useState<ProjectLimits>(limits);
     const [serverConfig, setServerConfig] = useState<ServerConfig>({ maxEntries: 100000, maxStreamEntries: 1000 });
     const [showToken, setShowToken] = useState(false);
-    const [activeTab, setActiveTab] = useState<'connection' | 'display' | 'highlights'>('connection');
+    const [activeTab, setActiveTab] = useState<'connection' | 'display' | 'highlights' | 'performance'>('connection');
+
+    // Performance settings
+    const { settings: perfSettings, updateSettings: updatePerfSettings, defaultSettings: defaultPerfSettings } = usePerformanceSettings();
+    const [perfFormState, setPerfFormState] = useState<PerformanceSettings>(perfSettings);
 
     // Convert WebSocket URL to HTTP URL
     const getHttpUrl = useCallback((): string => {
@@ -185,9 +189,10 @@ export function SettingsPanel({
         if (isOpen) {
             setFormState(settings);
             setLimitsFormState(limits);
+            setPerfFormState(perfSettings);
             fetchServerConfig();
         }
-    }, [isOpen, settings, limits, fetchServerConfig]);
+    }, [isOpen, settings, limits, perfSettings, fetchServerConfig]);
 
     // Close on escape
     useEffect(() => {
@@ -213,6 +218,9 @@ export function SettingsPanel({
 
         // Save project limits
         setLimits(limitsFormState);
+
+        // Save performance settings
+        updatePerfSettings(perfFormState);
 
         // Save server config if changed
         try {
@@ -249,6 +257,7 @@ export function SettingsPanel({
         if (confirm('Reset all settings to defaults?')) {
             setFormState(defaultSettings);
             setLimitsFormState(defaultLimits);
+            setPerfFormState(defaultPerfSettings);
         }
     };
 
@@ -316,6 +325,19 @@ export function SettingsPanel({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
                         </svg>
                         Highlights
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('performance')}
+                        className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                            activeTab === 'performance'
+                                ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800'
+                                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Performance
                     </button>
                 </div>
 
@@ -587,6 +609,146 @@ export function SettingsPanel({
                                     ))}
                                 </div>
                             )}
+                        </div>
+                    )}
+
+                    {activeTab === 'performance' && (
+                        <div className="space-y-4">
+                            {/* Auto-pause section */}
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
+                                    Stream Auto-Pause
+                                </label>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                    Automatically pause high-frequency streams to prevent performance issues.
+                                </p>
+
+                                <div className="space-y-3">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <Checkbox
+                                            checked={perfFormState.autoPauseEnabled}
+                                            onChange={(checked) => setPerfFormState(prev => ({ ...prev, autoPauseEnabled: checked }))}
+                                        />
+                                        <span className="text-sm text-slate-700 dark:text-slate-300">Enable auto-pause for high-frequency streams</span>
+                                    </label>
+
+                                    <div className={perfFormState.autoPauseEnabled ? '' : 'opacity-50 pointer-events-none'}>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            <div>
+                                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                                    Stream Count
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="50"
+                                                    value={perfFormState.autoPauseStreamCountThreshold}
+                                                    onChange={(e) => setPerfFormState(prev => ({
+                                                        ...prev,
+                                                        autoPauseStreamCountThreshold: Math.max(1, Math.min(50, parseInt(e.target.value) || 3))
+                                                    }))}
+                                                    className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                                />
+                                                <p className="text-[10px] text-slate-400 mt-0.5">Active streams</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                                    Rate Threshold
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="10"
+                                                    max="500"
+                                                    value={perfFormState.autoPauseRateThreshold}
+                                                    onChange={(e) => setPerfFormState(prev => ({
+                                                        ...prev,
+                                                        autoPauseRateThreshold: Math.max(10, Math.min(500, parseInt(e.target.value) || 50))
+                                                    }))}
+                                                    className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                                />
+                                                <p className="text-[10px] text-slate-400 mt-0.5">Messages/sec</p>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                                    Grace Period
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="30"
+                                                    value={perfFormState.autoPauseGracePeriod}
+                                                    onChange={(e) => setPerfFormState(prev => ({
+                                                        ...prev,
+                                                        autoPauseGracePeriod: Math.max(1, Math.min(30, parseInt(e.target.value) || 5))
+                                                    }))}
+                                                    className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white dark:bg-slate-700 dark:text-slate-100"
+                                                />
+                                                <p className="text-[10px] text-slate-400 mt-0.5">Seconds</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Watch throttling section */}
+                            <div className="pt-3 border-t border-slate-200 dark:border-slate-600">
+                                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">
+                                    Watch Updates
+                                </label>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                    Control how frequently watch values are updated in the UI.
+                                </p>
+
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setPerfFormState(prev => ({ ...prev, watchThrottleMode: 'realtime' }))}
+                                            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                perfFormState.watchThrottleMode === 'realtime'
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                                            }`}
+                                        >
+                                            Realtime
+                                        </button>
+                                        <button
+                                            onClick={() => setPerfFormState(prev => ({ ...prev, watchThrottleMode: 'throttled' }))}
+                                            className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                perfFormState.watchThrottleMode === 'throttled'
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-slate-100 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-500'
+                                            }`}
+                                        >
+                                            Throttled
+                                        </button>
+                                    </div>
+
+                                    <div className={perfFormState.watchThrottleMode === 'throttled' ? '' : 'opacity-50 pointer-events-none'}>
+                                        <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
+                                            Max Updates Per Second
+                                        </label>
+                                        <div className="flex items-center gap-3">
+                                            <input
+                                                type="range"
+                                                min="1"
+                                                max="30"
+                                                value={perfFormState.watchMaxUpdatesPerSecond}
+                                                onChange={(e) => setPerfFormState(prev => ({
+                                                    ...prev,
+                                                    watchMaxUpdatesPerSecond: parseInt(e.target.value) || 10
+                                                }))}
+                                                className="flex-1"
+                                            />
+                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 w-8 text-right">
+                                                {perfFormState.watchMaxUpdatesPerSecond}
+                                            </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-1">
+                                            Lower values reduce CPU usage but may delay showing latest values.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

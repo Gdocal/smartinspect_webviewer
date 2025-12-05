@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { VirtualLogGrid, MAX_ROWS, DEFAULT_COLUMNS, ColumnConfig, CellRange } from './components/VirtualLogGrid';
+import { VirtualLogGrid, MAX_ROWS, DEFAULT_COLUMNS, ColumnConfig, MultiSelection } from './components/VirtualLogGrid';
 import { LogEntry, Level, LogEntryType, HighlightRule, defaultHighlightFilter } from './store/logStore';
 
 const sessionNames = ['Main', 'Worker', 'Database', 'Network', 'UI', 'API'];
@@ -66,7 +66,7 @@ export function VirtualLogGridTest() {
   const [isAutoAdding, setIsAutoAdding] = useState(false);
   const [addRate, setAddRate] = useState(100);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [selection, setSelection] = useState<CellRange | null>(null);
+  const [selection, setSelection] = useState<MultiSelection | null>(null);
   const [useHighlights, setUseHighlights] = useState(true);
   const [filterText, setFilterText] = useState('');
   const nextIdRef = useRef(1);
@@ -162,8 +162,8 @@ export function VirtualLogGridTest() {
   }, []);
 
   // Handle selection change
-  const handleSelectionChange = useCallback((range: CellRange | null) => {
-    setSelection(range);
+  const handleSelectionChange = useCallback((newSelection: MultiSelection | null) => {
+    setSelection(newSelection);
   }, []);
 
   // Filter entries based on filter text (case-insensitive search in title)
@@ -178,10 +178,24 @@ export function VirtualLogGridTest() {
 
   // Calculate selection info for display
   const selectionInfo = useMemo(() => {
-    if (!selection) return null;
-    const rows = Math.abs(selection.endRow - selection.startRow) + 1;
-    const cols = Math.abs(selection.endCol - selection.startCol) + 1;
-    return { rows, cols, cells: rows * cols };
+    if (!selection || selection.ranges.length === 0) return null;
+    // Calculate total selected rows and columns across all ranges
+    const selectedRows = new Set<number>();
+    const selectedCols = new Set<number>();
+    for (const range of selection.ranges) {
+      const minRow = Math.min(range.startRow, range.endRow);
+      const maxRow = Math.max(range.startRow, range.endRow);
+      const minCol = Math.min(range.startCol, range.endCol);
+      const maxCol = Math.max(range.startCol, range.endCol);
+      for (let r = minRow; r <= maxRow; r++) selectedRows.add(r);
+      for (let c = minCol; c <= maxCol; c++) selectedCols.add(c);
+    }
+    return {
+      rows: selectedRows.size,
+      cols: selectedCols.size,
+      cells: selectedRows.size * selectedCols.size,
+      ranges: selection.ranges.length
+    };
   }, [selection]);
 
   return (

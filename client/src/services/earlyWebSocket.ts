@@ -18,6 +18,109 @@ let reconnectCountdown: ReturnType<typeof setInterval> | null = null;
 let pendingAuth = false;  // Track if we're waiting for auth response
 const RECONNECT_DELAY = 3000;
 
+// ==================== Client-side Message Batching ====================
+// Batches incoming messages and processes them in requestAnimationFrame
+// to prevent UI jank and allow monitoring of backlog
+interface QueuedMessage {
+    message: unknown;
+    receivedAt: number;
+}
+
+const messageQueue: QueuedMessage[] = [];
+let processingScheduled = false;
+let lastBacklogWarning = 0;
+let backlogStartTime = 0; // Track when backlog started
+const BACKLOG_WARNING_INTERVAL = 5000; // Warn every 5 seconds if backlogged
+const BACKLOG_THRESHOLD = 50; // Warn if queue exceeds this
+const MAX_BATCH_SIZE = 100; // Process max this many messages per frame
+const MAX_BATCH_TIME_MS = 16; // Target 60fps - max 16ms per batch
+
+function scheduleProcessing(): void {
+    if (processingScheduled) return;
+    processingScheduled = true;
+    requestAnimationFrame(processMessageBatch);
+}
+
+function processMessageBatch(): void {
+    processingScheduled = false;
+    const startTime = performance.now();
+    const store = useLogStore.getState();
+    const now = Date.now();
+
+    // Check for backlog and warn
+    if (messageQueue.length > BACKLOG_THRESHOLD) {
+        if (backlogStartTime === 0) {
+            backlogStartTime = now;
+        }
+        if (now - lastBacklogWarning > BACKLOG_WARNING_INTERVAL) {
+            const backlogDuration = ((now - backlogStartTime) / 1000).toFixed(1);
+            console.warn(`[Early WS] Performance: Backlog ${messageQueue.length} msgs, duration: ${backlogDuration}s`);
+            lastBacklogWarning = now;
+            // Set backlog flag in store for UI to react (skip animations)
+            store.setBacklogged(true);
+        }
+    } else if (messageQueue.length < BACKLOG_THRESHOLD / 2) {
+        // Clear backlog flag when queue is manageable
+        if (store.backlogged) {
+            const backlogDuration = backlogStartTime > 0 ? ((now - backlogStartTime) / 1000).toFixed(1) : '0';
+            console.log(`[Early WS] Performance: Backlog cleared after ${backlogDuration}s`);
+            store.setBacklogged(false);
+            backlogStartTime = 0;
+        }
+    }
+
+    // Batch watch updates for single store update
+    const watchUpdates: Record<string, WatchValue> = {};
+    let processedCount = 0;
+
+    while (messageQueue.length > 0 && processedCount < MAX_BATCH_SIZE) {
+        const elapsed = performance.now() - startTime;
+        if (elapsed > MAX_BATCH_TIME_MS && processedCount > 0) {
+            // Time budget exceeded, schedule next batch
+            break;
+        }
+
+        const queued = messageQueue.shift()!;
+        processedCount++;
+
+        try {
+            // Handle watch messages specially - batch them
+            const msg = queued.message as { type?: string; data?: unknown };
+            if (msg.type === 'watch') {
+                const watch = msg.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
+                if (watch?.name) {
+                    watchUpdates[watch.name] = {
+                        value: watch.value,
+                        timestamp: watch.timestamp,
+                        watchType: watch.watchType,
+                        session: watch.session
+                    };
+                }
+            } else {
+                // Process other messages immediately
+                handleMessage(queued.message, store);
+            }
+        } catch (err) {
+            console.error('[Early WS] Failed to process queued message:', err);
+        }
+    }
+
+    // Apply batched watch updates in single store update
+    if (Object.keys(watchUpdates).length > 0) {
+        store.updateWatchBatch(watchUpdates);
+    }
+
+    // Schedule next batch if queue not empty
+    if (messageQueue.length > 0) {
+        scheduleProcessing();
+    }
+}
+
+function queueMessage(message: unknown): void {
+    messageQueue.push({ message, receivedAt: Date.now() });
+    scheduleProcessing();
+}
+
 function clearReconnectTimers(): void {
     if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
@@ -126,7 +229,17 @@ function connect(): void {
         ws.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
-                handleMessage(message, useLogStore.getState());
+                // Auth and control messages are processed immediately (critical path)
+                // Data messages (watch, stream, entries) are queued for batched processing
+                const msgType = message.type;
+                if (msgType === 'auth_required' || msgType === 'auth_success' || msgType === 'connected' ||
+                    msgType === 'init' || msgType === 'control' || msgType === 'clientConnect' ||
+                    msgType === 'clientDisconnect' || msgType === 'session') {
+                    handleMessage(message, useLogStore.getState());
+                } else {
+                    // Queue data messages for batched processing
+                    queueMessage(message);
+                }
             } catch (err) {
                 console.error('[Early WS] Failed to parse message:', err);
             }
@@ -304,6 +417,35 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
                     streamType: entry.streamType
                 });
             }
+            break;
+        }
+        case 'init': {
+            // Initial state from server
+            const initData = message.data as {
+                stats?: { size: number; maxEntries: number; lastEntryId: number };
+                watches?: Record<string, { value: string; timestamp: string }>;
+                sessions?: Record<string, number>;
+                tcpClientCount?: number;
+            };
+            if (initData.stats) store.setStats(initData.stats);
+            if (initData.watches) store.setWatches(initData.watches);
+            if (initData.sessions) store.setSessions(initData.sessions);
+            if (initData.tcpClientCount !== undefined) {
+                console.log('[Early WS] Init: setting tcpClientCount to', initData.tcpClientCount);
+                store.setTcpClientCount(initData.tcpClientCount);
+            }
+            break;
+        }
+        case 'clientConnect': {
+            // TCP client connected
+            console.log('[Early WS] TCP client connected');
+            store.incrementTcpClientCount();
+            break;
+        }
+        case 'clientDisconnect': {
+            // TCP client disconnected
+            console.log('[Early WS] TCP client disconnected');
+            store.decrementTcpClientCount();
             break;
         }
     }

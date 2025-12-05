@@ -164,7 +164,8 @@ class ConnectionManager {
             user: user,              // User identifier
             lastEntryId: 0,          // For streaming updates
             filters: null,           // Client-side filters (for server-side filtering)
-            paused: false
+            paused: false,
+            streamSubscriptions: new Map()  // channel -> { subscribed: true, paused: false }
         };
 
         this.viewers.set(ws, viewerInfo);
@@ -238,6 +239,7 @@ class ConnectionManager {
 
         viewerInfo.room = newRoom;
         viewerInfo.lastEntryId = 0;  // Reset entry tracking for new room
+        viewerInfo.streamSubscriptions.clear();  // Clear stream subscriptions for new room
 
         console.log(`[WS] Viewer ${viewerInfo.id} switched from ${oldRoom} to ${newRoom}`);
     }
@@ -363,14 +365,27 @@ class ConnectionManager {
 
     /**
      * Broadcast stream entry to viewers in a specific room
+     * Only sends to viewers who are subscribed to this stream channel and not paused
      */
     broadcastStreamToRoom(roomId, streamData) {
-        const message = {
+        const channel = streamData.channel;
+        const message = JSON.stringify({
             type: 'stream',
-            channel: streamData.channel,
+            channel: channel,
             entry: streamData.entry
-        };
-        this.broadcastToRoom(roomId, message);
+        });
+
+        for (const [ws, viewerInfo] of this.viewers) {
+            // Must be in the same room
+            if (viewerInfo.room !== roomId) continue;
+            // Must have WebSocket open
+            if (ws.readyState !== WebSocket.OPEN) continue;
+            // Must be subscribed to this specific channel and not paused
+            const sub = viewerInfo.streamSubscriptions.get(channel);
+            if (!sub || !sub.subscribed || sub.paused) continue;
+
+            ws.send(message);
+        }
     }
 
     /**
@@ -405,6 +420,104 @@ class ConnectionManager {
         const viewerInfo = this.viewers.get(ws);
         if (viewerInfo) {
             viewerInfo.paused = paused;
+        }
+    }
+
+    /**
+     * Subscribe a viewer to a stream channel
+     */
+    subscribeToStream(ws, channel) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return false;
+
+        viewerInfo.streamSubscriptions.set(channel, {
+            subscribed: true,
+            paused: false
+        });
+
+        console.log(`[WS] Viewer ${viewerInfo.id} subscribed to stream: ${channel}`);
+        return true;
+    }
+
+    /**
+     * Unsubscribe a viewer from a stream channel
+     */
+    unsubscribeFromStream(ws, channel) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return false;
+
+        viewerInfo.streamSubscriptions.delete(channel);
+
+        console.log(`[WS] Viewer ${viewerInfo.id} unsubscribed from stream: ${channel}`);
+        return true;
+    }
+
+    /**
+     * Pause a stream for a viewer (keep subscribed but stop sending)
+     */
+    pauseStream(ws, channel) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return false;
+
+        const sub = viewerInfo.streamSubscriptions.get(channel);
+        if (sub) {
+            sub.paused = true;
+            console.log(`[WS] Viewer ${viewerInfo.id} paused stream: ${channel}`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Resume a stream for a viewer (only new data, no replay)
+     */
+    resumeStream(ws, channel) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return false;
+
+        const sub = viewerInfo.streamSubscriptions.get(channel);
+        if (sub) {
+            sub.paused = false;
+            console.log(`[WS] Viewer ${viewerInfo.id} resumed stream: ${channel}`);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Get stream subscriptions for a viewer
+     */
+    getStreamSubscriptions(ws) {
+        const viewerInfo = this.viewers.get(ws);
+        if (!viewerInfo) return [];
+
+        return Array.from(viewerInfo.streamSubscriptions.entries()).map(([channel, sub]) => ({
+            channel,
+            paused: sub.paused
+        }));
+    }
+
+    /**
+     * Auto-subscribe all viewers in a room to a new channel
+     * Called when a new stream channel is detected
+     */
+    autoSubscribeRoomToChannel(roomId, channel) {
+        let count = 0;
+        for (const [ws, viewerInfo] of this.viewers) {
+            if (viewerInfo.room !== roomId) continue;
+            // Only subscribe if not already subscribed
+            if (!viewerInfo.streamSubscriptions.has(channel)) {
+                viewerInfo.streamSubscriptions.set(channel, {
+                    subscribed: true,
+                    paused: false
+                });
+                // Notify the viewer of the auto-subscription
+                this.send(ws, { type: 'streamSubscribed', channel, auto: true });
+                count++;
+            }
+        }
+        if (count > 0) {
+            console.log(`[WS] Auto-subscribed ${count} viewer(s) to new channel: ${channel}`);
         }
     }
 

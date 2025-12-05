@@ -302,7 +302,7 @@ export function useAutoScroll({
   // Start/stop scroll loop when autoScrollEnabled changes
   useEffect(() => {
     if (autoScrollEnabled && scrollElement) {
-      debugLog('autoScrollEnabled changed: ENABLED - resetting state and starting scroll', {
+      debugLog('autoScrollEnabled changed: ENABLED - resetting state and jumping to bottom', {
         prevRate: stateRef.current.averageRate.toFixed(2),
       });
       stateRef.current.isStuckToBottom = true;
@@ -310,16 +310,17 @@ export function useAutoScroll({
       // This ensures smooth scroll starts immediately without waiting for grace period
       stateRef.current.userScrollTime = 0;
       stateRef.current.userDisabledTime = 0;
-      // Reset rate to 0 so we default to smooth scrolling
-      // The rate will quickly adjust based on actual entry arrival rate
+      // Reset rate to 0 - subsequent entries will use rate-based scrolling
       stateRef.current.averageRate = 0;
-      scrollToBottom();  // Will use smooth scroll since rate is now 0
+      // Use instant scroll when autoscroll is enabled (initial load, resume button)
+      // This avoids slow smooth scrolling through historical data on page refresh
+      instantScrollToBottom();
     } else {
       debugLog('autoScrollEnabled changed: DISABLED - stopping scroll loop');
       // Stop the loop when autoscroll is disabled
       stopSmoothScrollLoop();
     }
-  }, [autoScrollEnabled, scrollElement, scrollToBottom, stopSmoothScrollLoop]);
+  }, [autoScrollEnabled, scrollElement, instantScrollToBottom, stopSmoothScrollLoop]);
 
   // Direct wheel event listener for race condition prevention
   // This captures wheel-up events synchronously before React state can update

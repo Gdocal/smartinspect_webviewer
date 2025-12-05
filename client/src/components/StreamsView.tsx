@@ -8,6 +8,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useLogStore, StreamEntry } from '../store/logStore';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { HighlightRulesPanel } from './HighlightRulesPanel';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -126,22 +127,17 @@ interface StreamsViewProps {
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
     const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity } = useLogStore();
+    const { pauseAllStreams, resumeAllStreams } = useWebSocket();
     const density = DENSITY_CONFIG[rowDensity];
     const rowHeight = getStreamRowHeight(rowDensity);
     const fontSize = getFontSize(rowDensity);
     const headerHeight = getHeaderHeight(rowDensity);
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
-    // Per-channel pause state
-    const [pausedChannels, setPausedChannels] = useState<Record<string, boolean>>({});
-    const paused = selectedChannel ? (pausedChannels[selectedChannel] ?? false) : false;
-    const setPaused = (value: boolean) => {
-        if (selectedChannel) {
-            setPausedChannels(prev => ({ ...prev, [selectedChannel]: value }));
-        }
-    };
     const [autoScroll, setAutoScroll] = useState(true);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
+    // Global streams pause state (server-side pause via WebSocket)
+    const [allStreamsPaused, setAllStreamsPaused] = useState(false);
 
     // Snapshot mode state - per channel
     const [snapshotMode, setSnapshotMode] = useState<Record<string, boolean>>({});
@@ -300,6 +296,17 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         }
     }, [clearAllStreams]);
 
+    // Pause/Resume all streams (server-side via WebSocket)
+    const handlePauseAll = useCallback(() => {
+        pauseAllStreams();
+        setAllStreamsPaused(true);
+    }, [pauseAllStreams]);
+
+    const handleResumeAll = useCallback(() => {
+        resumeAllStreams();
+        setAllStreamsPaused(false);
+    }, [resumeAllStreams]);
+
     const channels = Object.keys(streams);
 
     // Track previous total for speed calculation
@@ -377,20 +384,8 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         return sourceEntries.filter(e => e.data.toLowerCase().includes(lower));
     }, [sourceEntries, filterText]);
 
-    // Store paused entries separately
-    const [pausedEntries, setPausedEntries] = useState<StreamEntry[]>([]);
-    const wasPausedRef = useRef(false);
-
-    // Update paused entries ONLY when transitioning from unpaused to paused
-    useEffect(() => {
-        if (paused && !wasPausedRef.current) {
-            // Just paused - capture current entries
-            setPausedEntries(filteredEntries);
-        }
-        wasPausedRef.current = paused;
-    }, [paused]); // Only depend on paused, not filteredEntries
-
-    const displayedEntries = paused ? pausedEntries : filteredEntries;
+    // displayedEntries = filtered entries (server-side pause stops data, no local pause needed)
+    const displayedEntries = filteredEntries;
 
     // Calculate how many new entries arrived since snapshot
     // Use streamTotalReceived and snapshot's totalAtCapture (not capped by ring buffer)
@@ -595,7 +590,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     });
 
     // Effective autoscroll = user wants it AND scrollbar is at bottom
-    const effectiveAutoScroll = autoScroll && stuckToBottom && !paused;
+    const effectiveAutoScroll = autoScroll && stuckToBottom;
 
     // Smooth auto-scroll hook
     const {
@@ -619,15 +614,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         onUserScrollUp: useCallback(() => {
             debugLog('USER ACTION: Scrolled up - disabling stuckToBottom', {
                 wasInSnapshotMode: isInSnapshotMode,
-                wasPaused: paused,
             });
             markUserScroll();
             setStuckToBottom(false);
-            // AUTO-TRIGGER: Enter snapshot when scrolling up (unless already in snapshot or paused)
-            if (!isInSnapshotMode && !paused) {
+            // AUTO-TRIGGER: Enter snapshot when scrolling up (unless already in snapshot)
+            if (!isInSnapshotMode) {
                 enterSnapshotMode();
             }
-        }, [markUserScroll, isInSnapshotMode, paused, enterSnapshotMode]),
+        }, [markUserScroll, isInSnapshotMode, enterSnapshotMode]),
         onScrollToBottom: useCallback(() => {
             debugLog('STATE: Scrolled to bottom - enabling stuckToBottom');
             markStuckToBottom();
@@ -685,7 +679,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         onSelectEntry(entry);
 
         // Enter snapshot mode if not already in it (prevents stream from moving)
-        if (!isInSnapshotMode && !paused) {
+        if (!isInSnapshotMode) {
             enterSnapshotMode();
         }
     };
@@ -762,14 +756,15 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                             : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
-                                    {/* Channel name - flexible width */}
+                                    {/* Channel icon and name */}
                                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                         <svg className={`${density.channelIconSize} flex-shrink-0 ${isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                         </svg>
                                         <span className={`${density.channelText} font-medium truncate`}>{channel}</span>
                                     </div>
-                                    {/* Speed column - fixed width for alignment */}
+
+                                    {/* Speed column */}
                                     <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
                                         isSelected
                                             ? 'text-purple-200'
@@ -779,7 +774,8 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     }`}>
                                         {speed}/s
                                     </span>
-                                    {/* Entry count badge - fixed width container, center-aligned content */}
+
+                                    {/* Entry count badge */}
                                     <div className="w-12 flex-shrink-0 flex justify-end">
                                         <span className={`${density.badgeText} px-1 py-0.5 rounded text-center min-w-[2rem] ${
                                             isSelected
@@ -795,21 +791,49 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     )}
                 </div>
 
-                {/* Footer stats with Clear All button */}
+                {/* Footer stats with Pause All/Resume All and Clear All buttons */}
                 <div className={`${density.footerPx} ${density.footerPy} border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between flex-shrink-0`}>
                     <span className={`${density.footerText} text-slate-500 dark:text-slate-400`}>
                         {totalCount} entries
                     </span>
-                    <button
-                        onClick={handleClearAll}
-                        className={`${density.footerText} text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1`}
-                        title="Clear all streams"
-                    >
-                        <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        Clear
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* Pause All / Resume All toggle - simple state-based */}
+                        {channels.length > 0 && (
+                            allStreamsPaused ? (
+                                <button
+                                    onClick={handleResumeAll}
+                                    className={`${density.footerText} text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors flex items-center gap-1`}
+                                    title="Resume all streams"
+                                >
+                                    <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    </svg>
+                                    Resume All
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handlePauseAll}
+                                    className={`${density.footerText} text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors flex items-center gap-1`}
+                                    title="Pause all streams"
+                                >
+                                    <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 9v6m4-6v6" />
+                                    </svg>
+                                    Pause All
+                                </button>
+                            )
+                        )}
+                        <button
+                            onClick={handleClearAll}
+                            className={`${density.footerText} text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex items-center gap-1`}
+                            title="Clear all streams"
+                        >
+                            <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Clear
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -909,28 +933,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                     {/* Control buttons - icon only */}
                     <div className={`flex items-center ${density.buttonGap}`}>
-                        {/* Pause button */}
-                        <button
-                            onClick={() => setPaused(!paused)}
-                            className={`${density.buttonPadding} rounded transition-colors ${
-                                paused
-                                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                            title={paused ? 'Resume' : 'Pause'}
-                        >
-                            {paused ? (
-                                <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            ) : (
-                                <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            )}
-                        </button>
-
                         {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                         <button
                             onClick={() => {

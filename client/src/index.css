@@ -589,27 +589,41 @@ html, body, #root {
     filter: brightness(1.1);
 }
 
-/* Cell selection - background highlight */
+/* Ensure highlighted row text color applies to all cells (overrides per-column muted colors) */
+.vlg-row.highlighted .vlg-cell {
+    color: inherit;
+}
+
+/* Cell selection - background highlight with readable text */
 .vlg-cell.selected {
     background: rgba(59, 130, 246, 0.2); /* blue-500 with transparency */
+    color: var(--vlg-text) !important; /* Override muted colors for readability */
 }
 
-/* Cell selection borders - only on edges of selection range */
-.vlg-cell.sel-top {
-    border-top: 1px solid #3b82f6;
-}
+/* Cell selection borders using box-shadow (no layout shift) */
+.vlg-cell.sel-top { box-shadow: inset 0 1px 0 0 #3b82f6; }
+.vlg-cell.sel-bottom { box-shadow: inset 0 -1px 0 0 #3b82f6; }
+.vlg-cell.sel-left { box-shadow: inset 1px 0 0 0 #3b82f6; }
+.vlg-cell.sel-right { box-shadow: inset -1px 0 0 0 #3b82f6; }
 
-.vlg-cell.sel-bottom {
-    border-bottom: 1px solid #3b82f6;
-}
+/* Two edges - corners */
+.vlg-cell.sel-top.sel-left { box-shadow: inset 1px 1px 0 0 #3b82f6; }
+.vlg-cell.sel-top.sel-right { box-shadow: inset -1px 1px 0 0 #3b82f6; }
+.vlg-cell.sel-bottom.sel-left { box-shadow: inset 1px -1px 0 0 #3b82f6; }
+.vlg-cell.sel-bottom.sel-right { box-shadow: inset -1px -1px 0 0 #3b82f6; }
 
-.vlg-cell.sel-left {
-    border-left: 1px solid #3b82f6;
-}
+/* Two edges - opposite sides */
+.vlg-cell.sel-top.sel-bottom { box-shadow: inset 0 1px 0 0 #3b82f6, inset 0 -1px 0 0 #3b82f6; }
+.vlg-cell.sel-left.sel-right { box-shadow: inset 1px 0 0 0 #3b82f6, inset -1px 0 0 0 #3b82f6; }
 
-.vlg-cell.sel-right {
-    border-right: 1px solid #3b82f6;
-}
+/* Three edges */
+.vlg-cell.sel-top.sel-left.sel-right { box-shadow: inset 0 1px 0 0 #3b82f6, inset 1px 0 0 0 #3b82f6, inset -1px 0 0 0 #3b82f6; }
+.vlg-cell.sel-bottom.sel-left.sel-right { box-shadow: inset 0 -1px 0 0 #3b82f6, inset 1px 0 0 0 #3b82f6, inset -1px 0 0 0 #3b82f6; }
+.vlg-cell.sel-top.sel-bottom.sel-left { box-shadow: inset 0 1px 0 0 #3b82f6, inset 0 -1px 0 0 #3b82f6, inset 1px 0 0 0 #3b82f6; }
+.vlg-cell.sel-top.sel-bottom.sel-right { box-shadow: inset 0 1px 0 0 #3b82f6, inset 0 -1px 0 0 #3b82f6, inset -1px 0 0 0 #3b82f6; }
+
+/* All four edges (single cell or full border) */
+.vlg-cell.sel-top.sel-bottom.sel-left.sel-right { box-shadow: inset 0 0 0 1px #3b82f6; }
 
 /* Disable text selection during drag */
 .virtual-log-grid.selecting {
@@ -815,29 +829,41 @@ svg.vlg-menu-icon {
     background: #e2e8f0;
 }
 
-/* Row selected (for detail panel indication) */
-.vlg-row.row-selected {
-    background: rgba(59, 130, 246, 0.15) !important; /* blue-500 with low opacity */
+/* Row selected (for detail panel indication) - only for non-highlighted rows */
+.vlg-row.row-selected:not(.highlighted) {
+    background: rgba(59, 130, 246, 0.15); /* blue-500 with low opacity */
     box-shadow: inset 3px 0 0 0 #3b82f6; /* blue-500 left border indicator */
 }
 
-.vlg-row.row-selected:hover {
-    background: rgba(59, 130, 246, 0.25) !important;
+.vlg-row.row-selected:not(.highlighted):hover {
+    background: rgba(59, 130, 246, 0.25);
 }
 
 /* Light theme row-selected */
-.virtual-log-grid.light .vlg-row.row-selected {
-    background: rgba(59, 130, 246, 0.12) !important;
+.virtual-log-grid.light .vlg-row.row-selected:not(.highlighted) {
+    background: rgba(59, 130, 246, 0.12);
     box-shadow: inset 3px 0 0 0 #3b82f6;
 }
 
-.virtual-log-grid.light .vlg-row.row-selected:hover {
-    background: rgba(59, 130, 246, 0.2) !important;
+.virtual-log-grid.light .vlg-row.row-selected:not(.highlighted):hover {
+    background: rgba(59, 130, 246, 0.2);
 }
 
-/* Row-selected + highlighted - preserve highlight but add left indicator */
+/* Row-selected + highlighted - preserve highlight background, add left indicator */
 .vlg-row.highlighted.row-selected {
     box-shadow: inset 3px 0 0 0 #3b82f6 !important;
+    /* Background comes from inline highlight style - don't override it */
+}
+
+/* Ensure cell selection on row-selected rows has readable text */
+.vlg-row.row-selected .vlg-cell.selected {
+    color: var(--vlg-text) !important;
+}
+
+/* For highlighted + row-selected, cell selection needs to override highlight text color */
+.vlg-row.highlighted.row-selected .vlg-cell.selected {
+    background: rgba(59, 130, 246, 0.3); /* Slightly more opaque for visibility */
+    color: var(--vlg-text) !important;
 }
 
 /* Stream content cell styles */

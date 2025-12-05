@@ -61,6 +61,8 @@ import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ProjectDropdown } from './components/ProjectDropdown';
+import { AutoPauseNotification } from './components/AutoPauseNotification';
+import { useAutoPauseMonitor } from './hooks/useAutoPauseMonitor';
 
 export function App() {
     const {
@@ -128,6 +130,9 @@ export function App() {
 
     // Connect to WebSocket
     useWebSocket();
+
+    // Monitor stream rates and auto-pause high-frequency streams
+    useAutoPauseMonitor();
 
     // Sync views and highlights with server
     useViewsSync();
@@ -378,6 +383,9 @@ export function App() {
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
             />
+
+            {/* Auto-pause notifications */}
+            <AutoPauseNotification />
         </div>
     );
 }

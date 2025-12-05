@@ -11,7 +11,30 @@ export interface AppSettings {
     autoSaveProject: boolean;    // Auto-save project changes to server
 }
 
+export interface PerformanceSettings {
+    // Auto-pause settings for streams
+    autoPauseEnabled: boolean;              // Enable auto-pause for high-frequency streams
+    autoPauseStreamCountThreshold: number;  // Pause when more than N streams are active
+    autoPauseRateThreshold: number;         // Pause streams exceeding N messages/sec
+    autoPauseGracePeriod: number;           // Seconds to wait before auto-pausing
+
+    // Watch update throttling
+    watchThrottleMode: 'realtime' | 'throttled';  // realtime = immediate updates, throttled = limited
+    watchMaxUpdatesPerSecond: number;             // Max watch UI updates per second when throttled
+}
+
 const STORAGE_KEY = 'smartinspect-settings';
+const PERFORMANCE_STORAGE_KEY = 'smartinspect-performance-settings';
+
+// Default performance settings
+const defaultPerformanceSettings: PerformanceSettings = {
+    autoPauseEnabled: true,
+    autoPauseStreamCountThreshold: 3,
+    autoPauseRateThreshold: 50,
+    autoPauseGracePeriod: 5,
+    watchThrottleMode: 'realtime',
+    watchMaxUpdatesPerSecond: 10,
+};
 
 // Get default server URL based on current window location
 function getDefaultServerUrl(): string {
@@ -87,4 +110,55 @@ export function getSettings(): AppSettings {
 export function getEffectiveServerUrl(): string {
     const settings = getSettings();
     return settings.serverUrl || getDefaultServerUrl();
+}
+
+// Performance settings management
+function loadPerformanceSettings(): PerformanceSettings {
+    try {
+        const saved = localStorage.getItem(PERFORMANCE_STORAGE_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            return { ...defaultPerformanceSettings, ...parsed };
+        }
+    } catch (e) {
+        console.error('Failed to load performance settings:', e);
+    }
+    return defaultPerformanceSettings;
+}
+
+function savePerformanceSettings(settings: PerformanceSettings): void {
+    try {
+        localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(settings));
+    } catch (e) {
+        console.error('Failed to save performance settings:', e);
+    }
+}
+
+export function usePerformanceSettings() {
+    const [settings, setSettings] = useState<PerformanceSettings>(loadPerformanceSettings);
+
+    const updateSettings = useCallback((partial: Partial<PerformanceSettings>) => {
+        setSettings(prev => {
+            const next = { ...prev, ...partial };
+            savePerformanceSettings(next);
+            return next;
+        });
+    }, []);
+
+    const resetSettings = useCallback(() => {
+        setSettings(defaultPerformanceSettings);
+        savePerformanceSettings(defaultPerformanceSettings);
+    }, []);
+
+    return {
+        settings,
+        updateSettings,
+        resetSettings,
+        defaultSettings: defaultPerformanceSettings,
+    };
+}
+
+// Get performance settings directly from localStorage (always fresh)
+export function getPerformanceSettings(): PerformanceSettings {
+    return loadPerformanceSettings();
 }

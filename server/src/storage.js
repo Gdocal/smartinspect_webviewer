@@ -472,6 +472,13 @@ class StreamStore {
     }
 
     /**
+     * Check if a channel exists
+     */
+    hasChannel(channel) {
+        return this.channels.has(channel);
+    }
+
+    /**
      * Get all entries for a specific channel
      */
     getChannel(channel) {

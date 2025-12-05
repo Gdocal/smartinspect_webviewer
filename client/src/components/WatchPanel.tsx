@@ -87,7 +87,7 @@ interface FlashState {
 }
 
 export function WatchPanel() {
-    const { watches, clearWatches, setShowWatchPanel, rowDensity } = useLogStore();
+    const { watches, clearWatches, setShowWatchPanel, rowDensity, backlogged } = useLogStore();
     const density = DENSITY_CONFIG[rowDensity];
     const [filterText, setFilterText] = useState('');
     const [sortBy, setSortBy] = useState<'name' | 'value' | 'timestamp'>('name');
@@ -98,8 +98,21 @@ export function WatchPanel() {
     const prevTimestampsRef = useRef<FlashState>({});
     const flashDuration = 500; // ms
 
-    // Detect changes and trigger flash
+    // Detect changes and trigger flash (skip when backlogged for performance)
     useEffect(() => {
+        // Skip flash animations when system is backlogged
+        if (backlogged) {
+            // Still update timestamps ref to track changes, but don't animate
+            Object.entries(watches).forEach(([name, watch]) => {
+                prevTimestampsRef.current[name] = {
+                    timestamp: watch.timestamp,
+                    flashUntil: 0
+                };
+            });
+            setFlashingWatches(new Set());
+            return;
+        }
+
         const now = Date.now();
         const newFlashing = new Set<string>();
         const prevTimestamps = prevTimestampsRef.current;
@@ -146,7 +159,7 @@ export function WatchPanel() {
             }, flashDuration);
             return () => clearTimeout(timer);
         }
-    }, [watches]);
+    }, [watches, backlogged]);
 
     const watchEntries = useMemo(() => {
         let entries = Object.entries(watches).map(([name, watch]) => ({

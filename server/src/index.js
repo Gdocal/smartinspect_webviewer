@@ -32,6 +32,160 @@ const config = {
 // Initialize room manager (replaces global storage)
 const roomManager = new RoomManager(config.maxEntries, config.maxStreamEntries);
 
+// ==================== Watch Throttling ====================
+// Limits watch broadcasts to 3 per second per watch to prevent UI overload
+const WATCH_THROTTLE_MS = 333; // ~3 updates per second
+const watchThrottleState = new Map(); // roomId:watchName -> { lastBroadcast, pending, timer }
+
+// ==================== Stream Throttling ====================
+// Limits stream broadcasts to 3 per second per channel to prevent UI overload
+const STREAM_THROTTLE_MS = 333; // ~3 updates per second per channel
+const streamThrottleState = new Map(); // roomId:channel -> { lastBroadcast, pending, timer, droppedCount }
+
+// ==================== Log Entry Throttling ====================
+// Batches log entry broadcasts to 3 per second per room to prevent UI overload
+const ENTRY_THROTTLE_MS = 333; // ~3 updates per second per room
+const entryThrottleState = new Map(); // roomId -> { lastBroadcast, pendingEntries, timer }
+
+function getThrottleKey(roomId, watchName) {
+    return `${roomId}:${watchName}`;
+}
+
+/**
+ * Throttled watch broadcast - limits to ~3 updates/sec per watch
+ * Always stores to watchStore immediately, but throttles WebSocket broadcasts
+ */
+function throttledWatchBroadcast(roomId, packet) {
+    const key = getThrottleKey(roomId, packet.name);
+    const now = Date.now();
+    let state = watchThrottleState.get(key);
+
+    if (!state) {
+        state = { lastBroadcast: 0, pending: null, timer: null };
+        watchThrottleState.set(key, state);
+    }
+
+    const timeSinceLast = now - state.lastBroadcast;
+
+    if (timeSinceLast >= WATCH_THROTTLE_MS) {
+        // Enough time has passed - broadcast immediately
+        state.lastBroadcast = now;
+        state.pending = null;
+        if (state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+        }
+        connectionManager.broadcastWatchToRoom(roomId, packet);
+    } else {
+        // Too soon - store as pending and schedule broadcast
+        state.pending = packet;
+        if (!state.timer) {
+            const delay = WATCH_THROTTLE_MS - timeSinceLast;
+            state.timer = setTimeout(() => {
+                const currentState = watchThrottleState.get(key);
+                if (currentState && currentState.pending) {
+                    currentState.lastBroadcast = Date.now();
+                    connectionManager.broadcastWatchToRoom(roomId, currentState.pending);
+                    currentState.pending = null;
+                }
+                currentState.timer = null;
+            }, delay);
+        }
+    }
+}
+
+/**
+ * Throttled stream broadcast - limits to ~3 updates/sec per channel
+ * Always stores to streamStore immediately, but throttles WebSocket broadcasts
+ */
+function throttledStreamBroadcast(roomId, streamData) {
+    const key = getThrottleKey(roomId, streamData.channel);
+    const now = Date.now();
+    let state = streamThrottleState.get(key);
+
+    if (!state) {
+        state = { lastBroadcast: 0, pending: null, timer: null, droppedCount: 0 };
+        streamThrottleState.set(key, state);
+    }
+
+    const timeSinceLast = now - state.lastBroadcast;
+
+    if (timeSinceLast >= STREAM_THROTTLE_MS) {
+        // Enough time has passed - broadcast immediately
+        state.lastBroadcast = now;
+        state.pending = null;
+        state.droppedCount = 0;
+        if (state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+        }
+        connectionManager.broadcastStreamToRoom(roomId, streamData);
+    } else {
+        // Too soon - store as pending and schedule broadcast
+        state.pending = streamData;
+        state.droppedCount++;
+        if (!state.timer) {
+            const delay = STREAM_THROTTLE_MS - timeSinceLast;
+            state.timer = setTimeout(() => {
+                const currentState = streamThrottleState.get(key);
+                if (currentState && currentState.pending) {
+                    currentState.lastBroadcast = Date.now();
+                    connectionManager.broadcastStreamToRoom(roomId, currentState.pending);
+                    currentState.pending = null;
+                    currentState.droppedCount = 0;
+                }
+                currentState.timer = null;
+            }, delay);
+        }
+    }
+}
+
+/**
+ * Throttled entry broadcast - batches entries and sends ~3 times/sec per room
+ * Collects all entries and sends them together (unlike watch/stream which send latest only)
+ */
+function throttledEntryBroadcast(roomId, entries) {
+    const now = Date.now();
+    let state = entryThrottleState.get(roomId);
+
+    if (!state) {
+        state = { lastBroadcast: 0, pendingEntries: [], timer: null };
+        entryThrottleState.set(roomId, state);
+    }
+
+    // Add entries to pending batch
+    state.pendingEntries.push(...entries);
+
+    const timeSinceLast = now - state.lastBroadcast;
+
+    if (timeSinceLast >= ENTRY_THROTTLE_MS) {
+        // Enough time has passed - broadcast immediately
+        state.lastBroadcast = now;
+        const toSend = state.pendingEntries;
+        state.pendingEntries = [];
+        if (state.timer) {
+            clearTimeout(state.timer);
+            state.timer = null;
+        }
+        if (toSend.length > 0) {
+            connectionManager.broadcastEntriesToRoom(roomId, toSend);
+        }
+    } else if (!state.timer) {
+        // Schedule batch broadcast
+        const delay = ENTRY_THROTTLE_MS - timeSinceLast;
+        state.timer = setTimeout(() => {
+            const currentState = entryThrottleState.get(roomId);
+            if (currentState && currentState.pendingEntries.length > 0) {
+                currentState.lastBroadcast = Date.now();
+                const toSend = currentState.pendingEntries;
+                currentState.pendingEntries = [];
+                connectionManager.broadcastEntriesToRoom(roomId, toSend);
+            }
+            currentState.timer = null;
+        }, delay);
+    }
+}
+
 // Ensure default room exists
 roomManager.getOrCreate('default');
 
@@ -866,9 +1020,20 @@ const connectionManager = new ConnectionManager({
                     stats: room.logBuffer.getStats(),
                     watches: room.watchStore.getAll(),
                     sessions: room.logBuffer.getSessions(),
-                    availableRooms: roomManager.listRooms()
+                    availableRooms: roomManager.listRooms(),
+                    tcpClientCount: tcpServer.getClientCountInRoom(viewerInfo.room)
                 }
             });
+
+            // Auto-subscribe to all existing stream channels in this room
+            const existingChannels = room.streamStore.getAllChannels();
+            for (const channel of existingChannels) {
+                connectionManager.subscribeToStream(ws, channel);
+                connectionManager.send(ws, { type: 'streamSubscribed', channel, auto: true });
+            }
+            if (existingChannels.length > 0) {
+                console.log(`[Server] Auto-subscribed viewer ${viewerInfo.id} to ${existingChannels.length} existing channel(s)`);
+            }
         }
     },
     onViewerMessage: (msg, viewerInfo, ws) => {
@@ -926,6 +1091,55 @@ const connectionManager = new ConnectionManager({
                     }
                 });
                 break;
+
+            // Stream subscription commands
+            case 'subscribeStream':
+                if (msg.channel) {
+                    connectionManager.subscribeToStream(ws, msg.channel);
+                    connectionManager.send(ws, {
+                        type: 'streamSubscribed',
+                        channel: msg.channel
+                    });
+                }
+                break;
+
+            case 'unsubscribeStream':
+                if (msg.channel) {
+                    connectionManager.unsubscribeFromStream(ws, msg.channel);
+                    connectionManager.send(ws, {
+                        type: 'streamUnsubscribed',
+                        channel: msg.channel
+                    });
+                }
+                break;
+
+            case 'pauseStream':
+                if (msg.channel) {
+                    connectionManager.pauseStream(ws, msg.channel);
+                    connectionManager.send(ws, {
+                        type: 'streamPaused',
+                        channel: msg.channel
+                    });
+                }
+                break;
+
+            case 'resumeStream':
+                if (msg.channel) {
+                    connectionManager.resumeStream(ws, msg.channel);
+                    // Note: No replay of missed data - only new data from now
+                    connectionManager.send(ws, {
+                        type: 'streamResumed',
+                        channel: msg.channel
+                    });
+                }
+                break;
+
+            case 'getStreamSubscriptions':
+                connectionManager.send(ws, {
+                    type: 'streamSubscriptions',
+                    subscriptions: connectionManager.getStreamSubscriptions(ws)
+                });
+                break;
         }
     }
 });
@@ -974,8 +1188,8 @@ function handlePacket(packet, clientInfo) {
             const entry = room.logBuffer.push(packet);
             room.touch();
 
-            // Broadcast to viewers in this room
-            connectionManager.broadcastEntriesToRoom(roomId, [entry]);
+            // Throttled broadcast to viewers (max 3/sec to prevent UI overload)
+            throttledEntryBroadcast(roomId, [entry]);
             break;
 
         case 'processFlow':
@@ -986,12 +1200,12 @@ function handlePacket(packet, clientInfo) {
             const flowEntry = room.logBuffer.push(packet);
             room.touch();
 
-            // Broadcast to viewers in this room
-            connectionManager.broadcastEntriesToRoom(roomId, [flowEntry]);
+            // Throttled broadcast to viewers (max 3/sec to prevent UI overload)
+            throttledEntryBroadcast(roomId, [flowEntry]);
             break;
 
         case 'watch':
-            // Update room's watch store
+            // Update room's watch store (always immediate - data is preserved)
             room.watchStore.set(
                 packet.name,
                 packet.value,
@@ -1001,8 +1215,8 @@ function handlePacket(packet, clientInfo) {
             );
             room.touch();
 
-            // Broadcast to viewers in this room
-            connectionManager.broadcastWatchToRoom(roomId, packet);
+            // Throttled broadcast to viewers (max 3/sec per watch to prevent UI overload)
+            throttledWatchBroadcast(roomId, packet);
             break;
 
         case 'controlCommand':
@@ -1010,7 +1224,10 @@ function handlePacket(packet, clientInfo) {
             break;
 
         case 'stream': {
-            // Store in room's stream store
+            // Check if this is a new channel (before adding)
+            const isNewChannel = !room.streamStore.hasChannel(packet.channel);
+
+            // Store in room's stream store (always immediate - data is preserved)
             const streamEntry = room.streamStore.add(
                 packet.channel,
                 packet.data,
@@ -1019,8 +1236,13 @@ function handlePacket(packet, clientInfo) {
             );
             room.touch();
 
-            // Broadcast to viewers in this room
-            connectionManager.broadcastStreamToRoom(roomId, {
+            // If new channel, auto-subscribe all viewers in this room
+            if (isNewChannel) {
+                connectionManager.autoSubscribeRoomToChannel(roomId, packet.channel);
+            }
+
+            // Throttled broadcast to viewers (max 3/sec per channel to prevent UI overload)
+            throttledStreamBroadcast(roomId, {
                 channel: packet.channel,
                 entry: {
                     id: streamEntry.id,
