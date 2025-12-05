@@ -13,6 +13,18 @@ import { useLogStore, LogEntry, View, Filter, ListTextFilter, TextFilter, VlgCol
 import { VirtualLogGrid, MultiSelection } from './VirtualLogGrid/VirtualLogGrid';
 import { ColumnConfig, DEFAULT_COLUMNS } from './VirtualLogGrid/types';
 
+// Debug flicker logging
+const DEBUG_FLICKER = false;
+const flickerLog = (msg: string, data?: Record<string, unknown>) => {
+  if (!DEBUG_FLICKER) return;
+  const ts = performance.now().toFixed(2);
+  if (data) {
+    console.log(`[ViewGrid:${ts}] ${msg}`, data);
+  } else {
+    console.log(`[ViewGrid:${ts}] ${msg}`);
+  }
+};
+
 // Track stuckToBottom per view
 
 // Type compatibility - VlgColumnConfig is structurally compatible with ColumnConfig
@@ -217,6 +229,8 @@ export function ViewGrid({
     isActive,
     onColumnStateChange
 }: ViewGridProps) {
+    flickerLog(`RENDER view=${view.name}`, { isActive, viewId: view.id });
+
     const {
         entries,
         viewPausedState,
@@ -285,6 +299,8 @@ export function ViewGrid({
     const targetEntries = isPaused ? pausedEntries : filteredEntries;
     const targetLen = targetEntries.length;
 
+    flickerLog('targetEntries', { targetLen, entriesLen: entries.length, viewName: view.name });
+
     // Progressive display for smooth scrolling
     // Key insight: show existing entries immediately, only animate NEW entries
     // Use a ref to track the "intended" display count synchronously to prevent flicker
@@ -292,6 +308,13 @@ export function ViewGrid({
     const displayCountRef = useRef(targetLen); // Sync ref for immediate reads
     const rafIdRef = useRef<number | null>(null);
     const [displayCount, setDisplayCount] = useState(targetLen);
+
+    flickerLog('displayCount state', {
+        displayCount,
+        displayCountRef: displayCountRef.current,
+        targetLen,
+        viewName: view.name,
+    });
 
     // Keep target length ref updated
     targetLenRef.current = targetLen;
@@ -303,14 +326,17 @@ export function ViewGrid({
     // Synchronize displayCountRef with targetLen when it changes dramatically
     // This handles cases where state hasn't caught up yet (e.g., component re-mount)
     if (Math.abs(targetLen - displayCountRef.current) > MAX_ANIMATE_DELTA) {
+        flickerLog('SNAP: large delta', { delta: targetLen - displayCountRef.current, targetLen, viewName: view.name });
         displayCountRef.current = targetLen;
     } else if (displayCountRef.current > targetLen) {
         // Target shrunk - sync immediately
+        flickerLog('SNAP: target shrunk', { displayCountRef: displayCountRef.current, targetLen, viewName: view.name });
         displayCountRef.current = targetLen;
     }
 
     useEffect(() => {
         const delta = targetLen - displayCountRef.current;
+        flickerLog('progressive effect', { delta, targetLen, displayCountRef: displayCountRef.current, viewName: view.name });
 
         // If target shrunk, snap immediately
         if (displayCountRef.current > targetLen) {

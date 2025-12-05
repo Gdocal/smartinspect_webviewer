@@ -1,13 +1,25 @@
-import { useRef, useCallback, useEffect, useMemo, useState, CSSProperties } from 'react';
+import { useRef, useCallback, useEffect, useLayoutEffect, useMemo, useState, CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry, HighlightRule, matchesHighlightRule, useLogStore } from '../../store/logStore';
-import { VirtualLogGridRow } from './VirtualLogGridRow';
+import { VirtualLogGridRow, SkeletonRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
 import { OVERSCAN, getRowHeight, getFontSize, getHeaderHeight } from './constants';
 import { DEFAULT_COLUMNS, ColumnConfig } from './types';
+
+// Debug logging for flicker investigation
+const DEBUG_FLICKER = false;
+const flickerLog = (msg: string, data?: Record<string, unknown>) => {
+  if (!DEBUG_FLICKER) return;
+  const timestamp = performance.now().toFixed(2);
+  if (data) {
+    console.log(`[Flicker:${timestamp}] ${msg}`, data);
+  } else {
+    console.log(`[Flicker:${timestamp}] ${msg}`);
+  }
+};
 
 // Cache for highlight styles to avoid recreating objects
 const highlightStyleCache = new Map<string, CSSProperties>();
@@ -127,6 +139,8 @@ export function VirtualLogGrid({
   onStuckToBottomChange,
   actualEntryCount,
 }: VirtualLogGridProps) {
+  flickerLog('RENDER', { entriesCount: entries.length, autoScroll });
+
   void _onAutoScrollChange;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -145,6 +159,9 @@ export function VirtualLogGrid({
 
   // Track if scrollbar is visible
   const [hasScrollbar, setHasScrollbar] = useState(false);
+
+  // Track if virtualized content is ready (to show skeletons initially)
+  const [isVirtualizerReady, setIsVirtualizerReady] = useState(false);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -206,6 +223,24 @@ export function VirtualLogGrid({
     isProgrammaticScroll,
   });
 
+  // Calculate initial scroll offset for auto-scroll mode
+  // This tells the virtualizer to render bottom rows on first mount, preventing flicker
+  const initialScrollOffset = useMemo(() => {
+    if (!effectiveAutoScroll || entries.length === 0) return 0;
+    // Estimate: total virtual height minus typical viewport height
+    // Use 600px as reasonable viewport estimate (actual is ~546px based on logs)
+    const estimatedTotalHeight = entries.length * rowHeight;
+    const estimatedViewport = 600;
+    const offset = Math.max(0, estimatedTotalHeight - estimatedViewport);
+    flickerLog('initialScrollOffset calculated', {
+      entriesLen: entries.length,
+      rowHeight,
+      estimatedTotalHeight,
+      offset
+    });
+    return offset;
+  }, []); // Empty deps - only calculate once on mount
+
   // TanStack Virtual virtualizer
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -213,7 +248,62 @@ export function VirtualLogGrid({
     estimateSize: () => rowHeight,
     overscan: OVERSCAN,
     getItemKey: (index) => entries[index]?.id ?? index,
+    initialOffset: initialScrollOffset,
   });
+
+  // Track if initial scroll has been done (to prevent flicker on mount)
+  const hasInitialScrollRef = useRef(false);
+  // Track mount count for debugging
+  const mountCountRef = useRef(0);
+  mountCountRef.current++;
+
+  // Set initial scroll position to bottom BEFORE paint (prevents flicker)
+  // This runs synchronously after DOM mutations but before browser paint
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    flickerLog('useLayoutEffect RUN', {
+      hasContainer: !!container,
+      hasInitialScroll: hasInitialScrollRef.current,
+      entriesLength: entries.length,
+      effectiveAutoScroll,
+      scrollHeight: container?.scrollHeight,
+      clientHeight: container?.clientHeight,
+      scrollTop: container?.scrollTop,
+      mountCount: mountCountRef.current,
+    });
+
+    if (!container) {
+      flickerLog('useLayoutEffect SKIP - no container');
+      return;
+    }
+    if (hasInitialScrollRef.current) {
+      flickerLog('useLayoutEffect SKIP - already done initial scroll');
+      return;
+    }
+
+    // Only do initial scroll if we have entries and autoscroll is enabled
+    if (entries.length > 0 && effectiveAutoScroll) {
+      const targetScroll = container.scrollHeight - container.clientHeight;
+      flickerLog('useLayoutEffect SCROLLING', {
+        from: container.scrollTop,
+        to: targetScroll,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+      });
+      container.scrollTop = targetScroll;
+      hasInitialScrollRef.current = true;
+    } else {
+      flickerLog('useLayoutEffect SKIP - conditions not met', {
+        entriesLength: entries.length,
+        effectiveAutoScroll,
+      });
+    }
+
+    // Mark virtualizer as ready (content is positioned, show real rows)
+    if (entries.length > 0 && !isVirtualizerReady) {
+      setIsVirtualizerReady(true);
+    }
+  }, [entries.length, effectiveAutoScroll, isVirtualizerReady]);
 
   // Detect scrollbar visibility
   useEffect(() => {
@@ -697,26 +787,40 @@ export function VirtualLogGrid({
         onContextMenu={handleContextMenu}
       >
         <div style={innerStyle}>
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const entry = entries[virtualRow.index];
-            if (!entry) return null;
-            return (
-              <VirtualLogGridRow
-                key={virtualRow.key}
-                entry={entry}
-                rowIndex={virtualRow.index}
-                style={getRowStyle(virtualRow.start, virtualRow.size)}
-                isOdd={alternatingRows && virtualRow.index % 2 === 1}
+          {/* Show skeleton rows until virtualizer is ready */}
+          {!isVirtualizerReady && entries.length > 0 ? (
+            // Generate skeleton rows to fill estimated viewport (~600px / rowHeight rows)
+            Array.from({ length: Math.ceil(600 / rowHeight) }, (_, i) => (
+              <SkeletonRow
+                key={`skeleton-${i}`}
+                rowIndex={i}
+                style={getRowStyle(i * rowHeight, rowHeight)}
                 columns={visibleColumns}
-                highlightStyle={getHighlightStyle(entry)}
-                selection={selection}
-                onCellMouseDown={handleCellMouseDown}
-                isCellSelected={isCellSelected}
-                getCellPosition={getCellPosition}
-                isRowSelected={entry.id === selectedRowId}
+                isOdd={alternatingRows && i % 2 === 1}
               />
-            );
-          })}
+            ))
+          ) : (
+            virtualizer.getVirtualItems().map((virtualRow) => {
+              const entry = entries[virtualRow.index];
+              if (!entry) return null;
+              return (
+                <VirtualLogGridRow
+                  key={virtualRow.key}
+                  entry={entry}
+                  rowIndex={virtualRow.index}
+                  style={getRowStyle(virtualRow.start, virtualRow.size)}
+                  isOdd={alternatingRows && virtualRow.index % 2 === 1}
+                  columns={visibleColumns}
+                  highlightStyle={getHighlightStyle(entry)}
+                  selection={selection}
+                  onCellMouseDown={handleCellMouseDown}
+                  isCellSelected={isCellSelected}
+                  getCellPosition={getCellPosition}
+                  isRowSelected={entry.id === selectedRowId}
+                />
+              );
+            })
+          )}
         </div>
       </div>
 

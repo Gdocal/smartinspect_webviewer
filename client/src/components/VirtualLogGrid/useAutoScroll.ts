@@ -276,10 +276,13 @@ export function useAutoScroll({
           debugLog('entriesEffect: CANCELLED - user scrolled during frame');
           return;
         }
-        // Use instant scroll for large batches or when far from bottom
-        // This handles initial load, tab switches, and large data dumps
+        // Use instant scroll for:
+        // 1. Initial mount (prevEntryId was null)
+        // 2. Large batches (> 50 entries added)
+        // 3. Far from bottom (> 500px)
         const entriesAdded = entriesCount - prevCount;
-        const useLargeBatchInstant = entriesAdded > 50 || distanceFromBottom > 500;
+        const isInitialMount = prevEntryId === null;
+        const useInstantScroll = isInitialMount || entriesAdded > 50 || distanceFromBottom > 500;
 
         debugLog('entriesEffect: content changed, triggering scroll', {
           entriesCount,
@@ -287,12 +290,13 @@ export function useAutoScroll({
           countIncreased,
           contentChanged,
           entriesAdded,
+          isInitialMount,
           isAnimating: isAnimatingRef.current,
           distanceFromBottom,
-          scrollMode: useLargeBatchInstant ? 'INSTANT (large batch)' : 'rate-based',
+          scrollMode: useInstantScroll ? 'INSTANT' : 'rate-based',
         });
 
-        if (useLargeBatchInstant) {
+        if (useInstantScroll) {
           instantScrollToBottom();
         } else {
           scrollToBottom();

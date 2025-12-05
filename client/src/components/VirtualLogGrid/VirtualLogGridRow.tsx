@@ -244,3 +244,56 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   prev.selection === next.selection &&
   prev.isRowSelected === next.isRowSelected
 );
+
+// Skeleton row for loading state - shows placeholder boxes
+export interface SkeletonRowProps {
+  rowIndex: number;
+  style: CSSProperties;
+  columns: ColumnConfig[];
+  isOdd: boolean;
+}
+
+// Varying widths for skeleton content to look more natural
+const SKELETON_WIDTHS = ['60%', '75%', '45%', '80%', '55%', '70%', '40%', '65%'];
+
+export const SkeletonRow = memo(function SkeletonRow({
+  rowIndex,
+  style,
+  columns,
+  isOdd,
+}: SkeletonRowProps) {
+  return (
+    <div className={`vlg-row vlg-skeleton-row${isOdd ? ' odd' : ''}`} style={style}>
+      {columns.map((column, colIndex) => {
+        const cellStyle: CSSProperties = {
+          width: column.width,
+          flex: column.flex,
+          minWidth: column.minWidth,
+        };
+
+        // Different skeleton styles based on column type
+        let skeletonContent: React.ReactNode;
+        if (column.type === 'icon') {
+          skeletonContent = <div className="vlg-skeleton-icon" />;
+        } else if (column.type === 'level') {
+          skeletonContent = <div className="vlg-skeleton-badge" />;
+        } else {
+          // Text columns get varying width placeholders
+          const widthIndex = (rowIndex + colIndex) % SKELETON_WIDTHS.length;
+          skeletonContent = (
+            <div
+              className="vlg-skeleton-text"
+              style={{ width: SKELETON_WIDTHS[widthIndex] }}
+            />
+          );
+        }
+
+        return (
+          <div key={column.id} className={`vlg-cell vlg-cell-${column.id}`} style={cellStyle}>
+            {skeletonContent}
+          </div>
+        );
+      })}
+    </div>
+  );
+});

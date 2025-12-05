@@ -543,6 +543,44 @@ html, body, #root {
     background: var(--vlg-selected-bg);
 }
 
+/* Skeleton loading rows */
+.vlg-skeleton-row {
+    pointer-events: none;
+}
+
+.vlg-skeleton-icon,
+.vlg-skeleton-badge,
+.vlg-skeleton-text {
+    background: var(--vlg-border);
+    border-radius: 3px;
+    animation: vlg-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.vlg-skeleton-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+}
+
+.vlg-skeleton-badge {
+    width: 28px;
+    height: 14px;
+}
+
+.vlg-skeleton-text {
+    height: 12px;
+    min-width: 20px;
+}
+
+@keyframes vlg-skeleton-pulse {
+    0%, 100% {
+        opacity: 0.4;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
 /* Cells */
 .vlg-cell {
     padding: 0 8px;
