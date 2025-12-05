@@ -4,7 +4,7 @@ import { useRef, useCallback, useEffect } from 'react';
 // Set DEBUG_ENABLED to a grid name string to enable logging for that grid only
 // Examples: 'StreamsView', 'AllLogs', or true for all grids
 const DEBUG_PREFIX = '[AutoScroll]';
-const DEBUG_ENABLED: boolean | string = true; // ENABLED FOR DEBUGGING
+const DEBUG_ENABLED: boolean | string = false; // Set to true for debugging
 
 const debugLog = (message: string, data?: Record<string, unknown>) => {
   if (!DEBUG_ENABLED) return;

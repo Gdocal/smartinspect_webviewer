@@ -141,20 +141,6 @@ export function VirtualLogGrid({
   // Use actualEntryCount for rate calculation (to avoid progressive display inflating the rate)
   const rateTrackingCount = actualEntryCount ?? entries.length;
 
-  // Debug: track what we're passing to useAutoScroll
-  const prevRateTrackingCountRef = useRef(rateTrackingCount);
-  useEffect(() => {
-    if (rateTrackingCount !== prevRateTrackingCountRef.current) {
-      console.log('[VLG] rateTrackingCount CHANGED:', {
-        prev: prevRateTrackingCountRef.current,
-        new: rateTrackingCount,
-        actualEntryCount,
-        entriesLength: entries.length,
-      });
-      prevRateTrackingCountRef.current = rateTrackingCount;
-    }
-  }, [rateTrackingCount, actualEntryCount, entries.length]);
-
   // Autoscroll hook
   const {
     markUserScroll,

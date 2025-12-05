@@ -287,7 +287,9 @@ export function ViewGrid({
 
     // Progressive display for smooth scrolling
     // Key insight: show existing entries immediately, only animate NEW entries
+    // Use a ref to track the "intended" display count synchronously to prevent flicker
     const targetLenRef = useRef(targetLen);
+    const displayCountRef = useRef(targetLen); // Sync ref for immediate reads
     const rafIdRef = useRef<number | null>(null);
     const [displayCount, setDisplayCount] = useState(targetLen);
 
@@ -298,51 +300,49 @@ export function ViewGrid({
     // Only animate small deltas (up to ~2 seconds worth at 60fps = 120 entries)
     const MAX_ANIMATE_DELTA = 120;
 
-    useEffect(() => {
-        const delta = targetLen - displayCount;
+    // Synchronize displayCountRef with targetLen when it changes dramatically
+    // This handles cases where state hasn't caught up yet (e.g., component re-mount)
+    if (Math.abs(targetLen - displayCountRef.current) > MAX_ANIMATE_DELTA) {
+        displayCountRef.current = targetLen;
+    } else if (displayCountRef.current > targetLen) {
+        // Target shrunk - sync immediately
+        displayCountRef.current = targetLen;
+    }
 
-        console.log('[ViewGrid] Progressive display check:', {
-            targetLen,
-            displayCount,
-            delta,
-            hasAnimation: rafIdRef.current !== null,
-            viewId: view.id
-        });
+    useEffect(() => {
+        const delta = targetLen - displayCountRef.current;
 
         // If target shrunk, snap immediately
-        if (displayCount > targetLen) {
-            console.log('[ViewGrid] Target shrunk, snapping to:', targetLen);
+        if (displayCountRef.current > targetLen) {
+            displayCountRef.current = targetLen; // Update ref synchronously
             setDisplayCount(targetLen);
             return;
         }
 
         // If delta is too large (initial load or big batch), snap immediately
         if (delta > MAX_ANIMATE_DELTA) {
-            console.log('[ViewGrid] Delta too large, snapping:', { delta, max: MAX_ANIMATE_DELTA });
+            displayCountRef.current = targetLen; // Update ref synchronously
             setDisplayCount(targetLen);
             return;
         }
 
         // If we have new entries to animate and no animation running
         if (delta > 0 && rafIdRef.current === null) {
-            console.log('[ViewGrid] Starting progressive animation for delta:', delta);
             const animate = () => {
                 const currentTarget = targetLenRef.current;
-                setDisplayCount(prev => {
-                    if (prev >= currentTarget) {
-                        console.log('[ViewGrid] Animation complete at:', prev);
-                        rafIdRef.current = null;
-                        return prev;
-                    }
-                    const next = prev + 1;
-                    if (next < currentTarget) {
-                        rafIdRef.current = requestAnimationFrame(animate);
-                    } else {
-                        console.log('[ViewGrid] Animation finishing at:', next);
-                        rafIdRef.current = null;
-                    }
-                    return next;
-                });
+                const currentDisplay = displayCountRef.current;
+                if (currentDisplay >= currentTarget) {
+                    rafIdRef.current = null;
+                    return;
+                }
+                const next = currentDisplay + 1;
+                displayCountRef.current = next; // Update ref synchronously
+                setDisplayCount(next);
+                if (next < currentTarget) {
+                    rafIdRef.current = requestAnimationFrame(animate);
+                } else {
+                    rafIdRef.current = null;
+                }
             };
             rafIdRef.current = requestAnimationFrame(animate);
         }
@@ -357,9 +357,12 @@ export function ViewGrid({
         };
     }, []);
 
-    // Displayed entries: slice up to display count
+    // Displayed entries: use ref for immediate accurate count, state for re-render trigger
+    // This prevents flicker when state update is async
     const displayedEntries = useMemo(() => {
-        return targetEntries.slice(0, displayCount);
+        // Use the ref value which is always in sync, but depend on displayCount to trigger updates
+        const count = displayCountRef.current;
+        return targetEntries.slice(0, count);
     }, [targetEntries, displayCount]);
 
     // Handle column changes
