@@ -4,7 +4,7 @@ import { useRef, useCallback, useEffect } from 'react';
 // Set DEBUG_ENABLED to a grid name string to enable logging for that grid only
 // Examples: 'StreamsView', 'AllLogs', or true for all grids
 const DEBUG_PREFIX = '[AutoScroll]';
-const DEBUG_ENABLED: boolean | string = false;
+const DEBUG_ENABLED: boolean | string = true; // ENABLED FOR DEBUGGING
 
 const debugLog = (message: string, data?: Record<string, unknown>) => {
   if (!DEBUG_ENABLED) return;
@@ -184,22 +184,40 @@ export function useAutoScroll({
     stateRef.current.isStuckToBottom = true;
   }, []);
 
-  // Track update rate
+  // Track update rate using time-window approach (entries per second over last 2 seconds)
+  // This measures actual entries added, not store update frequency
+  const rateWindowRef = useRef<{ timestamp: number; count: number }[]>([]);
+  const RATE_WINDOW_MS = 2000; // 2 second sliding window
+
   useEffect(() => {
     const now = Date.now();
-    const timeSinceLastUpdate = now - stateRef.current.lastUpdateTime;
+    const entriesAdded = entriesCount - stateRef.current.lastEntriesCount;
 
-    if (timeSinceLastUpdate > 0) {
-      // Calculate instantaneous rate
-      const instantRate = 1000 / timeSinceLastUpdate;
-
-      // Exponential moving average for smooth rate tracking
-      const alpha = 0.3;
-      stateRef.current.averageRate =
-        alpha * instantRate + (1 - alpha) * stateRef.current.averageRate;
+    // Only track when entries actually increased
+    if (entriesAdded > 0) {
+      rateWindowRef.current.push({ timestamp: now, count: entriesAdded });
     }
 
+    // Remove old entries from window
+    rateWindowRef.current = rateWindowRef.current.filter(
+      entry => now - entry.timestamp < RATE_WINDOW_MS
+    );
+
+    // Calculate entries per second over the window
+    const totalEntries = rateWindowRef.current.reduce((sum, e) => sum + e.count, 0);
+    const windowDuration = RATE_WINDOW_MS / 1000; // 2 seconds
+    const entriesPerSecond = totalEntries / windowDuration;
+
+    stateRef.current.averageRate = entriesPerSecond;
+    stateRef.current.lastEntriesCount = entriesCount;
     stateRef.current.lastUpdateTime = now;
+
+    debugLog('RATE TRACKING (window-based)', {
+      entriesCount,
+      entriesAdded,
+      windowEntries: totalEntries,
+      entriesPerSecond: entriesPerSecond.toFixed(2),
+    });
   }, [entriesCount]);
 
   // Effect: scroll when entries count increases OR content changes (when at capacity)

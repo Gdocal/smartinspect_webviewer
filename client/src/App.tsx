@@ -10,6 +10,46 @@ import { useViewsSync } from './hooks/useViewsSync';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { useProjectPersistence } from './hooks/useProjectPersistence';
 import { useLogStore, StreamEntry, VlgColumnConfig } from './store/logStore';
+
+// Density-based sizing configuration for main header
+const HEADER_DENSITY_CONFIG = {
+    compact: {
+        headerPy: 'py-1',
+        headerPx: 'px-2',
+        logoSize: 'w-5 h-5',
+        logoIconSize: 'w-3 h-3',
+        titleText: 'text-xs',
+        subtitleText: 'text-[10px]',
+        buttonPadding: 'p-1',
+        iconSize: 'w-3.5 h-3.5',
+        separatorH: 'h-3',
+        separatorMx: 'mx-1',
+    },
+    default: {
+        headerPy: 'py-1.5',
+        headerPx: 'px-3',
+        logoSize: 'w-5 h-5',
+        logoIconSize: 'w-3.5 h-3.5',
+        titleText: 'text-sm',
+        subtitleText: 'text-xs',
+        buttonPadding: 'p-1.5',
+        iconSize: 'w-4 h-4',
+        separatorH: 'h-4',
+        separatorMx: 'mx-1.5',
+    },
+    comfortable: {
+        headerPy: 'py-2',
+        headerPx: 'px-4',
+        logoSize: 'w-6 h-6',
+        logoIconSize: 'w-4 h-4',
+        titleText: 'text-sm',
+        subtitleText: 'text-xs',
+        buttonPadding: 'p-1.5',
+        iconSize: 'w-4 h-4',
+        separatorH: 'h-4',
+        separatorMx: 'mx-1.5',
+    },
+};
 import { FilterBar } from './components/FilterBar';
 import { WatchPanel } from './components/WatchPanel';
 import { StreamPanel } from './components/StreamPanel';
@@ -40,8 +80,10 @@ export function App() {
         selectedStreamEntryId,
         setSelectedStreamEntryId,
         theme,
-        updateView
+        updateView,
+        rowDensity
     } = useLogStore();
+    const headerDensity = HEADER_DENSITY_CONFIG[rowDensity];
 
     // Apply dark class to document element (both html and body for full coverage)
     useEffect(() => {
@@ -140,22 +182,22 @@ export function App() {
     return (
         <div className="h-screen flex flex-col bg-gray-100 dark:bg-slate-900">
             {/* Header - Modern enterprise style */}
-            <header className="bg-slate-900 text-white px-4 py-2 flex items-center border-b border-slate-700/50">
+            <header className={`bg-slate-900 text-white ${headerDensity.headerPx} ${headerDensity.headerPy} flex items-center border-b border-slate-700/50`}>
                 {/* Logo and title */}
-                <div className="flex items-center gap-2.5">
-                    <div className="w-6 h-6 rounded bg-blue-500 flex items-center justify-center">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-2">
+                    <div className={`${headerDensity.logoSize} rounded bg-blue-500 flex items-center justify-center`}>
+                        <svg className={`${headerDensity.logoIconSize} text-white`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                         </svg>
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                        <h1 className="text-sm font-semibold tracking-tight text-white">SmartInspect</h1>
-                        <span className="text-xs text-slate-500 font-normal">Web Viewer</span>
+                        <h1 className={`${headerDensity.titleText} font-semibold tracking-tight text-white`}>SmartInspect</h1>
+                        <span className={`${headerDensity.subtitleText} text-slate-500 font-normal`}>Web Viewer</span>
                     </div>
                 </div>
 
                 {/* Project selector */}
-                <ProjectDropdown className="ml-4" />
+                <ProjectDropdown className="ml-3" />
 
                 <div className="flex-1" />
 
@@ -164,14 +206,14 @@ export function App() {
                     {/* Detail panel toggle */}
                     <button
                         onClick={() => { setShowDetailPanel(!showDetailPanel); markDirty(); }}
-                        className={`p-1.5 rounded transition-all ${
+                        className={`${headerDensity.buttonPadding} rounded transition-all ${
                             showDetailPanel
                                 ? 'bg-blue-500/15 text-blue-400'
                                 : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                         }`}
                         title="Toggle detail panel"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={headerDensity.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                         </svg>
                     </button>
@@ -179,29 +221,29 @@ export function App() {
                     {/* Watch panel toggle */}
                     <button
                         onClick={() => { setShowWatchPanel(!showWatchPanel); markDirty(); }}
-                        className={`p-1.5 rounded transition-all ${
+                        className={`${headerDensity.buttonPadding} rounded transition-all ${
                             showWatchPanel
                                 ? 'bg-blue-500/15 text-blue-400'
                                 : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
                         }`}
                         title="Toggle watch panel"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={headerDensity.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                         </svg>
                     </button>
 
-                    <div className="w-px h-4 bg-slate-700 mx-1.5" />
+                    <div className={`w-px ${headerDensity.separatorH} bg-slate-700 ${headerDensity.separatorMx}`} />
 
                     {/* Install App button - only show when installable */}
                     {canInstall && (
                         <button
                             onClick={install}
-                            className="p-1.5 rounded text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 transition-all"
+                            className={`${headerDensity.buttonPadding} rounded text-emerald-400 hover:text-emerald-300 hover:bg-slate-800 transition-all`}
                             title="Install App"
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className={headerDensity.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
                         </button>
@@ -210,10 +252,10 @@ export function App() {
                     {/* Settings */}
                     <button
                         onClick={() => setShowSettings(true)}
-                        className="p-1.5 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-all"
+                        className={`${headerDensity.buttonPadding} rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-all`}
                         title="Settings"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={headerDensity.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>

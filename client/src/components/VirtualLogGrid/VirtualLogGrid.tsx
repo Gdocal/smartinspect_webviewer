@@ -42,6 +42,8 @@ export interface VirtualLogGridProps {
   selectedRowId?: number | null;
   /** Called when stuckToBottom state changes (for UI feedback about autoscroll) */
   onStuckToBottomChange?: (stuckToBottom: boolean) => void;
+  /** Actual entry count for rate tracking (when using progressive display) */
+  actualEntryCount?: number;
 }
 
 // Get normalized range (start <= end)
@@ -97,6 +99,7 @@ export function VirtualLogGrid({
   onRowClick,
   selectedRowId,
   onStuckToBottomChange,
+  actualEntryCount,
 }: VirtualLogGridProps) {
   void _onAutoScrollChange;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -132,6 +135,26 @@ export function VirtualLogGrid({
   // Effective autoscroll = user wants it AND scrollbar is at bottom
   const effectiveAutoScroll = autoScroll && stuckToBottom && !isDragging;
 
+  // Get the last entry ID for better scroll tracking
+  const lastEntryId = entries.length > 0 ? entries[entries.length - 1]?.id : null;
+
+  // Use actualEntryCount for rate calculation (to avoid progressive display inflating the rate)
+  const rateTrackingCount = actualEntryCount ?? entries.length;
+
+  // Debug: track what we're passing to useAutoScroll
+  const prevRateTrackingCountRef = useRef(rateTrackingCount);
+  useEffect(() => {
+    if (rateTrackingCount !== prevRateTrackingCountRef.current) {
+      console.log('[VLG] rateTrackingCount CHANGED:', {
+        prev: prevRateTrackingCountRef.current,
+        new: rateTrackingCount,
+        actualEntryCount,
+        entriesLength: entries.length,
+      });
+      prevRateTrackingCountRef.current = rateTrackingCount;
+    }
+  }, [rateTrackingCount, actualEntryCount, entries.length]);
+
   // Autoscroll hook
   const {
     markUserScroll,
@@ -140,11 +163,12 @@ export function VirtualLogGrid({
     instantScrollToBottom,
   } = useAutoScroll({
     scrollElement: scrollContainerRef.current,
-    entriesCount: entries.length,
+    entriesCount: rateTrackingCount, // Use actual count for rate tracking
     autoScrollEnabled: effectiveAutoScroll,
     onUserScrollUp: () => {
       setStuckToBottom(false);
     },
+    lastEntryId,
   });
 
   // Handler for "Jump to bottom" button - for re-enabling autoscroll at high data rates
@@ -535,10 +559,13 @@ export function VirtualLogGrid({
   }, []);
 
   // Memoize scroll container style
+  // Note: DO NOT use scrollBehavior: 'smooth' here - it conflicts with
+  // useAutoScroll's programmatic lerp-based smooth scrolling
   const scrollContainerStyle = useMemo(() => ({
     overflow: 'auto' as const,
     height: 'calc(100% - 32px)',
     overflowAnchor: 'none' as const,
+    contain: 'strict' as const,
   }), []);
 
   const totalSize = virtualizer.getTotalSize();

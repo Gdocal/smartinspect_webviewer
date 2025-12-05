@@ -681,9 +681,47 @@ function generateViewName(views: View[]): string {
     return `View ${num}`;
 }
 
+// Density-based sizing configuration for tabs
+const TAB_DENSITY_CONFIG = {
+    compact: {
+        containerPy: 'py-0.5',
+        tabPx: 'px-2',
+        tabPy: 'py-1',
+        tabText: 'text-xs',
+        iconSize: 'w-3 h-3',
+        closeIconSize: 'w-3 h-3',
+        gap: 'gap-1',
+        addButtonPx: 'px-1.5',
+        separatorH: 'h-3',
+    },
+    default: {
+        containerPy: 'py-0.5',
+        tabPx: 'px-2.5',
+        tabPy: 'py-1',
+        tabText: 'text-xs',
+        iconSize: 'w-3.5 h-3.5',
+        closeIconSize: 'w-3 h-3',
+        gap: 'gap-1',
+        addButtonPx: 'px-1.5',
+        separatorH: 'h-3.5',
+    },
+    comfortable: {
+        containerPy: 'py-1',
+        tabPx: 'px-3',
+        tabPy: 'py-1.5',
+        tabText: 'text-sm',
+        iconSize: 'w-4 h-4',
+        closeIconSize: 'w-3.5 h-3.5',
+        gap: 'gap-1.5',
+        addButtonPx: 'px-2',
+        separatorH: 'h-4',
+    },
+};
+
 export function ViewTabs() {
-    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId } = useLogStore();
+    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId, rowDensity } = useLogStore();
     const { markDirty } = useProjectPersistence();
+    const density = TAB_DENSITY_CONFIG[rowDensity];
     const [showEditor, setShowEditor] = useState(false);
     const [editingView, setEditingView] = useState<View | undefined>(undefined);
     const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -915,7 +953,7 @@ export function ViewTabs() {
                         className="absolute left-0 z-10 h-full px-1 bg-gradient-to-r from-slate-100 dark:from-slate-800 via-slate-100 dark:via-slate-800 to-transparent flex items-center"
                         title="Scroll left"
                     >
-                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`${density.iconSize} text-slate-500 dark:text-slate-400`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
@@ -926,28 +964,28 @@ export function ViewTabs() {
                     ref={scrollContainerRef}
                     onWheel={handleWheel}
                     onScroll={updateScrollState}
-                    className="flex items-center gap-1 px-2 py-1 overflow-x-auto scrollbar-hide"
+                    className={`flex items-center ${density.gap} px-2 ${density.containerPy} overflow-x-auto scrollbar-hide`}
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                 >
                     {/* Streams tab - pinned first, different styling */}
                     <div
                         onClick={handleStreamsClick}
-                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-colors ${
+                        className={`flex-shrink-0 flex items-center ${density.gap} ${density.tabPx} ${density.tabPy} rounded cursor-pointer transition-colors ${
                             isStreamsMode
                                 ? 'bg-purple-500 text-white'
                                 : 'bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300'
                         }`}
                     >
-                        <svg className={`w-4 h-4 ${isStreamsMode ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`${density.iconSize} ${isStreamsMode ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                         </svg>
-                        <span className={`text-sm font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700 dark:text-purple-300'}`}>
+                        <span className={`${density.tabText} font-medium whitespace-nowrap ${isStreamsMode ? 'text-white' : 'text-purple-700 dark:text-purple-300'}`}>
                             Streams
                         </span>
                     </div>
 
                     {/* Separator */}
-                    <div className="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0" />
+                    <div className={`w-px ${density.separatorH} bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0`} />
 
                     {/* Regular view tabs */}
                     {views.map(view => {
@@ -973,7 +1011,7 @@ export function ViewTabs() {
                             onClick={() => handleViewClick(view.id)}
                             onDoubleClick={() => handleEditView(view)}
                             onContextMenu={(e) => handleTabContextMenu(e, view)}
-                            className={`flex-shrink-0 group flex items-center gap-1.5 px-3 py-1.5 rounded cursor-pointer transition-all relative ${
+                            className={`flex-shrink-0 group flex items-center ${density.gap} ${density.tabPx} ${density.tabPy} rounded cursor-pointer transition-all relative ${
                                 view.tabColor
                                     ? isActiveTab
                                         ? 'text-white'
@@ -986,7 +1024,7 @@ export function ViewTabs() {
                             title={view.name}
                         >
                             <span
-                                className={`text-sm whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}
+                                className={`${density.tabText} whitespace-nowrap ${isActiveTab ? 'font-medium' : ''}`}
                                 style={view.tabColor && !isActiveTab ? { color: view.tabColor } : undefined}
                             >
                                 {view.name}
@@ -1004,7 +1042,7 @@ export function ViewTabs() {
                                     style={view.tabColor && !isActiveTab ? { color: view.tabColor } : undefined}
                                     title="Close tab"
                                 >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className={density.closeIconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
                                     </svg>
                                 </button>
@@ -1022,10 +1060,10 @@ export function ViewTabs() {
                     {/* Add View Button */}
                     <button
                         onClick={handleAddView}
-                        className="flex-shrink-0 flex items-center gap-1 px-2 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                        className={`flex-shrink-0 flex items-center ${density.gap} ${density.addButtonPx} ${density.tabPy} text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors`}
                         title="Create new view"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
                         </svg>
                     </button>
@@ -1038,7 +1076,7 @@ export function ViewTabs() {
                         className="absolute right-0 z-10 h-full px-1 bg-gradient-to-l from-slate-100 dark:from-slate-800 via-slate-100 dark:via-slate-800 to-transparent flex items-center"
                         title="Scroll right"
                     >
-                        <svg className="w-4 h-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`${density.iconSize} text-slate-500 dark:text-slate-400`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
                         </svg>
                     </button>

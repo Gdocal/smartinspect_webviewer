@@ -281,8 +281,86 @@ export function ViewGrid({
         wasPausedRef.current = isPaused;
     }, [isPaused, filteredEntries]);
 
-    // Display either paused snapshot or live entries
-    const displayedEntries = isPaused ? pausedEntries : filteredEntries;
+    // Get target entries
+    const targetEntries = isPaused ? pausedEntries : filteredEntries;
+    const targetLen = targetEntries.length;
+
+    // Progressive display for smooth scrolling
+    // Key insight: show existing entries immediately, only animate NEW entries
+    const targetLenRef = useRef(targetLen);
+    const rafIdRef = useRef<number | null>(null);
+    const [displayCount, setDisplayCount] = useState(targetLen);
+
+    // Keep target length ref updated
+    targetLenRef.current = targetLen;
+
+    // Progressive catch-up effect
+    // Only animate small deltas (up to ~2 seconds worth at 60fps = 120 entries)
+    const MAX_ANIMATE_DELTA = 120;
+
+    useEffect(() => {
+        const delta = targetLen - displayCount;
+
+        console.log('[ViewGrid] Progressive display check:', {
+            targetLen,
+            displayCount,
+            delta,
+            hasAnimation: rafIdRef.current !== null,
+            viewId: view.id
+        });
+
+        // If target shrunk, snap immediately
+        if (displayCount > targetLen) {
+            console.log('[ViewGrid] Target shrunk, snapping to:', targetLen);
+            setDisplayCount(targetLen);
+            return;
+        }
+
+        // If delta is too large (initial load or big batch), snap immediately
+        if (delta > MAX_ANIMATE_DELTA) {
+            console.log('[ViewGrid] Delta too large, snapping:', { delta, max: MAX_ANIMATE_DELTA });
+            setDisplayCount(targetLen);
+            return;
+        }
+
+        // If we have new entries to animate and no animation running
+        if (delta > 0 && rafIdRef.current === null) {
+            console.log('[ViewGrid] Starting progressive animation for delta:', delta);
+            const animate = () => {
+                const currentTarget = targetLenRef.current;
+                setDisplayCount(prev => {
+                    if (prev >= currentTarget) {
+                        console.log('[ViewGrid] Animation complete at:', prev);
+                        rafIdRef.current = null;
+                        return prev;
+                    }
+                    const next = prev + 1;
+                    if (next < currentTarget) {
+                        rafIdRef.current = requestAnimationFrame(animate);
+                    } else {
+                        console.log('[ViewGrid] Animation finishing at:', next);
+                        rafIdRef.current = null;
+                    }
+                    return next;
+                });
+            };
+            rafIdRef.current = requestAnimationFrame(animate);
+        }
+    }, [targetLen, displayCount, view.id]);
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+            }
+        };
+    }, []);
+
+    // Displayed entries: slice up to display count
+    const displayedEntries = useMemo(() => {
+        return targetEntries.slice(0, displayCount);
+    }, [targetEntries, displayCount]);
 
     // Handle column changes
     const handleColumnsChange = useCallback((newColumns: ColumnConfig[]) => {
@@ -330,6 +408,7 @@ export function ViewGrid({
                 onRowClick={handleRowClick}
                 selectedRowId={selectedEntryId}
                 onStuckToBottomChange={handleStuckToBottomChange}
+                actualEntryCount={targetLen}
             />
         </div>
     );

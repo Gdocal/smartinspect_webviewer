@@ -52,17 +52,18 @@ async function main() {
 
         console.log(`Sent stream batch ${counter}`);
 
-        if (counter >= 10) {
-            clearInterval(interval);
-            console.log('Done sending streams');
-
-            // Allow time for TCP to flush
-            setTimeout(() => {
-                si.disconnect();
-                process.exit(0);
-            }, 1000);
-        }
+        // Run continuously - press Ctrl+C to stop
     }, 500);
+
+    // Handle graceful shutdown
+    process.on('SIGINT', () => {
+        console.log('\nStopping stream test...');
+        clearInterval(interval);
+        setTimeout(() => {
+            si.disconnect();
+            process.exit(0);
+        }, 500);
+    });
 }
 
 main().catch(err => {

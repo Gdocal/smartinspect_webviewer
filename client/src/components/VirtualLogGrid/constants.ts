@@ -1,25 +1,25 @@
 // Row density configuration
 export type RowDensity = 'compact' | 'default' | 'comfortable';
 
-// VirtualLogGrid row heights by density
+// VirtualLogGrid row heights by density (+7% from original)
 export const ROW_HEIGHTS: Record<RowDensity, number> = {
-  compact: 16,
-  default: 24,
-  comfortable: 28,
-};
-
-// StreamsView row heights by density (slightly larger for multi-column layout)
-export const STREAM_ROW_HEIGHTS: Record<RowDensity, number> = {
-  compact: 18,
+  compact: 17,
   default: 26,
-  comfortable: 32,
+  comfortable: 30,
 };
 
-// Font sizes by density
+// StreamsView row heights by density (+7% from original)
+export const STREAM_ROW_HEIGHTS: Record<RowDensity, number> = {
+  compact: 19,
+  default: 28,
+  comfortable: 34,
+};
+
+// Font sizes by density (+7% from original)
 export const FONT_SIZES: Record<RowDensity, number> = {
-  compact: 11,
-  default: 12,
-  comfortable: 13,
+  compact: 12,
+  default: 13,
+  comfortable: 14,
 };
 
 // Header heights by density
@@ -35,7 +35,7 @@ export function getHeaderHeight(density: RowDensity): number {
 
 // Default row height (for backwards compatibility)
 export const ROW_HEIGHT = 28;
-export const OVERSCAN = 10;
+export const OVERSCAN = 20;
 export const MAX_ROWS = 50000;
 
 // Helper to get row height by density

@@ -526,6 +526,9 @@ html, body, #root {
     box-sizing: border-box;
     /* Horizontal line between rows */
     border-bottom: 1px solid var(--vlg-border);
+    /* GPU acceleration for smooth scrolling */
+    will-change: transform;
+    contain: layout style paint;
 }
 
 .vlg-row.odd {
