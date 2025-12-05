@@ -692,7 +692,11 @@ export const useLogStore = create<LogState>((set, get) => ({
     clearEntries: () => set((state) => ({
         entries: [],
         lastEntryId: 0,
-        entriesVersion: state.entriesVersion + 1
+        entriesVersion: state.entriesVersion + 1,
+        // Also clear tracking dictionaries to prevent memory leaks
+        sessions: {},
+        appNames: {},
+        hostNames: {}
     })),
 
     // Legacy single watch update
@@ -799,7 +803,31 @@ export const useLogStore = create<LogState>((set, get) => ({
     setGlobalHighlightRules: (globalHighlightRules) => set({ globalHighlightRules }),
 
     // Stream actions
+    // Max number of stream channels to prevent unbounded memory growth
     addStreamEntry: (channel, entry) => set((state) => {
+        const MAX_STREAM_CHANNELS = 100;
+        const channelCount = Object.keys(state.streams).length;
+
+        // Check if this is a new channel and we're at the limit
+        if (!(channel in state.streams) && channelCount >= MAX_STREAM_CHANNELS) {
+            // Find and remove the oldest/smallest channel to make room
+            const sortedChannels = Object.entries(state.streams)
+                .sort(([, a], [, b]) => (a.length || 0) - (b.length || 0));
+            if (sortedChannels.length > 0) {
+                const [oldestChannel] = sortedChannels[0];
+                const newStreams = { ...state.streams };
+                delete newStreams[oldestChannel];
+                const newTotals = { ...state.streamTotalReceived };
+                delete newTotals[oldestChannel];
+                // Continue with the new channel
+                const newEntry: StreamEntry = { ...entry, id: Date.now(), channel };
+                return {
+                    streams: { ...newStreams, [channel]: [newEntry] },
+                    streamTotalReceived: { ...newTotals, [channel]: 1 }
+                };
+            }
+        }
+
         const channelEntries = state.streams[channel] || [];
         const newEntry: StreamEntry = { ...entry, id: Date.now(), channel };
 
