@@ -276,15 +276,27 @@ export function useAutoScroll({
           debugLog('entriesEffect: CANCELLED - user scrolled during frame');
           return;
         }
+        // Use instant scroll for large batches or when far from bottom
+        // This handles initial load, tab switches, and large data dumps
+        const entriesAdded = entriesCount - prevCount;
+        const useLargeBatchInstant = entriesAdded > 50 || distanceFromBottom > 500;
+
         debugLog('entriesEffect: content changed, triggering scroll', {
           entriesCount,
           lastEntryId,
           countIncreased,
           contentChanged,
+          entriesAdded,
           isAnimating: isAnimatingRef.current,
           distanceFromBottom,
+          scrollMode: useLargeBatchInstant ? 'INSTANT (large batch)' : 'rate-based',
         });
-        scrollToBottom();
+
+        if (useLargeBatchInstant) {
+          instantScrollToBottom();
+        } else {
+          scrollToBottom();
+        }
       });
     } else {
       debugLog('entriesEffect: BLOCKED by grace period or not stuck', {
@@ -297,7 +309,7 @@ export function useAutoScroll({
         isStuckToBottom: stateRef.current.isStuckToBottom,
       });
     }
-  }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, scrollElement]);
+  }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, instantScrollToBottom, scrollElement]);
 
   // Start/stop scroll loop when autoScrollEnabled changes
   useEffect(() => {

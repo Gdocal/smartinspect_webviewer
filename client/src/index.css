@@ -600,6 +600,18 @@ html, body, #root {
     color: var(--vlg-text) !important; /* Override muted colors for readability */
 }
 
+/* For highlighted rows (not row-selected), cell selection needs light text for dark backgrounds */
+.vlg-row.highlighted:not(.row-selected) .vlg-cell.selected {
+    background: rgba(59, 130, 246, 0.35); /* Slightly more opaque for visibility */
+    color: #f1f5f9 !important; /* Light text on dark highlight backgrounds */
+}
+
+/* Cell selection on row-selected rows - row-selected has blue bg, use standard text */
+.vlg-row.row-selected .vlg-cell.selected {
+    background: rgba(59, 130, 246, 0.35); /* Slightly more opaque to stand out from row bg */
+    color: var(--vlg-text) !important;
+}
+
 /* Cell selection borders using box-shadow (no layout shift) */
 .vlg-cell.sel-top { box-shadow: inset 0 1px 0 0 #3b82f6; }
 .vlg-cell.sel-bottom { box-shadow: inset 0 -1px 0 0 #3b82f6; }
@@ -829,42 +841,34 @@ svg.vlg-menu-icon {
     background: #e2e8f0;
 }
 
-/* Row selected (for detail panel indication) - only for non-highlighted rows */
-.vlg-row.row-selected:not(.highlighted) {
-    background: rgba(59, 130, 246, 0.15); /* blue-500 with low opacity */
+/* Row selected (for detail panel indication) - overrides highlight background */
+.vlg-row.row-selected {
+    background: rgba(59, 130, 246, 0.2) !important; /* blue-500 - overrides highlight */
     box-shadow: inset 3px 0 0 0 #3b82f6; /* blue-500 left border indicator */
+    color: var(--vlg-text) !important; /* Standard text color */
 }
 
-.vlg-row.row-selected:not(.highlighted):hover {
-    background: rgba(59, 130, 246, 0.25);
+.vlg-row.row-selected:hover {
+    background: rgba(59, 130, 246, 0.3) !important;
 }
 
 /* Light theme row-selected */
-.virtual-log-grid.light .vlg-row.row-selected:not(.highlighted) {
-    background: rgba(59, 130, 246, 0.12);
+.virtual-log-grid.light .vlg-row.row-selected {
+    background: rgba(59, 130, 246, 0.15) !important;
     box-shadow: inset 3px 0 0 0 #3b82f6;
 }
 
-.virtual-log-grid.light .vlg-row.row-selected:not(.highlighted):hover {
-    background: rgba(59, 130, 246, 0.2);
+.virtual-log-grid.light .vlg-row.row-selected:hover {
+    background: rgba(59, 130, 246, 0.25) !important;
 }
 
-/* Row-selected + highlighted - preserve highlight background, add left indicator */
-.vlg-row.highlighted.row-selected {
-    box-shadow: inset 3px 0 0 0 #3b82f6 !important;
-    /* Background comes from inline highlight style - don't override it */
+/* Ensure row-selected cells use standard text color (override highlight inheritance) */
+.vlg-row.row-selected .vlg-cell {
+    color: inherit;
 }
 
-/* Ensure cell selection on row-selected rows has readable text */
-.vlg-row.row-selected .vlg-cell.selected {
-    color: var(--vlg-text) !important;
-}
-
-/* For highlighted + row-selected, cell selection needs to override highlight text color */
-.vlg-row.highlighted.row-selected .vlg-cell.selected {
-    background: rgba(59, 130, 246, 0.3); /* Slightly more opaque for visibility */
-    color: var(--vlg-text) !important;
-}
+/* Cell selection on row-selected rows - handled by base .vlg-cell.selected rule
+   For highlighted rows, see .vlg-row.highlighted .vlg-cell.selected above */
 
 /* Stream content cell styles */
 .vlg-empty-data {
