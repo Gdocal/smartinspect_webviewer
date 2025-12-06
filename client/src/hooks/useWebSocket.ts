@@ -430,6 +430,37 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 } else {
                     console.log(`[WS] No existing entries for room ${currentRoomValue}`);
                 }
+
+                // Also load existing streams for this room
+                try {
+                    const streamsResponse = await fetch(
+                        `/api/streams?room=${encodeURIComponent(currentRoomValue)}`,
+                        { signal: fetchAbortControllerRef.current?.signal }
+                    );
+                    const streamsData = await streamsResponse.json();
+                    if (streamsData.channels && streamsData.channels.length > 0) {
+                        console.log(`[WS] Found ${streamsData.channels.length} stream channels for room ${currentRoomValue}`);
+                        for (const { channel } of streamsData.channels) {
+                            try {
+                                const channelResponse = await fetch(
+                                    `/api/streams/query?channel=${encodeURIComponent(channel)}&limit=100&room=${encodeURIComponent(currentRoomValue)}`,
+                                    { signal: fetchAbortControllerRef.current?.signal }
+                                );
+                                const channelData = await channelResponse.json();
+                                if (channelData.entries && channelData.entries.length > 0) {
+                                    console.log(`[WS] Loaded ${channelData.entries.length} entries for stream: ${channel}`);
+                                    store.setStreamChannel(channel, channelData.entries);
+                                }
+                            } catch (err) {
+                                if (err instanceof Error && err.name === 'AbortError') return;
+                                console.error(`[WS] Failed to load stream channel ${channel}:`, err);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    if (err instanceof Error && err.name === 'AbortError') return;
+                    console.error('[WS] Failed to load existing streams:', err);
+                }
             } catch (err) {
                 if (err instanceof Error && err.name === 'AbortError') {
                     console.log('[WS] Fetch aborted (room switch)');

@@ -163,11 +163,15 @@ function connect(): void {
     const protocol = host.startsWith('localhost') || host.match(/^[\d.]+:/)
         ? 'ws:'
         : (window.location.protocol === 'https:' ? 'wss:' : 'ws:');
-    // Only pass non-sensitive user param in URL (no token)
-    let url = `${protocol}//${host}/ws`;
+
+    // Build WebSocket URL with room and user params
+    const currentRoom = store.currentRoom;
+    const params = new URLSearchParams();
+    params.set('room', currentRoom);
     if (settings.username && settings.username !== 'default') {
-        url += `?user=${encodeURIComponent(settings.username)}`;
+        params.set('user', settings.username);
     }
+    const url = `${protocol}//${host}/ws?${params.toString()}`;
 
     store.setServerUrl(host);
 
@@ -286,25 +290,54 @@ async function completeConnection(): Promise<void> {
     store.setError(null);
     store.setLoadingInitialData(true);
 
+    const settings = getSettings();
+    const headers: Record<string, string> = {};
+    if (settings.authToken) {
+        headers['Authorization'] = `Bearer ${settings.authToken}`;
+    }
+
+    // Get current room for API calls
+    const currentRoom = store.currentRoom;
+    const roomParam = `room=${encodeURIComponent(currentRoom)}`;
+
     // Fetch existing logs from REST API
     try {
-        const settings = getSettings();
-        const headers: Record<string, string> = {};
-        if (settings.authToken) {
-            headers['Authorization'] = `Bearer ${settings.authToken}`;
-        }
         const initialLoadLimit = store.limits.initialLoadLimit;
-        const response = await fetch(`/api/logs?limit=${initialLoadLimit}`, { headers });
+        const response = await fetch(`/api/logs?limit=${initialLoadLimit}&${roomParam}`, { headers });
         const data = await response.json();
         if (data.entries && data.entries.length > 0) {
-            console.log(`[Early WS] Loaded ${data.entries.length} existing entries`);
+            console.log(`[Early WS] Loaded ${data.entries.length} existing entries for room: ${currentRoom}`);
             store.addEntriesBatch(data.entries);
         }
     } catch (err) {
         console.error('[Early WS] Failed to load existing logs:', err);
-    } finally {
-        store.setLoadingInitialData(false);
     }
+
+    // Fetch existing streams from REST API
+    try {
+        const streamsResponse = await fetch(`/api/streams?${roomParam}`, { headers });
+        const streamsData = await streamsResponse.json();
+        if (streamsData.channels && streamsData.channels.length > 0) {
+            console.log(`[Early WS] Found ${streamsData.channels.length} stream channels for room: ${currentRoom}`);
+            // Fetch entries for each channel (limit to 100 per channel for initial load)
+            for (const { channel } of streamsData.channels) {
+                try {
+                    const channelResponse = await fetch(`/api/streams/query?channel=${encodeURIComponent(channel)}&limit=100&${roomParam}`, { headers });
+                    const channelData = await channelResponse.json();
+                    if (channelData.entries && channelData.entries.length > 0) {
+                        console.log(`[Early WS] Loaded ${channelData.entries.length} entries for stream: ${channel}`);
+                        store.setStreamChannel(channel, channelData.entries);
+                    }
+                } catch (err) {
+                    console.error(`[Early WS] Failed to load stream channel ${channel}:`, err);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[Early WS] Failed to load existing streams:', err);
+    }
+
+    store.setLoadingInitialData(false);
 }
 
 function handleMessage(message: any, store: ReturnType<typeof useLogStore.getState>): void {

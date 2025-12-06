@@ -452,6 +452,7 @@ interface LogState {
 
     // Stream actions
     addStreamEntry: (channel: string, entry: Omit<StreamEntry, 'id'>) => void;
+    setStreamChannel: (channel: string, entries: StreamEntry[]) => void;
     clearStream: (channel: string) => void;
     clearAllStreams: () => void;
 
@@ -554,8 +555,8 @@ export const useLogStore = create<LogState>((set, get) => ({
     serverUrl: null,
     authRequired: false,
 
-    // Room state
-    currentRoom: 'default',
+    // Room state (persisted to localStorage)
+    currentRoom: localStorage.getItem('si-room') || 'default',
     currentUser: 'default',
     availableRooms: ['default'],
     roomSwitching: false,
@@ -632,21 +633,25 @@ export const useLogStore = create<LogState>((set, get) => ({
     setCurrentUser: (currentUser) => set({ currentUser }),
     setAvailableRooms: (availableRooms) => set({ availableRooms }),
     setRoomSwitching: (roomSwitching) => set({ roomSwitching }),
-    switchRoom: (room) => set((state) => ({
-        currentRoom: room,
-        roomSwitching: true,
-        // Clear data for new room
-        entries: [],
-        lastEntryId: 0,
-        entriesVersion: state.entriesVersion + 1,
-        watches: {},
-        sessions: {},
-        appNames: {},
-        hostNames: {},
-        streams: {},
-        selectedEntryId: null,
-        selectedStreamEntryId: null
-    })),
+    switchRoom: (room) => {
+        // Persist room to localStorage
+        localStorage.setItem('si-room', room);
+        return set((state) => ({
+            currentRoom: room,
+            roomSwitching: true,
+            // Clear data for new room
+            entries: [],
+            lastEntryId: 0,
+            entriesVersion: state.entriesVersion + 1,
+            watches: {},
+            sessions: {},
+            appNames: {},
+            hostNames: {},
+            streams: {},
+            selectedEntryId: null,
+            selectedStreamEntryId: null
+        }));
+    },
 
     // Legacy single-update method (kept for compatibility)
     addEntries: (newEntries) => set((state) => {
@@ -907,6 +912,12 @@ export const useLogStore = create<LogState>((set, get) => ({
             streamTotalReceived: { ...state.streamTotalReceived, [channel]: newTotal }
         };
     }),
+
+    // Bulk set entries for a channel (used for initial load from API)
+    setStreamChannel: (channel, entries) => set((state) => ({
+        streams: { ...state.streams, [channel]: entries },
+        streamTotalReceived: { ...state.streamTotalReceived, [channel]: entries.length }
+    })),
 
     clearStream: (channel) => set((state) => ({
         streams: { ...state.streams, [channel]: [] },
