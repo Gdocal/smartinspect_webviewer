@@ -711,6 +711,12 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Effective autoscroll = user wants it AND scrollbar is at bottom
     const effectiveAutoScroll = autoScroll && stuckToBottom;
 
+    // Derive lastEntryId from displayed entries (like VirtualLogGrid does)
+    // This ensures auto-scroll triggers when new entries arrive in live mode
+    const lastDisplayedEntryId = displayedEntries.length > 0
+        ? displayedEntries[displayedEntries.length - 1]?.id
+        : null;
+
     // Smooth auto-scroll hook
     const {
         markUserScroll,
@@ -724,7 +730,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         onUserScrollUp: () => {
             setStuckToBottom(false);
         },
-        lastEntryId: newestEntryId,
+        lastEntryId: lastDisplayedEntryId,
     });
 
     // Scroll detection hook - now with snapshot trigger

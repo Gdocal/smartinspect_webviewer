@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useLogStore, LogEntry, WatchValue } from '../store/logStore';
-import { getWebSocket, isInitialized as isEarlyInitialized } from '../services/earlyWebSocket';
+import { getWebSocket, isInitialized as isEarlyInitialized, reconnect as earlyReconnect } from '../services/earlyWebSocket';
 import { getPerformanceSettings } from './useSettings';
 
 // localStorage key for stream subscriptions
@@ -695,12 +695,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 batchRef.current.watches.clear();
                 batchRef.current.controlCommands = [];
 
-                // Disconnect and reconnect with new room
-                disconnect();
-                // Small delay to allow cleanup
+                // Use earlyWebSocket's reconnect to maintain message handlers
+                // (useWebSocket's connect() doesn't have stream handlers)
+                earlyReconnect();
+                // Update our ref to point to the new connection after a small delay
                 setTimeout(() => {
-                    connect();
-                }, 100);
+                    const newWs = getWebSocket();
+                    if (newWs) {
+                        wsRef.current = newWs;
+                    }
+                }, 200);
             }
         });
         return unsubscribe;
