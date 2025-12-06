@@ -150,7 +150,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
     // Slow mode playback control - absolute rate (entries/sec)
     const [isSlowMode, setIsSlowMode] = useState(false);
-    const [displayRate, setDisplayRate] = useState(10); // 1-30 entries/sec when in slow mode
+    const [displayRate, setDisplayRate] = useState(2); // 1-30 entries/sec when in slow mode (default 2/s)
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
@@ -870,69 +870,60 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         </svg>
                     </div>
 
-                    {/* Live/Slow mode toggle and rate control */}
-                    <div className="flex items-center gap-2 px-2 py-1 bg-slate-50 dark:bg-slate-700/50 rounded border border-slate-200 dark:border-slate-600">
-                        {/* Slowdown toggle button */}
-                        <button
-                            onClick={() => {
-                                const newMode = !isSlowMode;
-                                debugLog('USER ACTION: Slow mode toggle', {
-                                    from: isSlowMode ? 'SLOW' : 'NORMAL',
-                                    to: newMode ? 'SLOW' : 'NORMAL',
-                                });
-                                setIsSlowMode(newMode);
-                            }}
-                            className={`px-2 py-0.5 text-xs font-medium rounded transition-colors ${
-                                isSlowMode
-                                    ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                    : 'bg-slate-400 text-white hover:bg-slate-500'
-                            }`}
-                            title={isSlowMode
-                                ? 'Resume normal speed - display entries as they arrive'
-                                : 'Slow down - buffer incoming entries and display at controlled rate'}
-                        >
-                            {isSlowMode ? 'Normal' : 'Slowdown'}
-                        </button>
-
-                        {/* Rate slider (only when in slow mode) */}
-                        {isSlowMode && (
-                            <>
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="30"
-                                    value={displayRate}
-                                    onChange={(e) => {
-                                        const newRate = Number(e.target.value);
-                                        debugLog('USER ACTION: Display rate changed', {
-                                            from: displayRate,
-                                            to: newRate,
-                                        });
-                                        setDisplayRate(newRate);
-                                    }}
-                                    className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                    title="Display rate (entries per second)"
-                                />
-                                <span className="text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums min-w-[28px]">
-                                    {displayRate}/s
-                                </span>
-                                <span className={`text-xs whitespace-nowrap font-mono tabular-nums ${
-                                    bufferFull
-                                        ? 'text-red-600 dark:text-red-400 font-semibold animate-pulse'
-                                        : 'text-amber-600 dark:text-amber-400'
-                                }`}>
-                                    {bufferFull ? 'FULL ' : 'Buf: '}{playbackBuffer.length}/{PLAYBACK_BUFFER_MAX}
-                                </span>
-                            </>
-                        )}
-
-                    </div>
+                    {/* Rate slider (only when in slow mode) */}
+                    {isSlowMode && (
+                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-50 dark:bg-amber-900/30 rounded border border-amber-200 dark:border-amber-700">
+                            <input
+                                type="range"
+                                min="1"
+                                max="30"
+                                value={displayRate}
+                                onChange={(e) => {
+                                    const newRate = Number(e.target.value);
+                                    debugLog('USER ACTION: Display rate changed', {
+                                        from: displayRate,
+                                        to: newRate,
+                                    });
+                                    setDisplayRate(newRate);
+                                }}
+                                className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                title="Display rate (entries per second)"
+                            />
+                            <span className="text-xs text-amber-700 dark:text-amber-300 font-mono tabular-nums min-w-[28px]">
+                                {displayRate}/s
+                            </span>
+                        </div>
+                    )}
 
                     {/* Spacer */}
                     <div className="flex-1" />
 
                     {/* Control buttons - icon only */}
                     <div className={`flex items-center ${density.buttonGap}`}>
+                        {/* Slow Mode toggle - speedometer icon */}
+                        <button
+                            onClick={() => {
+                                const newSlowMode = !isSlowMode;
+                                debugLog('USER ACTION: Slow mode toggle', {
+                                    from: isSlowMode,
+                                    to: newSlowMode,
+                                    displayRate,
+                                });
+                                setIsSlowMode(newSlowMode);
+                            }}
+                            className={`${density.buttonPadding} rounded transition-colors ${
+                                isSlowMode
+                                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            }`}
+                            title={isSlowMode ? `Slow mode: ${displayRate}/s (click to disable)` : 'Enable slow mode playback'}
+                        >
+                            {/* Speedometer icon */}
+                            <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </button>
+
                         {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                         <button
                             onClick={() => {
@@ -1102,10 +1093,19 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             padding: '0 8px',
                             display: 'flex',
                             alignItems: 'center',
+                            justifyContent: 'space-between',
                             color: 'var(--vlg-text-muted)'
                         }}>
-                            {displayedEntries.length} entries
-                            {filterText && ` (filtered from ${sourceEntries.length})`}
+                            <span>
+                                {displayedEntries.length} entries
+                                {filterText && ` (filtered from ${sourceEntries.length})`}
+                            </span>
+                            {/* Buffer indicator - only in slow mode */}
+                            {isSlowMode && (
+                                <span className={`font-mono tabular-nums ${bufferFull ? 'text-red-500 dark:text-red-400' : ''}`}>
+                                    buf: {playbackBuffer.length}/{PLAYBACK_BUFFER_MAX}
+                                </span>
+                            )}
                         </div>
 
                         {/* Snapshot indicator - shows when in snapshot mode */}
