@@ -461,6 +461,7 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
                 watches?: Record<string, { value: string; timestamp: string }>;
                 sessions?: Record<string, number>;
                 tcpClientCount?: number;
+                availableRooms?: string[];
             };
             if (initData.stats) store.setStats(initData.stats);
             if (initData.watches) store.setWatches(initData.watches);
@@ -468,6 +469,10 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             if (initData.tcpClientCount !== undefined) {
                 console.log('[Early WS] Init: setting tcpClientCount to', initData.tcpClientCount);
                 store.setTcpClientCount(initData.tcpClientCount);
+            }
+            if (initData.availableRooms && Array.isArray(initData.availableRooms)) {
+                console.log('[Early WS] Init: setting availableRooms to', initData.availableRooms);
+                store.setAvailableRooms(initData.availableRooms);
             }
             break;
         }
@@ -504,12 +509,17 @@ export function isInitialized(): boolean {
     return initialized;
 }
 
-// Force reconnect (used when auth token changes)
+// Force reconnect (used when auth token changes or room switches)
 export function reconnect(): void {
     console.log('[Early WS] Reconnecting (forced)...');
 
     // Clear any pending reconnect timers
     clearReconnectTimers();
+
+    // Clear message queue to prevent old room's messages from being processed
+    messageQueue.length = 0;
+    processingScheduled = false;
+    backlogStartTime = 0;
 
     // Close existing connection if any
     if (ws) {
@@ -522,6 +532,7 @@ export function reconnect(): void {
     const store = useLogStore.getState();
     store.setAuthRequired(false);
     store.setError(null);
+    store.setBacklogged(false);
 
     // Connect with new settings
     connect();
