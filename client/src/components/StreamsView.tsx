@@ -1284,15 +1284,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                         exitSnapshotMode();
                                     }
                                 } else {
-                                    console.log('[StreamsView:Toggle] DISABLING - markUserDisabled(), setStuckToBottom(false)');
+                                    console.log('[StreamsView:Toggle] DISABLING - entering snapshot mode to freeze view');
                                     // When disabling, explicitly stop auto-scroll in the hook
                                     markUserDisabled();
                                     setStuckToBottom(false);
-                                    // Exit snapshot mode WITHOUT re-enabling auto-scroll
-                                    if (isInSnapshotMode) {
-                                        console.log('[StreamsView:Toggle] Exiting snapshot mode (WITHOUT re-enable)');
-                                        exitSnapshotMode(false);
+                                    // Enter snapshot mode to freeze the view (prevents buffer rotation from shifting content)
+                                    if (!isInSnapshotMode) {
+                                        console.log('[StreamsView:Toggle] Entering snapshot mode to freeze view');
+                                        enterSnapshotMode();
                                     }
+                                    // If already in snapshot mode, stay in it (don't exit)
                                 }
                             }}
                             className={`${density.buttonPadding} rounded transition-colors ${
