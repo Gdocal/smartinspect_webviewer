@@ -771,7 +771,9 @@ export function VirtualLogGrid({
     height: totalSize,
     width: '100%',
     position: 'relative' as const,
-  }), [totalSize]);
+    // Striped background pattern matching row heights - fallback when rows not yet rendered during fast scroll
+    background: `repeating-linear-gradient(to bottom, var(--vlg-row-bg) 0px, var(--vlg-row-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight * 2}px)`,
+  }), [totalSize, rowHeight]);
 
   return (
     <div
