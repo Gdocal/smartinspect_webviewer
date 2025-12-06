@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getEffectiveServerUrl } from '../hooks/useSettings';
+import { useLogStore } from '../store/logStore';
 
 interface ServerStats {
     memory: {
@@ -84,6 +85,10 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
     const [activeTab, setActiveTab] = useState<'stats' | 'connection'>('stats');
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
+    // Get current room from store
+    const currentRoom = useLogStore(state => state.currentRoom);
+    const clearEntries = useLogStore(state => state.clearEntries);
+
     const fetchStats = useCallback(async () => {
         try {
             const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
@@ -140,10 +145,13 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
     }, []);
 
     const handleClearLogs = async () => {
-        if (!confirm('Clear all logs on server?')) return;
+        if (!confirm(`Clear all logs for room "${currentRoom}"?`)) return;
         try {
             const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            await fetch(`${baseUrl}/api/logs`, { method: 'DELETE' });
+            const roomParam = `room=${encodeURIComponent(currentRoom)}`;
+            await fetch(`${baseUrl}/api/logs?${roomParam}`, { method: 'DELETE' });
+            // Also clear local store
+            clearEntries();
             fetchStats();
         } catch (e) {
             alert('Failed to clear logs');
@@ -151,10 +159,11 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
     };
 
     const handleClearWatches = async () => {
-        if (!confirm('Clear all watches on server?')) return;
+        if (!confirm(`Clear all watches for room "${currentRoom}"?`)) return;
         try {
             const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            await fetch(`${baseUrl}/api/watches`, { method: 'DELETE' });
+            const roomParam = `room=${encodeURIComponent(currentRoom)}`;
+            await fetch(`${baseUrl}/api/watches?${roomParam}`, { method: 'DELETE' });
             fetchStats();
         } catch (e) {
             alert('Failed to clear watches');
