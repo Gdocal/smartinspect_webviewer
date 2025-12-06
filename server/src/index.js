@@ -1232,7 +1232,8 @@ function handlePacket(packet, clientInfo) {
                 packet.channel,
                 packet.data,
                 packet.timestamp,
-                packet.streamType
+                packet.streamType,
+                packet.group || ''  // Pass group from packet, default empty
             );
             room.touch();
 
@@ -1248,7 +1249,8 @@ function handlePacket(packet, clientInfo) {
                     id: streamEntry.id,
                     data: streamEntry.data,
                     timestamp: streamEntry.timestamp.toISOString(),
-                    streamType: streamEntry.streamType
+                    streamType: streamEntry.streamType,
+                    group: streamEntry.group
                 }
             });
             break;

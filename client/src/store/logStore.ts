@@ -285,6 +285,7 @@ export interface StreamEntry {
     timestamp: string;
     sessionName?: string;
     streamType?: string;
+    group?: string;  // Optional group for filtering/organizing channels
 }
 
 // Layout sizes stored as percentages (0-100)

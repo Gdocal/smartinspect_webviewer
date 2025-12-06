@@ -160,6 +160,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
 
+    // Channel list sorting
+    const [sortBy, setSortBy] = useState<'channel' | 'group' | 'speed' | 'count'>('channel');
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+    // Group filter dropdown
+    const [showGroupFilter, setShowGroupFilter] = useState(false);
+    const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());  // Empty = all selected
+    const [groupFilterText, setGroupFilterText] = useState('');
+    const groupFilterRef = useRef<HTMLDivElement>(null);
+
     // Grid container ref for virtualization
     const parentRef = useRef<HTMLDivElement>(null);
 
@@ -308,6 +318,115 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     }, [resumeAllStreams]);
 
     const channels = Object.keys(streams);
+
+    // Helper to get group for a channel (from first entry or empty string)
+    const getChannelGroup = useCallback((channel: string): string => {
+        const entries = streams[channel];
+        if (entries && entries.length > 0) {
+            return entries[0].group || '';
+        }
+        return '';
+    }, [streams]);
+
+    // Extract unique groups from all channels
+    const uniqueGroups = useMemo(() => {
+        const groups = new Set<string>();
+        for (const ch of channels) {
+            groups.add(getChannelGroup(ch));
+        }
+        return Array.from(groups).sort();
+    }, [channels, getChannelGroup]);
+
+    // Filter groups by search text
+    const filteredGroups = useMemo(() => {
+        if (!groupFilterText) return uniqueGroups;
+        const lower = groupFilterText.toLowerCase();
+        return uniqueGroups.filter(g => (g || '(no group)').toLowerCase().includes(lower));
+    }, [uniqueGroups, groupFilterText]);
+
+    // Sort and filter channel data
+    const sortedFilteredChannels = useMemo(() => {
+        // Build channel data with computed values
+        const channelData = channels.map(ch => ({
+            channel: ch,
+            group: getChannelGroup(ch),
+            speed: streamSpeed[ch] ?? 0,
+            count: streams[ch]?.length ?? 0
+        }));
+
+        // Filter by selected groups (empty set = all selected)
+        const filtered = selectedGroups.size === 0
+            ? channelData
+            : channelData.filter(ch => selectedGroups.has(ch.group));
+
+        // Sort
+        return filtered.sort((a, b) => {
+            const mult = sortDir === 'asc' ? 1 : -1;
+            if (sortBy === 'channel') return mult * a.channel.localeCompare(b.channel);
+            if (sortBy === 'group') return mult * a.group.localeCompare(b.group);
+            if (sortBy === 'speed') return mult * (a.speed - b.speed);
+            if (sortBy === 'count') return mult * (a.count - b.count);
+            return 0;
+        });
+    }, [channels, streams, streamSpeed, sortBy, sortDir, selectedGroups, getChannelGroup]);
+
+    // Sort handler
+    const handleSort = useCallback((field: 'channel' | 'group' | 'speed' | 'count') => {
+        if (sortBy === field) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(field);
+            setSortDir('asc');
+        }
+    }, [sortBy]);
+
+    // Group filter handlers
+    const toggleGroup = useCallback((group: string) => {
+        setSelectedGroups(prev => {
+            const next = new Set(prev);
+            if (next.size === 0) {
+                // Currently all selected - switch to only this group
+                next.add(group);
+                // Add all others except this one
+                for (const g of uniqueGroups) {
+                    if (g !== group) next.add(g);
+                }
+                // Now remove this one to deselect it
+                next.delete(group);
+            } else if (next.has(group)) {
+                next.delete(group);
+                // If all unselected, reset to all selected
+                if (next.size === 0) return new Set();
+            } else {
+                next.add(group);
+                // If all selected, reset to empty set (meaning all)
+                if (next.size === uniqueGroups.length) return new Set();
+            }
+            return next;
+        });
+    }, [uniqueGroups]);
+
+    const selectAllGroups = useCallback(() => {
+        setSelectedGroups(new Set());  // Empty = all selected
+    }, []);
+
+    const unselectAllGroups = useCallback(() => {
+        setSelectedGroups(new Set(['__none__']));  // Special value that won't match anything
+    }, []);
+
+    // Click-outside handler for group filter dropdown
+    useEffect(() => {
+        if (!showGroupFilter) return;
+
+        const handleClickOutside = (e: MouseEvent) => {
+            if (groupFilterRef.current && !groupFilterRef.current.contains(e.target as Node)) {
+                setShowGroupFilter(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showGroupFilter]);
 
     // Track previous total for speed calculation
     const prevTotalRef = useRef<Record<string, number>>({});
@@ -731,6 +850,149 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     <span className={`${density.footerText} text-slate-400 dark:text-slate-500 font-normal`}>{channels.length} ch</span>
                 </div>
 
+                {/* Column Headers */}
+                <div className={`flex items-center border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700/50 ${density.channelPx} py-1 ${density.headerText} text-slate-500 dark:text-slate-400 flex-shrink-0`}>
+                    {/* Channel header */}
+                    <div
+                        className="flex items-center gap-1 min-w-0 flex-1 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200"
+                        onClick={() => handleSort('channel')}
+                    >
+                        <span>Channel</span>
+                        {sortBy === 'channel' && (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {sortDir === 'asc'
+                                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                }
+                            </svg>
+                        )}
+                    </div>
+
+                    {/* Group header with filter */}
+                    <div className="relative w-16 flex-shrink-0">
+                        <div
+                            className="flex items-center gap-1 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200"
+                            onClick={() => handleSort('group')}
+                        >
+                            <span>Group</span>
+                            {sortBy === 'group' && (
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    {sortDir === 'asc'
+                                        ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                        : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    }
+                                </svg>
+                            )}
+                        </div>
+                        {/* Filter icon */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setShowGroupFilter(!showGroupFilter); }}
+                            className={`absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-600 ${
+                                selectedGroups.size > 0 ? 'text-purple-600 dark:text-purple-400' : ''
+                            }`}
+                            title="Filter by group"
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                            </svg>
+                        </button>
+
+                        {/* Group filter dropdown */}
+                        {showGroupFilter && (
+                            <div
+                                ref={groupFilterRef}
+                                className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50"
+                            >
+                                {/* Search input */}
+                                <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+                                    <input
+                                        type="text"
+                                        value={groupFilterText}
+                                        onChange={(e) => setGroupFilterText(e.target.value)}
+                                        placeholder="Filter groups..."
+                                        className="w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                                        autoFocus
+                                    />
+                                </div>
+
+                                {/* Select All / Unselect All */}
+                                <div className="flex gap-2 p-2 border-b border-slate-200 dark:border-slate-700 text-xs">
+                                    <button
+                                        onClick={selectAllGroups}
+                                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                                    >
+                                        Select All
+                                    </button>
+                                    <span className="text-slate-300 dark:text-slate-600">|</span>
+                                    <button
+                                        onClick={unselectAllGroups}
+                                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                                    >
+                                        Unselect All
+                                    </button>
+                                </div>
+
+                                {/* Checkbox list */}
+                                <div className="max-h-48 overflow-y-auto p-2">
+                                    {filteredGroups.map(group => (
+                                        <label
+                                            key={group || '__empty__'}
+                                            className="flex items-center gap-2 py-1 px-1 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedGroups.size === 0 || selectedGroups.has(group)}
+                                                onChange={() => toggleGroup(group)}
+                                                className="rounded border-slate-300 dark:border-slate-600"
+                                            />
+                                            <span className="text-slate-700 dark:text-slate-300 truncate">
+                                                {group || '(no group)'}
+                                            </span>
+                                        </label>
+                                    ))}
+                                    {filteredGroups.length === 0 && (
+                                        <div className="text-xs text-slate-400 dark:text-slate-500 py-2 text-center">
+                                            No groups found
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Speed header */}
+                    <div
+                        className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
+                        onClick={() => handleSort('speed')}
+                    >
+                        <span>/s</span>
+                        {sortBy === 'speed' && (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {sortDir === 'asc'
+                                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                }
+                            </svg>
+                        )}
+                    </div>
+
+                    {/* Count header */}
+                    <div
+                        className="w-12 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
+                        onClick={() => handleSort('count')}
+                    >
+                        <span>#</span>
+                        {sortBy === 'count' && (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                {sortDir === 'asc'
+                                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                }
+                            </svg>
+                        )}
+                    </div>
+                </div>
+
                 {/* Channel list */}
                 <div className="flex-1 overflow-auto">
                     {channels.length === 0 ? (
@@ -741,10 +1003,18 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             <p className="text-sm text-slate-400 dark:text-slate-500">No streams yet</p>
                             <p className="text-xs text-slate-300 dark:text-slate-600 mt-1">Use logStream() to send data</p>
                         </div>
+                    ) : sortedFilteredChannels.length === 0 ? (
+                        <div className="p-4 text-center">
+                            <p className="text-sm text-slate-400 dark:text-slate-500">No channels match filter</p>
+                            <button
+                                onClick={selectAllGroups}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                            >
+                                Clear filter
+                            </button>
+                        </div>
                     ) : (
-                        channels.map(channel => {
-                            const count = streams[channel]?.length || 0;
-                            const speed = streamSpeed[channel] ?? 0;
+                        sortedFilteredChannels.map(({ channel, group, speed, count }) => {
                             const isSelected = selectedChannel === channel;
                             return (
                                 <button
@@ -763,6 +1033,13 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                         </svg>
                                         <span className={`${density.channelText} font-medium truncate`}>{channel}</span>
                                     </div>
+
+                                    {/* Group column */}
+                                    <span className={`${density.speedText} w-16 truncate flex-shrink-0 ${
+                                        isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'
+                                    }`}>
+                                        {group || '-'}
+                                    </span>
 
                                     {/* Speed column */}
                                     <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
