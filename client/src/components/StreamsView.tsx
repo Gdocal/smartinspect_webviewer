@@ -438,42 +438,60 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [showGroupFilter]);
 
-    // Track previous total for speed calculation
+    // Track speed history for sliding window average (10 second window, 3 updates/sec)
+    const speedHistoryRef = useRef<Record<string, { timestamp: number; count: number }[]>>({});
     const prevTotalRef = useRef<Record<string, number>>({});
-    const isFirstTickRef = useRef<Record<string, boolean>>({});
     // Use ref to access latest totals without recreating interval
     const totalReceivedRef = useRef(streamTotalReceived);
     totalReceivedRef.current = streamTotalReceived;
     const channelsRef = useRef(channels);
     channelsRef.current = channels;
 
-    // Speedometer effect - calculates rate based on store's total received counter
+    // Speedometer effect - calculates smoothed rate using 10-second sliding window
+    const SPEED_WINDOW_MS = 10000; // 10 second window for averaging
+    const SPEED_UPDATE_INTERVAL = 333; // Update 3 times per second
+
     useEffect(() => {
         const interval = setInterval(() => {
             const newSpeeds: Record<string, number> = {};
             const currentTotals = totalReceivedRef.current;
+            const now = Date.now();
 
             for (const channel of channelsRef.current) {
                 const currentTotal = currentTotals[channel] || 0;
+                const prevTotal = prevTotalRef.current[channel] ?? currentTotal;
+                const diff = currentTotal - prevTotal;
+                prevTotalRef.current[channel] = currentTotal;
 
-                // First tick for this channel: initialize ref, show 0/s
-                if (!isFirstTickRef.current[channel]) {
-                    isFirstTickRef.current[channel] = true;
-                    prevTotalRef.current[channel] = currentTotal;
-                    newSpeeds[channel] = 0;
-                    continue;
+                // Initialize history array if needed
+                if (!speedHistoryRef.current[channel]) {
+                    speedHistoryRef.current[channel] = [];
                 }
 
-                const prevTotal = prevTotalRef.current[channel] || 0;
-                const diff = currentTotal - prevTotal;
+                // Add current sample to history (only if there's activity)
+                if (diff > 0) {
+                    speedHistoryRef.current[channel].push({ timestamp: now, count: diff });
+                }
 
-                // Calculate events per second (we measure every 500ms, so multiply by 2)
-                newSpeeds[channel] = Math.max(0, diff * 2);
-                prevTotalRef.current[channel] = currentTotal;
+                // Remove old entries outside the window
+                speedHistoryRef.current[channel] = speedHistoryRef.current[channel].filter(
+                    entry => now - entry.timestamp < SPEED_WINDOW_MS
+                );
+
+                // Calculate average rate from window
+                const history = speedHistoryRef.current[channel];
+                if (history.length === 0) {
+                    newSpeeds[channel] = 0;
+                } else {
+                    // Sum all counts in window and divide by window duration (10s)
+                    const totalCount = history.reduce((sum, e) => sum + e.count, 0);
+                    // Keep one decimal place precision
+                    newSpeeds[channel] = Math.round((totalCount / (SPEED_WINDOW_MS / 1000)) * 10) / 10;
+                }
             }
 
             setStreamSpeed(newSpeeds);
-        }, 500); // Update every 500ms for smoother display
+        }, SPEED_UPDATE_INTERVAL);
 
         return () => clearInterval(interval);
     }, []); // Empty deps - interval runs continuously using refs for fresh data
@@ -1073,14 +1091,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     </span>
 
                                     {/* Speed column */}
-                                    <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
+                                    <span className={`${density.speedText} font-mono tabular-nums w-12 text-right flex-shrink-0 ${
                                         isSelected
                                             ? 'text-purple-200'
                                             : speed > 0
                                                 ? 'text-green-600 dark:text-green-400'
                                                 : 'text-slate-400 dark:text-slate-500'
                                     }`}>
-                                        {speed}/s
+                                        {speed.toFixed(1)}/s
                                     </span>
 
                                     {/* Entry count badge */}

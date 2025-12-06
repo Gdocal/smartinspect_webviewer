@@ -67,17 +67,9 @@ export function useAutoPauseMonitor() {
             const now = Date.now();
             const gracePeriodMs = settings.autoPauseGracePeriod * 1000;
 
-            // Count active (subscribed and not paused) streams
-            const activeStreamCount = Object.entries(subscriptions).filter(
-                ([, sub]) => sub.subscribed && !sub.paused
-            ).length;
-
-            // Skip if not enough active streams to trigger auto-pause
-            if (activeStreamCount < settings.autoPauseStreamCountThreshold) {
-                // Reset all trackers when below threshold
-                for (const channel of Object.keys(trackers)) {
-                    trackers[channel].exceedingThresholdSince = null;
-                }
+            const subscriptionCount = Object.keys(subscriptions).length;
+            if (subscriptionCount === 0) {
+                // No subscriptions yet
                 return;
             }
 
@@ -123,7 +115,6 @@ export function useAutoPauseMonitor() {
                         tracker.exceedingThresholdSince = now;
                     } else if (now - tracker.exceedingThresholdSince >= gracePeriodMs) {
                         // Grace period exceeded - auto-pause this stream
-                        console.log(`[AutoPause] Pausing stream "${channel}" - rate ${avgRate.toFixed(0)}/s exceeds threshold ${settings.autoPauseRateThreshold}/s`);
 
                         pauseStreamRef.current(channel);
                         addAutoPausedStreamRef.current(channel);

@@ -29,9 +29,9 @@ const PERFORMANCE_STORAGE_KEY = 'smartinspect-performance-settings';
 // Default performance settings
 const defaultPerformanceSettings: PerformanceSettings = {
     autoPauseEnabled: true,
-    autoPauseStreamCountThreshold: 3,
-    autoPauseRateThreshold: 50,
-    autoPauseGracePeriod: 5,
+    autoPauseStreamCountThreshold: 1,  // Legacy setting, no longer used for blocking
+    autoPauseRateThreshold: 10,  // Pause streams exceeding 10 msg/s
+    autoPauseGracePeriod: 10,    // Wait 10 seconds before auto-pausing
     watchThrottleMode: 'realtime',
     watchMaxUpdatesPerSecond: 10,
 };
