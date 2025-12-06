@@ -11,8 +11,87 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { useSettings } from '../hooks/useSettings';
-import { ProjectSummary } from '../store/logStore';
+import { useLogStore, ProjectSummary } from '../store/logStore';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
+
+// Density-based sizing configuration
+const DENSITY_CONFIG = {
+    compact: {
+        buttonPy: 'py-0.5',
+        buttonPx: 'px-1.5',
+        buttonText: 'text-[11px]',
+        folderIcon: 'w-3.5 h-3.5',
+        chevronIcon: 'w-2.5 h-2.5',
+        saveButtonPx: 'px-1',
+        saveIcon: 'w-3.5 h-3.5',
+        dropdownWidth: 'w-56',
+        headerPy: 'py-1.5',
+        headerPx: 'px-2',
+        headerText: 'text-[10px]',
+        itemPy: 'py-1.5',
+        itemPx: 'px-2',
+        itemIcon: 'w-3.5 h-3.5',
+        itemText: 'text-xs',
+        itemDescText: 'text-[10px]',
+        actionIcon: 'w-3 h-3',
+        footerPy: 'py-1.5',
+        footerPx: 'px-1.5',
+        footerText: 'text-[10px]',
+        footerIcon: 'w-3.5 h-3.5',
+        checkboxSize: 'w-2.5 h-2.5',
+        checkmarkSize: 'w-1.5 h-1.5',
+    },
+    default: {
+        buttonPy: 'py-1',
+        buttonPx: 'px-2',
+        buttonText: 'text-sm',
+        folderIcon: 'w-4 h-4',
+        chevronIcon: 'w-3 h-3',
+        saveButtonPx: 'px-1.5',
+        saveIcon: 'w-4 h-4',
+        dropdownWidth: 'w-64',
+        headerPy: 'py-2',
+        headerPx: 'px-3',
+        headerText: 'text-xs',
+        itemPy: 'py-2',
+        itemPx: 'px-3',
+        itemIcon: 'w-4 h-4',
+        itemText: 'text-sm',
+        itemDescText: 'text-xs',
+        actionIcon: 'w-3.5 h-3.5',
+        footerPy: 'py-2',
+        footerPx: 'px-2',
+        footerText: 'text-xs',
+        footerIcon: 'w-4 h-4',
+        checkboxSize: 'w-3 h-3',
+        checkmarkSize: 'w-2 h-2',
+    },
+    comfortable: {
+        buttonPy: 'py-1.5',
+        buttonPx: 'px-2.5',
+        buttonText: 'text-sm',
+        folderIcon: 'w-4 h-4',
+        chevronIcon: 'w-3 h-3',
+        saveButtonPx: 'px-1.5',
+        saveIcon: 'w-4 h-4',
+        dropdownWidth: 'w-72',
+        headerPy: 'py-2.5',
+        headerPx: 'px-4',
+        headerText: 'text-xs',
+        itemPy: 'py-2.5',
+        itemPx: 'px-4',
+        itemIcon: 'w-4 h-4',
+        itemText: 'text-sm',
+        itemDescText: 'text-xs',
+        actionIcon: 'w-4 h-4',
+        footerPy: 'py-2.5',
+        footerPx: 'px-3',
+        footerText: 'text-xs',
+        footerIcon: 'w-4 h-4',
+        checkboxSize: 'w-3.5 h-3.5',
+        checkmarkSize: 'w-2.5 h-2.5',
+    },
+};
 
 interface ProjectDropdownProps {
     className?: string;
@@ -34,6 +113,8 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
     } = useProjectPersistence();
 
     const { settings, updateSettings } = useSettings();
+    const { rowDensity } = useLogStore();
+    const density = DENSITY_CONFIG[rowDensity];
 
     const [isOpen, setIsOpen] = useState(false);
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -213,13 +294,13 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
             {/* Dropdown trigger button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-2 py-1 text-sm text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors"
+                className={`flex items-center gap-1.5 ${density.buttonPx} ${density.buttonPy} ${density.buttonText} text-slate-300 hover:text-white hover:bg-slate-800 rounded transition-colors`}
             >
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`${density.folderIcon} text-slate-500`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                 </svg>
                 <span className="max-w-[150px] truncate">{displayName}</span>
-                <svg className={`w-3 h-3 text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`${density.chevronIcon} text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
@@ -228,10 +309,10 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
             {loadedProjectDirty && loadedProjectId && !settings.autoSaveProject && (
                 <button
                     onClick={handleSaveProject}
-                    className="flex items-center gap-1 px-1.5 py-1 text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors"
+                    className={`flex items-center gap-1 ${density.saveButtonPx} ${density.buttonPy} text-amber-400 hover:text-amber-300 hover:bg-slate-800 rounded transition-colors`}
                     title="Save unsaved changes"
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                    <svg className={density.saveIcon} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 3h10l4 4v12a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M7 3v5h8V3" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 12v6" />
@@ -242,10 +323,10 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
 
             {/* Dropdown menu */}
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                <div className={`absolute top-full left-0 mt-1 ${density.dropdownWidth} bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden`}>
                     {/* Header */}
-                    <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700">
-                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                    <div className={`${density.headerPx} ${density.headerPy} bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700`}>
+                        <div className={`${density.headerText} font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide`}>
                             Projects
                         </div>
                     </div>
@@ -253,11 +334,11 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                     {/* Project list - limited height with scroll */}
                     <div className="max-h-64 overflow-y-auto">
                         {isLoading ? (
-                            <div className="px-3 py-4 text-center text-sm text-slate-400">
+                            <div className={`${density.itemPx} py-4 text-center ${density.itemText} text-slate-400`}>
                                 Loading...
                             </div>
                         ) : projects.length === 0 ? (
-                            <div className="px-3 py-4 text-center text-sm text-slate-400">
+                            <div className={`${density.itemPx} py-4 text-center ${density.itemText} text-slate-400`}>
                                 No saved projects
                             </div>
                         ) : (
@@ -265,23 +346,23 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                 <div
                                     key={project.id}
                                     onClick={() => handleLoadProject(project.id)}
-                                    className={`group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                                    className={`group flex items-center gap-2 ${density.itemPx} ${density.itemPy} cursor-pointer transition-colors ${
                                         loadedProjectId === project.id
                                             ? 'bg-blue-50 dark:bg-blue-900/30'
                                             : 'hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                                 >
                                     {project.isShared ? (
-                                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className={`${density.itemIcon} text-slate-400 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                                         </svg>
                                     ) : (
-                                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className={`${density.itemIcon} text-slate-400 flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                                         </svg>
                                     )}
                                     <div className="flex-1 min-w-0">
-                                        <div className={`text-sm truncate ${
+                                        <div className={`${density.itemText} truncate ${
                                             loadedProjectId === project.id
                                                 ? 'text-blue-600 dark:text-blue-400 font-medium'
                                                 : 'text-slate-700 dark:text-slate-200'
@@ -289,7 +370,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                             {project.name}
                                         </div>
                                         {project.description && (
-                                            <div className="text-xs text-slate-400 truncate">
+                                            <div className={`${density.itemDescText} text-slate-400 truncate`}>
                                                 {project.description}
                                             </div>
                                         )}
@@ -301,7 +382,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                             className="p-1 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
                                             title="Export project"
                                         >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg className={density.actionIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                             </svg>
                                         </button>
@@ -311,7 +392,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                             className="p-1 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0"
                                             title="Delete project"
                                         >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <svg className={density.actionIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                             </svg>
                                         </button>
@@ -324,7 +405,7 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                     {/* Footer actions */}
                     <div className="border-t border-slate-200 dark:border-slate-700">
                         {importError && (
-                            <div className="px-3 py-1.5 text-xs text-red-500 bg-red-50 dark:bg-red-900/20">
+                            <div className={`${density.itemPx} py-1.5 ${density.footerText} text-red-500 bg-red-50 dark:bg-red-900/20`}>
                                 {importError}
                             </div>
                         )}
@@ -337,10 +418,10 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                     setIsCreatingNew(true);
                                     setShowSaveDialog(true);
                                 }}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                className={`flex-1 flex items-center justify-center gap-1 ${density.footerPx} ${density.footerPy} ${density.footerText} text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors`}
                                 title="Create new empty project"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className={density.footerIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
                                 </svg>
                                 <span>New</span>
@@ -352,10 +433,10 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                     setIsCreatingNew(false);
                                     setShowSaveDialog(true);
                                 }}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                className={`flex-1 flex items-center justify-center gap-1 ${density.footerPx} ${density.footerPy} ${density.footerText} text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors`}
                                 title="Save current configuration as new project"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className={density.footerIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4z" />
                                 </svg>
                                 <span>Save As</span>
@@ -364,10 +445,10 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                             {/* Import */}
                             <button
                                 onClick={handleImportClick}
-                                className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                                className={`flex-1 flex items-center justify-center gap-1 ${density.footerPx} ${density.footerPy} ${density.footerText} text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors`}
                                 title="Import project from file"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className={density.footerIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                 </svg>
                                 <span>Import</span>
@@ -382,16 +463,16 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                                     await updateProject(loadedProjectId);
                                 }
                             }}
-                            className="w-full flex items-center gap-1.5 px-3 py-1 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600"
+                            className={`w-full flex items-center gap-1.5 ${density.itemPx} py-1 ${density.footerText} text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-t border-slate-100 dark:border-slate-600`}
                             title="Automatically save changes"
                         >
-                            <div className={`w-3 h-3 rounded border flex items-center justify-center transition-colors ${
+                            <div className={`${density.checkboxSize} rounded border flex items-center justify-center transition-colors ${
                                 settings.autoSaveProject
                                     ? 'bg-blue-500 border-blue-500'
                                     : 'border-slate-300 dark:border-slate-500'
                             }`}>
                                 {settings.autoSaveProject && (
-                                    <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className={`${density.checkmarkSize} text-white`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                     </svg>
                                 )}
