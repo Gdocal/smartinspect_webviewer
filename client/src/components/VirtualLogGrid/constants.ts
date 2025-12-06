@@ -35,7 +35,8 @@ export function getHeaderHeight(density: RowDensity): number {
 
 // Default row height (for backwards compatibility)
 export const ROW_HEIGHT = 28;
-export const OVERSCAN = 20;
+export const OVERSCAN = 40; // Base overscan (increased from 20 for smoother scrolling)
+export const OVERSCAN_FAST = 60; // Higher overscan during fast scrolling
 export const MAX_ROWS = 50000;
 
 // Helper to get row height by density

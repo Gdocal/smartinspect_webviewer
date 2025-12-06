@@ -6,8 +6,11 @@ import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
-import { OVERSCAN, getRowHeight, getFontSize, getHeaderHeight } from './constants';
+import { OVERSCAN, OVERSCAN_FAST, getRowHeight, getFontSize, getHeaderHeight } from './constants';
 import { DEFAULT_COLUMNS, ColumnConfig } from './types';
+
+// Scroll velocity tracking for dynamic overscan
+const VELOCITY_THRESHOLD_FAST = 500; // pixels/second for "fast" scrolling
 
 // Debug logging for flicker investigation
 const DEBUG_FLICKER = false;
@@ -163,6 +166,13 @@ export function VirtualLogGrid({
   // Track if virtualized content is ready (to show skeletons initially)
   const [isVirtualizerReady, setIsVirtualizerReady] = useState(false);
 
+  // Scroll velocity tracking for dynamic overscan
+  const [isScrollingFast, setIsScrollingFast] = useState(false);
+  const lastScrollTopRef = useRef(0);
+  const lastScrollTimeRef = useRef(0);
+  const velocityRef = useRef(0);
+  const velocityDecayTimerRef = useRef<number | null>(null);
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
@@ -242,15 +252,66 @@ export function VirtualLogGrid({
     return offset;
   }, []); // Empty deps - only calculate once on mount
 
+  // Dynamic overscan based on scroll velocity
+  const currentOverscan = isScrollingFast ? OVERSCAN_FAST : OVERSCAN;
+
   // TanStack Virtual virtualizer
   const virtualizer = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => rowHeight,
-    overscan: OVERSCAN,
+    overscan: currentOverscan,
     getItemKey: (index) => entries[index]?.id ?? index,
     initialOffset: initialScrollOffset,
   });
+
+  // Scroll velocity tracking for dynamic overscan
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const now = performance.now();
+      const scrollTop = container.scrollTop;
+      const timeDelta = now - lastScrollTimeRef.current;
+
+      if (timeDelta > 0 && lastScrollTimeRef.current > 0) {
+        const scrollDelta = Math.abs(scrollTop - lastScrollTopRef.current);
+        const velocity = (scrollDelta / timeDelta) * 1000; // pixels per second
+
+        // Smooth velocity with exponential moving average
+        velocityRef.current = velocityRef.current * 0.3 + velocity * 0.7;
+
+        // Update fast scrolling state
+        const isFast = velocityRef.current > VELOCITY_THRESHOLD_FAST;
+        if (isFast !== isScrollingFast) {
+          setIsScrollingFast(isFast);
+        }
+      }
+
+      lastScrollTopRef.current = scrollTop;
+      lastScrollTimeRef.current = now;
+
+      // Clear any existing decay timer
+      if (velocityDecayTimerRef.current) {
+        clearTimeout(velocityDecayTimerRef.current);
+      }
+
+      // Start velocity decay after scrolling stops
+      velocityDecayTimerRef.current = window.setTimeout(() => {
+        velocityRef.current = 0;
+        setIsScrollingFast(false);
+      }, 150);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (velocityDecayTimerRef.current) {
+        clearTimeout(velocityDecayTimerRef.current);
+      }
+    };
+  }, [isScrollingFast]);
 
   // Track if initial scroll has been done (to prevent flicker on mount)
   const hasInitialScrollRef = useRef(false);
@@ -360,39 +421,93 @@ export function VirtualLogGrid({
     [highlightRules]
   );
 
-  // Get highlight style with caching
-  const getHighlightStyle = useCallback((entry: LogEntry): CSSProperties | undefined => {
-    if (sortedHighlightRules.length === 0) return undefined;
+  // Get or create cached highlight style for a rule
+  const getRuleStyle = useCallback((rule: HighlightRule): CSSProperties => {
+    const cacheKey = rule.id;
+    let style = highlightStyleCache.get(cacheKey);
+    if (!style) {
+      style = {};
+      if (rule.style.backgroundColor) style.backgroundColor = rule.style.backgroundColor;
+      if (rule.style.textColor) style.color = rule.style.textColor;
+      if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
+      if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle as CSSProperties['fontStyle'];
+      if (highlightStyleCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = highlightStyleCache.keys().next().value;
+        if (firstKey) highlightStyleCache.delete(firstKey);
+      }
+      highlightStyleCache.set(cacheKey, style);
+    }
+    return style;
+  }, []);
 
-    for (const rule of sortedHighlightRules) {
-      if (matchesHighlightRule(entry, rule)) {
-        const cacheKey = rule.id;
-        let style = highlightStyleCache.get(cacheKey);
+  // Pre-compute highlight styles for visible entries (computed once per render, not per row)
+  const virtualItems = virtualizer.getVirtualItems();
+  const highlightStyleMap = useMemo(() => {
+    if (sortedHighlightRules.length === 0) return new Map<number, CSSProperties>();
 
-        if (!style) {
-          style = {};
-          if (rule.style.backgroundColor) style.backgroundColor = rule.style.backgroundColor;
-          if (rule.style.textColor) style.color = rule.style.textColor;
-          if (rule.style.fontWeight) style.fontWeight = rule.style.fontWeight;
-          if (rule.style.fontStyle) style.fontStyle = rule.style.fontStyle as CSSProperties['fontStyle'];
+    const map = new Map<number, CSSProperties>();
+    for (const virtualRow of virtualItems) {
+      const entry = entries[virtualRow.index];
+      if (!entry) continue;
 
-          if (highlightStyleCache.size >= MAX_CACHE_SIZE) {
-            const firstKey = highlightStyleCache.keys().next().value;
-            if (firstKey) highlightStyleCache.delete(firstKey);
-          }
-          highlightStyleCache.set(cacheKey, style);
+      for (const rule of sortedHighlightRules) {
+        if (matchesHighlightRule(entry, rule)) {
+          map.set(entry.id, getRuleStyle(rule));
+          break; // First matching rule wins
         }
-        return style;
       }
     }
-    return undefined;
-  }, [sortedHighlightRules]);
+    return map;
+  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle]);
 
   // Get visible columns
   const visibleColumns = useMemo(
     () => columns.filter(col => !col.hidden),
     [columns]
   );
+
+  // Pre-compute selection info per row for visible entries
+  // This creates a stable reference for rows that aren't selected, avoiding re-renders
+  type RowSelectionInfo = {
+    hasSelection: boolean;
+    // Serialized key for memo comparison - only changes when selection for this row changes
+    selectionKey: string;
+  };
+
+  const rowSelectionMap = useMemo(() => {
+    const map = new Map<number, RowSelectionInfo>();
+
+    if (!selection || selection.ranges.length === 0) {
+      // No selection - all rows get the same stable empty object
+      return map;
+    }
+
+    // Build a set of all row indices that have any selection
+    const selectedRows = new Set<number>();
+    for (const range of selection.ranges) {
+      const norm = normalizeRange(range);
+      for (let row = norm.startRow; row <= norm.endRow; row++) {
+        selectedRows.add(row);
+      }
+    }
+
+    // Create selection info only for rows with selection
+    for (const rowIndex of selectedRows) {
+      // Build a key that identifies this row's selection state
+      // Only recalculate if selection for this specific row changes
+      const relevantRanges = selection.ranges.filter(range => {
+        const norm = normalizeRange(range);
+        return rowIndex >= norm.startRow && rowIndex <= norm.endRow;
+      });
+      const selectionKey = relevantRanges
+        .map(r => `${r.startRow},${r.startCol},${r.endRow},${r.endCol}`)
+        .join('|');
+
+      map.set(rowIndex, { hasSelection: true, selectionKey });
+    }
+
+    return map;
+  }, [selection]);
 
   // Find column index from mouse position by measuring actual header cell widths
   const getColumnIndexFromX = useCallback((clientX: number): number => {
@@ -803,9 +918,10 @@ export function VirtualLogGrid({
               />
             ))
           ) : (
-            virtualizer.getVirtualItems().map((virtualRow) => {
+            virtualItems.map((virtualRow) => {
               const entry = entries[virtualRow.index];
               if (!entry) return null;
+              const rowSelectionInfo = rowSelectionMap.get(virtualRow.index);
               return (
                 <VirtualLogGridRow
                   key={virtualRow.key}
@@ -814,8 +930,9 @@ export function VirtualLogGrid({
                   style={getRowStyle(virtualRow.start, virtualRow.size)}
                   isOdd={alternatingRows && virtualRow.index % 2 === 1}
                   columns={visibleColumns}
-                  highlightStyle={getHighlightStyle(entry)}
+                  highlightStyle={highlightStyleMap.get(entry.id)}
                   selection={selection}
+                  selectionKey={rowSelectionInfo?.selectionKey ?? ''}
                   onCellMouseDown={handleCellMouseDown}
                   isCellSelected={isCellSelected}
                   getCellPosition={getCellPosition}

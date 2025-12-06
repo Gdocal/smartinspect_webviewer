@@ -12,6 +12,8 @@ export interface VirtualLogGridRowProps {
   columns: ColumnConfig[];
   highlightStyle?: CSSProperties;
   selection: MultiSelection | null | undefined;
+  /** Serialized key representing selection state for this row - used for memoization */
+  selectionKey: string;
   onCellMouseDown: (rowIndex: number, colIndex: number, e: React.MouseEvent) => void;
   isCellSelected: (rowIndex: number, colIndex: number, selection: MultiSelection | null) => boolean;
   getCellPosition: (rowIndex: number, colIndex: number, selection: MultiSelection | null) => {
@@ -59,6 +61,43 @@ const levelConfig: Record<number, { bg: string; text: string; label: string }> =
 const timestampCache = new Map<string, string>();
 const CACHE_MAX_SIZE = 5000;
 
+// Binary data decoding cache - avoids atob() in render path
+const decodedDataCache = new Map<string, string>();
+const DECODED_CACHE_MAX_SIZE = 1000;
+
+// Merged style cache - avoids creating new style objects on every render
+// Key: `${position}_${highlightKey}` where highlightKey is based on highlightStyle properties
+const mergedStyleCache = new Map<string, CSSProperties>();
+const MERGED_STYLE_CACHE_MAX_SIZE = 500;
+
+// Get or create merged row style with caching
+function getMergedRowStyle(
+  baseStyle: CSSProperties,
+  highlightStyle: CSSProperties | undefined
+): CSSProperties {
+  if (!highlightStyle) return baseStyle;
+
+  // Create a cache key from position (transform) and highlight properties
+  const transform = baseStyle.transform || '';
+  const height = baseStyle.height || '';
+  const highlightKey = `${highlightStyle.backgroundColor || ''}_${highlightStyle.color || ''}_${highlightStyle.fontWeight || ''}_${highlightStyle.fontStyle || ''}`;
+  const cacheKey = `${transform}_${height}_${highlightKey}`;
+
+  let cached = mergedStyleCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Create merged style
+  cached = { ...baseStyle, ...highlightStyle };
+
+  // LRU-style eviction
+  if (mergedStyleCache.size >= MERGED_STYLE_CACHE_MAX_SIZE) {
+    const firstKey = mergedStyleCache.keys().next().value;
+    if (firstKey) mergedStyleCache.delete(firstKey);
+  }
+  mergedStyleCache.set(cacheKey, cached);
+  return cached;
+}
+
 function formatTimestamp(timestamp: string | undefined): string {
   if (!timestamp) return '';
 
@@ -76,6 +115,30 @@ function formatTimestamp(timestamp: string | undefined): string {
     if (firstKey) timestampCache.delete(firstKey);
   }
   timestampCache.set(timestamp, cached);
+  return cached;
+}
+
+// Decode base64 data with caching to avoid atob() in render
+function decodeBase64Data(data: string, maxLength: number): string {
+  // Use data hash as cache key (first 100 chars + length for uniqueness)
+  const cacheKey = `${data.substring(0, 100)}_${data.length}_${maxLength}`;
+
+  let cached = decodedDataCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  try {
+    const decoded = atob(data);
+    cached = decoded.length > maxLength ? decoded.substring(0, maxLength) + '...' : decoded;
+  } catch {
+    cached = '[Binary Data]';
+  }
+
+  // LRU-style cache eviction
+  if (decodedDataCache.size >= DECODED_CACHE_MAX_SIZE) {
+    const firstKey = decodedDataCache.keys().next().value;
+    if (firstKey) decodedDataCache.delete(firstKey);
+  }
+  decodedDataCache.set(cacheKey, cached);
   return cached;
 }
 
@@ -133,12 +196,7 @@ function getCellValue(entry: LogEntry, field: string): string {
     case 'data': {
       if (!entry.data) return '';
       if (entry.dataEncoding === 'base64') {
-        try {
-          const decoded = atob(entry.data);
-          return decoded.length > 400 ? decoded.substring(0, 400) + '...' : decoded;
-        } catch {
-          return '[Binary Data]';
-        }
+        return decodeBase64Data(entry.data, 400);
       }
       return entry.data;
     }
@@ -182,15 +240,16 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   columns,
   highlightStyle,
   selection,
+  selectionKey: _selectionKey, // Used for memo comparison, not in render
   onCellMouseDown,
   isCellSelected,
   getCellPosition,
   isRowSelected,
 }: VirtualLogGridRowProps) {
-  // Merge highlight style with row classes - avoid spread if no highlight
-  const rowStyle: CSSProperties = highlightStyle
-    ? { ...style, ...highlightStyle }
-    : style;
+  void _selectionKey; // Suppress unused warning - used in memo comparison
+
+  // Merge highlight style with row classes - use cached merged style to avoid allocations
+  const rowStyle = getMergedRowStyle(style, highlightStyle);
 
   // Build class names
   let className = 'vlg-row';
@@ -241,7 +300,7 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   prev.isOdd === next.isOdd &&
   prev.highlightStyle === next.highlightStyle &&
   prev.columns === next.columns &&
-  prev.selection === next.selection &&
+  prev.selectionKey === next.selectionKey && // Compare selectionKey instead of selection object
   prev.isRowSelected === next.isRowSelected
 );
 
