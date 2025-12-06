@@ -17,8 +17,12 @@
     "pm2:start": "pm2 start ecosystem.config.js",
     "pm2:stop": "pm2 stop all",
     "pm2:restart": "pm2 restart all",
+    "pm2:reload": "pm2 reload all",
     "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status"
+    "pm2:status": "pm2 status",
+    "pm2:save": "pm2 save",
+    "pm2:verify": "./scripts/pm2-verify.sh",
+    "pm2:health": "./scripts/pm2-health.sh"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
