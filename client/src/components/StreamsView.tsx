@@ -126,8 +126,8 @@ interface StreamsViewProps {
 }
 
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity } = useLogStore();
-    const { pauseAllStreams, resumeAllStreams } = useWebSocket();
+    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity, autoPausedStreams, removeAutoPausedStream, addManualOverride, streamSubscriptions } = useLogStore();
+    const { pauseAllStreams, resumeAllStreams, pauseStream, resumeStream } = useWebSocket();
     const density = DENSITY_CONFIG[rowDensity];
     const rowHeight = getStreamRowHeight(rowDensity);
     const fontSize = getFontSize(rowDensity);
@@ -139,8 +139,6 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const autoScrollRef = useRef(autoScroll);
     useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
-    // Global streams pause state (server-side pause via WebSocket)
-    const [allStreamsPaused, setAllStreamsPaused] = useState(false);
 
     // Snapshot mode state - per channel
     const [snapshotMode, setSnapshotMode] = useState<Record<string, boolean>>({});
@@ -159,7 +157,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
     const [bufferFull, setBufferFull] = useState(false); // Track when buffer reaches capacity
-    const [newestEntryId, setNewestEntryId] = useState<number | null>(null); // Track newest entry for animation
+    const [_newestEntryId, setNewestEntryId] = useState<number | null>(null); // Track newest entry for animation (unused but set)
 
     // Speedometer - track events per second per channel (for display only, not for playback)
     const [streamSpeed, setStreamSpeed] = useState<Record<string, number>>({});
@@ -319,15 +317,33 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Pause/Resume all streams (server-side via WebSocket)
     const handlePauseAll = useCallback(() => {
         pauseAllStreams();
-        setAllStreamsPaused(true);
     }, [pauseAllStreams]);
 
     const handleResumeAll = useCallback(() => {
         resumeAllStreams();
-        setAllStreamsPaused(false);
     }, [resumeAllStreams]);
 
+    // Per-stream pause/resume handlers
+    const handleResumeStreamClick = useCallback((channel: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row selection
+        resumeStream(channel);
+        removeAutoPausedStream(channel);
+        addManualOverride(channel); // Prevent re-pausing
+    }, [resumeStream, removeAutoPausedStream, addManualOverride]);
+
+    const handlePauseStreamClick = useCallback((channel: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row selection
+        pauseStream(channel);
+    }, [pauseStream]);
+
     const channels = Object.keys(streams);
+
+    // Compute actual pause state from all streams (for footer button)
+    const anyStreamPaused = useMemo(() => {
+        return channels.some(ch =>
+            autoPausedStreams.has(ch) || streamSubscriptions[ch]?.paused === true
+        );
+    }, [channels, autoPausedStreams, streamSubscriptions]);
 
     // Helper to get group for a channel (from first entry or empty string)
     const getChannelGroup = useCallback((channel: string): string => {
@@ -1027,7 +1043,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
                     {/* Count header */}
                     <div
-                        className="w-12 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
+                        className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
                         onClick={() => handleSort('count')}
                     >
                         <span>#</span>
@@ -1065,22 +1081,90 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     ) : (
                         sortedFilteredChannels.map(({ channel, group, speed, count }) => {
                             const isSelected = selectedChannel === channel;
+                            // Check both auto-pause AND manual pause state
+                            const isAutoPaused = autoPausedStreams.has(channel);
+                            const isManuallyPaused = streamSubscriptions[channel]?.paused === true;
+                            const isPaused = isAutoPaused || isManuallyPaused;
                             return (
                                 <button
                                     key={channel}
                                     onClick={() => setSelectedChannel(channel)}
-                                    className={`w-full ${density.channelPx} ${density.channelPy} text-left flex items-center transition-colors ${
+                                    className={`group w-full ${density.channelPx} ${density.channelPy} text-left flex items-center transition-colors ${
                                         isSelected
                                             ? 'bg-purple-500 text-white'
                                             : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
                                     }`}
                                 >
-                                    {/* Channel icon and name */}
+                                    {/* Channel icon/button - combined: lightning bolt or play/pause */}
                                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                        <svg className={`${density.channelIconSize} flex-shrink-0 ${isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                        </svg>
-                                        <span className={`${density.channelText} font-medium truncate`}>{channel}</span>
+                                        {isAutoPaused ? (
+                                            /* Auto-paused: show RED lightning bolt, on hover show play button */
+                                            <div className={`${density.channelIconSize} flex-shrink-0 relative`}>
+                                                {/* Red lightning bolt - visible by default */}
+                                                <svg className={`w-full h-full group-hover:hidden ${
+                                                    isSelected ? 'text-red-200' : 'text-red-500 dark:text-red-400'
+                                                }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                                {/* Play button - visible on hover */}
+                                                <button
+                                                    onClick={(e) => handleResumeStreamClick(channel, e)}
+                                                    className={`w-full h-full hidden group-hover:block absolute inset-0 ${
+                                                        isSelected ? 'text-green-200' : 'text-green-600 dark:text-green-400'
+                                                    }`}
+                                                    title="Resume stream"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+                                                        <path d="M8 5v14l11-7z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ) : isPaused ? (
+                                            /* Manually paused: show gray lightning bolt, on hover show play button */
+                                            <div className={`${density.channelIconSize} flex-shrink-0 relative`}>
+                                                {/* Gray lightning bolt - visible by default */}
+                                                <svg className={`w-full h-full group-hover:hidden ${
+                                                    isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'
+                                                }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                                {/* Play button - visible on hover */}
+                                                <button
+                                                    onClick={(e) => handleResumeStreamClick(channel, e)}
+                                                    className={`w-full h-full hidden group-hover:block absolute inset-0 ${
+                                                        isSelected ? 'text-green-200' : 'text-green-600 dark:text-green-400'
+                                                    }`}
+                                                    title="Resume stream"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+                                                        <path d="M8 5v14l11-7z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            /* Active: show green lightning bolt, on hover show pause */
+                                            <div className={`${density.channelIconSize} flex-shrink-0 relative`}>
+                                                {/* Green lightning bolt - visible by default */}
+                                                <svg className={`w-full h-full group-hover:hidden ${
+                                                    isSelected ? 'text-purple-200' : 'text-green-500 dark:text-green-400'
+                                                }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                                </svg>
+                                                {/* Pause button - visible on hover */}
+                                                <button
+                                                    onClick={(e) => handlePauseStreamClick(channel, e)}
+                                                    className={`w-full h-full hidden group-hover:block absolute inset-0 ${
+                                                        isSelected ? 'text-amber-200' : 'text-slate-500 dark:text-slate-400'
+                                                    }`}
+                                                    title="Pause stream"
+                                                >
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+                                                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        )}
+                                        <span className={`${density.channelText} font-medium truncate ${isPaused && !isSelected ? 'text-slate-500 dark:text-slate-400' : ''}`}>{channel}</span>
                                     </div>
 
                                     {/* Group column */}
@@ -1091,18 +1175,20 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     </span>
 
                                     {/* Speed column */}
-                                    <span className={`${density.speedText} font-mono tabular-nums w-12 text-right flex-shrink-0 ${
+                                    <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
                                         isSelected
                                             ? 'text-purple-200'
-                                            : speed > 0
-                                                ? 'text-green-600 dark:text-green-400'
-                                                : 'text-slate-400 dark:text-slate-500'
+                                            : isPaused
+                                                ? 'text-slate-400 dark:text-slate-500'
+                                                : speed > 0
+                                                    ? 'text-green-600 dark:text-green-400'
+                                                    : 'text-slate-400 dark:text-slate-500'
                                     }`}>
                                         {speed.toFixed(1)}/s
                                     </span>
 
                                     {/* Entry count badge */}
-                                    <div className="w-12 flex-shrink-0 flex justify-end">
+                                    <div className="w-10 flex-shrink-0 flex justify-end">
                                         <span className={`${density.badgeText} px-1 py-0.5 rounded text-center min-w-[2rem] ${
                                             isSelected
                                                 ? 'bg-purple-600 text-purple-100'
@@ -1111,6 +1197,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                             {count}
                                         </span>
                                     </div>
+
                                 </button>
                             );
                         })
@@ -1123,29 +1210,39 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         {totalCount} entries
                     </span>
                     <div className="flex items-center gap-2">
-                        {/* Pause All / Resume All toggle - simple state-based */}
+                        {/* Pause All / Resume All toggle - same icon pattern as stream rows */}
                         {channels.length > 0 && (
-                            allStreamsPaused ? (
+                            anyStreamPaused ? (
+                                /* Some/all paused: show play button to resume */
                                 <button
                                     onClick={handleResumeAll}
                                     className={`${density.footerText} text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 transition-colors flex items-center gap-1`}
                                     title="Resume all streams"
                                 >
-                                    <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                    <svg className={density.iconSize} viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M8 5v14l11-7z" />
                                     </svg>
                                     Resume All
                                 </button>
                             ) : (
+                                /* All active: show lightning bolt, on hover show pause */
                                 <button
                                     onClick={handlePauseAll}
-                                    className={`${density.footerText} text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors flex items-center gap-1`}
+                                    className={`group/pauseall ${density.footerText} text-green-600 dark:text-green-400 hover:text-slate-600 dark:hover:text-slate-400 transition-colors flex items-center gap-1`}
                                     title="Pause all streams"
                                 >
-                                    <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 9v6m4-6v6" />
-                                    </svg>
-                                    Pause All
+                                    <span className="relative">
+                                        {/* Lightning bolt - visible by default */}
+                                        <svg className={`${density.iconSize} group-hover/pauseall:hidden`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                        {/* Pause icon - visible on hover */}
+                                        <svg className={`${density.iconSize} hidden group-hover/pauseall:block`} viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                        </svg>
+                                    </span>
+                                    <span className="group-hover/pauseall:hidden">All Active</span>
+                                    <span className="hidden group-hover/pauseall:inline">Pause All</span>
                                 </button>
                             )
                         )}

@@ -589,24 +589,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
     const pauseStream = useCallback((channel: string) => {
         send({ type: 'pauseStream', channel });
-        // Optimistic update
+        // Optimistic update - create subscription if it doesn't exist
         const store = storeRef.current;
         const currentSub = store.streamSubscriptions[channel];
-        if (currentSub) {
-            store.setStreamSubscription(channel, { ...currentSub, paused: true });
-            saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
-        }
+        store.setStreamSubscription(channel, {
+            subscribed: currentSub?.subscribed ?? true,
+            paused: true
+        });
+        saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
     }, [send]);
 
     const resumeStream = useCallback((channel: string) => {
         send({ type: 'resumeStream', channel });
-        // Optimistic update
+        // Optimistic update - create subscription if it doesn't exist
         const store = storeRef.current;
         const currentSub = store.streamSubscriptions[channel];
-        if (currentSub) {
-            store.setStreamSubscription(channel, { ...currentSub, paused: false });
-            saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
-        }
+        store.setStreamSubscription(channel, {
+            subscribed: currentSub?.subscribed ?? true,
+            paused: false
+        });
+        saveSubscriptionsToStorage(useLogStore.getState().streamSubscriptions);
         // Remove from auto-paused if manually resumed
         store.removeAutoPausedStream(channel);
         store.addManualOverride(channel);

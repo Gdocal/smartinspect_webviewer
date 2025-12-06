@@ -20,18 +20,18 @@ interface StreamRateTracker {
 }
 
 export function useAutoPauseMonitor() {
-    const { streamTotalReceived, streamSubscriptions, autoPausedStreams, manualOverrides, addAutoPausedStream, addNotification } = useLogStore();
+    const { streams, streamTotalReceived, autoPausedStreams, manualOverrides, addAutoPausedStream, addNotification } = useLogStore();
     const { pauseStream } = useWebSocket();
 
     // Track rate per channel
     const trackersRef = useRef<Record<string, StreamRateTracker>>({});
 
     // Use refs for values that change frequently to avoid recreating the interval
+    const streamsRef = useRef(streams);
+    streamsRef.current = streams;
+
     const streamTotalReceivedRef = useRef(streamTotalReceived);
     streamTotalReceivedRef.current = streamTotalReceived;
-
-    const streamSubscriptionsRef = useRef(streamSubscriptions);
-    streamSubscriptionsRef.current = streamSubscriptions;
 
     const autoPausedStreamsRef = useRef(autoPausedStreams);
     autoPausedStreamsRef.current = autoPausedStreams;
@@ -52,14 +52,25 @@ export function useAutoPauseMonitor() {
         const CHECK_INTERVAL = 500; // Check every 500ms
         const RATE_HISTORY_SIZE = 4; // Keep 4 samples for smoothing (2 seconds of data)
 
+        let tickCount = 0;
         const interval = setInterval(() => {
+            tickCount++;
             const settings = getPerformanceSettings();
+
+            // Log settings every 20 ticks (10 seconds)
+            if (tickCount % 20 === 1) {
+                console.log('[AutoPause] Settings:', {
+                    enabled: settings.autoPauseEnabled,
+                    rateThreshold: settings.autoPauseRateThreshold,
+                    gracePeriod: settings.autoPauseGracePeriod
+                });
+            }
 
             // Skip if auto-pause is disabled
             if (!settings.autoPauseEnabled) return;
 
+            const currentStreams = streamsRef.current;
             const totals = streamTotalReceivedRef.current;
-            const subscriptions = streamSubscriptionsRef.current;
             const paused = autoPausedStreamsRef.current;
             const overrides = manualOverridesRef.current;
             const trackers = trackersRef.current;
@@ -67,16 +78,24 @@ export function useAutoPauseMonitor() {
             const now = Date.now();
             const gracePeriodMs = settings.autoPauseGracePeriod * 1000;
 
-            const subscriptionCount = Object.keys(subscriptions).length;
-            if (subscriptionCount === 0) {
-                // No subscriptions yet
+            // Get all channels that have stream data
+            const channels = Object.keys(currentStreams);
+            if (channels.length === 0) {
+                // No streams yet
+                if (tickCount % 20 === 1) {
+                    console.log('[AutoPause] No streams found');
+                }
                 return;
             }
 
-            // Check each subscribed stream
-            for (const [channel, sub] of Object.entries(subscriptions)) {
-                // Skip if not subscribed, already paused, or manually overridden
-                if (!sub.subscribed || sub.paused) continue;
+            // Log channel count periodically
+            if (tickCount % 20 === 1) {
+                console.log(`[AutoPause] Checking ${channels.length} streams:`, channels);
+            }
+
+            // Check each stream channel
+            for (const channel of channels) {
+                // Skip if already paused or manually overridden
                 if (paused.has(channel)) continue;
                 if (overrides.has(channel)) continue;
 
@@ -113,30 +132,41 @@ export function useAutoPauseMonitor() {
                 if (avgRate > settings.autoPauseRateThreshold) {
                     if (!tracker.exceedingThresholdSince) {
                         tracker.exceedingThresholdSince = now;
-                    } else if (now - tracker.exceedingThresholdSince >= gracePeriodMs) {
-                        // Grace period exceeded - auto-pause this stream
+                        console.log(`[AutoPause] "${channel}" exceeds threshold: ${avgRate.toFixed(1)}/s > ${settings.autoPauseRateThreshold}/s, starting grace period`);
+                    } else {
+                        const elapsed = (now - tracker.exceedingThresholdSince) / 1000;
+                        if (tickCount % 4 === 0) {
+                            console.log(`[AutoPause] "${channel}" still high: ${avgRate.toFixed(1)}/s, elapsed: ${elapsed.toFixed(1)}s / ${settings.autoPauseGracePeriod}s`);
+                        }
+                        if (now - tracker.exceedingThresholdSince >= gracePeriodMs) {
+                            // Grace period exceeded - auto-pause this stream
+                            console.log(`[AutoPause] PAUSING "${channel}" - rate ${avgRate.toFixed(1)}/s exceeded for ${settings.autoPauseGracePeriod}s`);
 
-                        pauseStreamRef.current(channel);
-                        addAutoPausedStreamRef.current(channel);
-                        addNotificationRef.current({
-                            type: 'warning',
-                            message: `Stream "${channel}" auto-paused (${avgRate.toFixed(0)} msg/s)`,
-                            channel
-                        });
+                            pauseStreamRef.current(channel);
+                            addAutoPausedStreamRef.current(channel);
+                            addNotificationRef.current({
+                                type: 'warning',
+                                message: `Stream "${channel}" auto-paused (${avgRate.toFixed(0)} msg/s)`,
+                                channel
+                            });
 
-                        // Reset tracker
-                        tracker.exceedingThresholdSince = null;
-                        tracker.rateHistory = [];
+                            // Reset tracker
+                            tracker.exceedingThresholdSince = null;
+                            tracker.rateHistory = [];
+                        }
                     }
                 } else {
                     // Below threshold - reset counter
+                    if (tracker.exceedingThresholdSince) {
+                        console.log(`[AutoPause] "${channel}" dropped below threshold: ${avgRate.toFixed(1)}/s, resetting grace period`);
+                    }
                     tracker.exceedingThresholdSince = null;
                 }
             }
 
             // Clean up trackers for channels that no longer exist
             for (const channel of Object.keys(trackers)) {
-                if (!subscriptions[channel]) {
+                if (!currentStreams[channel]) {
                     delete trackers[channel];
                 }
             }

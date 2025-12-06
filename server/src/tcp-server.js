@@ -31,6 +31,7 @@ class TcpLogServer {
         this.onPacket = options.onPacket || (() => {});
         this.onClientConnect = options.onClientConnect || (() => {});
         this.onClientDisconnect = options.onClientDisconnect || (() => {});
+        this.onClientRoomChange = options.onClientRoomChange || (() => {});
     }
 
     /**
@@ -211,6 +212,8 @@ class TcpLogServer {
                             }
                             clientInfo.room = newRoom;
                             console.log(`[TCP] Client ${clientInfo.id} moved to room: ${newRoom}`);
+                            // Notify about room change so broadcasts can update
+                            this.onClientRoomChange(clientInfo, oldRoom, newRoom);
                         }
                     }
                 }

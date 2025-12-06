@@ -65,7 +65,7 @@ async function main() {
     // ==================== STREAMS ====================
     // Different speed streams with randomized intervals
 
-    // SUPER FAST: Price ticker (~50ms avg, 20 updates/sec)
+    // ULTRA FAST: Price ticker (~20ms avg, 50 updates/sec)
     cancellers.push(scheduleRandom(() => {
         const price = 42000 + (Math.random() - 0.5) * 1000;
         tradingLog.stream('price_ticker', {
@@ -74,7 +74,7 @@ async function main() {
             change: ((Math.random() - 0.5) * 2).toFixed(4),
             ts: Date.now()
         });
-    }, 50, 0.4));
+    }, 20, 0.3));
 
     // FAST: Order book updates (~200ms avg, 5 updates/sec)
     cancellers.push(scheduleRandom(() => {
@@ -255,7 +255,7 @@ async function main() {
     }, 600, 0.45));
 
     console.log('Streaming data at various speeds:');
-    console.log('  Streams: price_ticker(50ms), orderbook(200ms), cpu(1s), memory(1.2s), network(3s), disk_io(5s)');
+    console.log('  Streams: price_ticker(20ms ~50/s), orderbook(200ms), cpu(1s), memory(1.2s), network(3s), disk_io(5s)');
     console.log('  Watches: btc_position(100ms), requests(300ms), response_ms(400ms), connections(1.5s), qps(2s), cache(4s), errors(5s), uptime(10s)');
     console.log('  Logs: api(800ms), db(1.5s), auth(2.5s), trading(600ms), fatal(15s)\n');
 

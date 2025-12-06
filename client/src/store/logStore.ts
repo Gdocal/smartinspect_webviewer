@@ -6,6 +6,12 @@
 import { create } from 'zustand';
 import { ColumnState } from 'ag-grid-community';
 
+// Counter for unique stream entry IDs (Date.now() alone can produce duplicates within same ms)
+let streamEntryIdCounter = 0;
+function getUniqueStreamEntryId(): number {
+    return Date.now() * 1000 + (streamEntryIdCounter++ % 1000);
+}
+
 // Log entry types (matching server)
 export enum Level {
     Debug = 0,
@@ -884,7 +890,7 @@ export const useLogStore = create<LogState>((set, get) => ({
                 const newTotals = { ...state.streamTotalReceived };
                 delete newTotals[oldestChannel];
                 // Continue with the new channel
-                const newEntry: StreamEntry = { ...entry, id: Date.now(), channel };
+                const newEntry: StreamEntry = { ...entry, id: getUniqueStreamEntryId(), channel };
                 return {
                     streams: { ...newStreams, [channel]: [newEntry] },
                     streamTotalReceived: { ...newTotals, [channel]: 1 }
@@ -893,7 +899,7 @@ export const useLogStore = create<LogState>((set, get) => ({
         }
 
         const channelEntries = state.streams[channel] || [];
-        const newEntry: StreamEntry = { ...entry, id: Date.now(), channel };
+        const newEntry: StreamEntry = { ...entry, id: getUniqueStreamEntryId(), channel };
 
         // Efficient trimming
         const maxLen = state.streamMaxEntries;

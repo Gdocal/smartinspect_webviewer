@@ -38,9 +38,9 @@ const WATCH_THROTTLE_MS = 333; // ~3 updates per second
 const watchThrottleState = new Map(); // roomId:watchName -> { lastBroadcast, pending, timer }
 
 // ==================== Stream Throttling ====================
-// Limits stream broadcasts to 3 per second per channel to prevent UI overload
-const STREAM_THROTTLE_MS = 333; // ~3 updates per second per channel
-const streamThrottleState = new Map(); // roomId:channel -> { lastBroadcast, pending, timer, droppedCount }
+// NO server-side throttling for streams - client handles auto-pause for fast streams
+const STREAM_THROTTLE_MS = 0; // No throttling - broadcast all stream messages immediately
+const streamThrottleState = new Map(); // Kept for compatibility but not used
 
 // ==================== Log Entry Throttling ====================
 // Batches log entry broadcasts to 3 per second per room to prevent UI overload
@@ -95,49 +95,12 @@ function throttledWatchBroadcast(roomId, packet) {
 }
 
 /**
- * Throttled stream broadcast - limits to ~3 updates/sec per channel
- * Always stores to streamStore immediately, but throttles WebSocket broadcasts
+ * Stream broadcast - sends immediately without throttling
+ * Client handles auto-pause for high-frequency streams
  */
 function throttledStreamBroadcast(roomId, streamData) {
-    const key = getThrottleKey(roomId, streamData.channel);
-    const now = Date.now();
-    let state = streamThrottleState.get(key);
-
-    if (!state) {
-        state = { lastBroadcast: 0, pending: null, timer: null, droppedCount: 0 };
-        streamThrottleState.set(key, state);
-    }
-
-    const timeSinceLast = now - state.lastBroadcast;
-
-    if (timeSinceLast >= STREAM_THROTTLE_MS) {
-        // Enough time has passed - broadcast immediately
-        state.lastBroadcast = now;
-        state.pending = null;
-        state.droppedCount = 0;
-        if (state.timer) {
-            clearTimeout(state.timer);
-            state.timer = null;
-        }
-        connectionManager.broadcastStreamToRoom(roomId, streamData);
-    } else {
-        // Too soon - store as pending and schedule broadcast
-        state.pending = streamData;
-        state.droppedCount++;
-        if (!state.timer) {
-            const delay = STREAM_THROTTLE_MS - timeSinceLast;
-            state.timer = setTimeout(() => {
-                const currentState = streamThrottleState.get(key);
-                if (currentState && currentState.pending) {
-                    currentState.lastBroadcast = Date.now();
-                    connectionManager.broadcastStreamToRoom(roomId, currentState.pending);
-                    currentState.pending = null;
-                    currentState.droppedCount = 0;
-                }
-                currentState.timer = null;
-            }, delay);
-        }
-    }
+    // No throttling - broadcast immediately
+    connectionManager.broadcastStreamToRoom(roomId, streamData);
 }
 
 /**
@@ -1177,6 +1140,19 @@ const tcpServer = new TcpLogServer({
         connectionManager.broadcastToRoom(clientInfo.room, {
             type: 'clientDisconnect',
             data: { id: clientInfo.id }
+        });
+    },
+    onClientRoomChange: (clientInfo, oldRoom, newRoom) => {
+        console.log(`[Server] Log source ${clientInfo.id} moved from room ${oldRoom} to ${newRoom}`);
+        // Broadcast disconnect to old room
+        connectionManager.broadcastToRoom(oldRoom, {
+            type: 'clientDisconnect',
+            data: { id: clientInfo.id }
+        });
+        // Broadcast connect to new room
+        connectionManager.broadcastToRoom(newRoom, {
+            type: 'clientConnect',
+            data: { id: clientInfo.id, address: clientInfo.address, room: newRoom }
         });
     }
 });
