@@ -68,6 +68,7 @@ class RoomManager {
         this.rooms = new Map();  // roomId -> RoomStorage
         this.defaultMaxEntries = defaultMaxEntries;
         this.defaultMaxStreamEntries = defaultMaxStreamEntries;
+        this.onRoomCreated = null;  // Callback: (roomId) => void
     }
 
     /**
@@ -79,6 +80,10 @@ class RoomManager {
         if (!this.rooms.has(roomId)) {
             console.log(`[RoomManager] Creating room: ${roomId}`);
             this.rooms.set(roomId, new RoomStorage(this.defaultMaxEntries, this.defaultMaxStreamEntries));
+            // Notify about new room creation
+            if (this.onRoomCreated) {
+                this.onRoomCreated(roomId);
+            }
         }
         return this.rooms.get(roomId);
     }

@@ -665,12 +665,18 @@ export const useLogStore = create<LogState>((set, get) => ({
         };
     }),
 
-    // OPTIMIZED: Batch add with efficient array handling
+    // OPTIMIZED: Batch add with efficient array handling and deduplication
     addEntriesBatch: (newEntries) => set((state) => {
         if (newEntries.length === 0) return state;
 
+        // Deduplicate: filter out entries that already exist (by ID)
+        const existingIds = new Set(state.entries.map(e => e.id));
+        const uniqueNewEntries = newEntries.filter(e => !existingIds.has(e.id));
+
+        if (uniqueNewEntries.length === 0) return state;
+
         const currentLen = state.entries.length;
-        const newLen = newEntries.length;
+        const newLen = uniqueNewEntries.length;
         const maxLen = state.limits.maxBufferEntries;
         const totalLen = currentLen + newLen;
 
@@ -678,14 +684,14 @@ export const useLogStore = create<LogState>((set, get) => ({
 
         if (totalLen <= maxLen) {
             // Fast path: just concatenate
-            result = state.entries.concat(newEntries);
+            result = state.entries.concat(uniqueNewEntries);
         } else if (newLen >= maxLen) {
             // New entries alone exceed max - just take the last maxLen from new
-            result = newEntries.slice(-maxLen);
+            result = uniqueNewEntries.slice(-maxLen);
         } else {
             // Need to trim: keep end of current + all new
             const keepFromCurrent = maxLen - newLen;
-            result = state.entries.slice(-keepFromCurrent).concat(newEntries);
+            result = state.entries.slice(-keepFromCurrent).concat(uniqueNewEntries);
         }
 
         // Extract unique sessions, appNames and hostNames from new entries
@@ -696,7 +702,7 @@ export const useLogStore = create<LogState>((set, get) => ({
         let appNamesChanged = false;
         let hostNamesChanged = false;
 
-        for (const entry of newEntries) {
+        for (const entry of uniqueNewEntries) {
             if (entry.sessionName && !(entry.sessionName in newSessions)) {
                 newSessions[entry.sessionName] = 1;
                 sessionsChanged = true;
@@ -719,12 +725,12 @@ export const useLogStore = create<LogState>((set, get) => ({
 
         return {
             entries: result,
-            lastEntryId: newEntries[newEntries.length - 1].id,
+            lastEntryId: uniqueNewEntries[uniqueNewEntries.length - 1].id,
             entriesVersion: state.entriesVersion + 1,
             stats: {
                 ...state.stats,
                 size: result.length,
-                lastEntryId: newEntries[newEntries.length - 1].id
+                lastEntryId: uniqueNewEntries[uniqueNewEntries.length - 1].id
             },
             ...(sessionsChanged ? { sessions: newSessions } : {}),
             ...(appNamesChanged ? { appNames: newAppNames } : {}),

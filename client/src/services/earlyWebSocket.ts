@@ -234,7 +234,7 @@ function connect(): void {
                 const msgType = message.type;
                 if (msgType === 'auth_required' || msgType === 'auth_success' || msgType === 'connected' ||
                     msgType === 'init' || msgType === 'control' || msgType === 'clientConnect' ||
-                    msgType === 'clientDisconnect' || msgType === 'session') {
+                    msgType === 'clientDisconnect' || msgType === 'session' || msgType === 'roomCreated') {
                     handleMessage(message, useLogStore.getState());
                 } else {
                     // Queue data messages for batched processing
@@ -446,6 +446,15 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             // TCP client disconnected
             console.log('[Early WS] TCP client disconnected');
             store.decrementTcpClientCount();
+            break;
+        }
+        case 'roomCreated': {
+            // New room was created on server
+            const { roomId, rooms } = message as { roomId: string; rooms: string[] };
+            console.log('[Early WS] Room created:', roomId);
+            if (rooms && Array.isArray(rooms)) {
+                store.setAvailableRooms(rooms);
+            }
             break;
         }
     }

@@ -5,6 +5,10 @@
 
 const { ProcessFlowType } = require('./packet-parser');
 
+// Global entry ID counter - shared across all rooms for uniqueness
+let globalEntryId = 0;
+let globalStreamEntryId = 0;
+
 /**
  * Ring buffer for log entries
  * Circular buffer that evicts oldest entries when full
@@ -15,7 +19,6 @@ class LogRingBuffer {
         this.buffer = new Array(maxEntries);
         this.head = 0;       // Next write position
         this.size = 0;       // Current number of entries
-        this.entryId = 0;    // Monotonic ID for each entry
 
         // Indexes for fast filtering
         this.sessionIndex = new Map();  // session -> Set<index>
@@ -26,7 +29,7 @@ class LogRingBuffer {
      * Add an entry to the buffer
      */
     push(entry) {
-        entry.id = ++this.entryId;
+        entry.id = ++globalEntryId;
         entry.receivedAt = new Date();
 
         // If buffer is full, remove old entry from indexes
@@ -236,7 +239,7 @@ class LogRingBuffer {
         this.size = 0;
         this.sessionIndex.clear();
         this.levelIndex.clear();
-        // Don't reset entryId to maintain monotonicity
+        // Global entryId is not reset - maintains uniqueness across rooms
     }
 
     /**
@@ -281,7 +284,7 @@ class LogRingBuffer {
         return {
             size: this.size,
             maxEntries: this.maxEntries,
-            lastEntryId: this.entryId,
+            lastEntryId: globalEntryId,
             sessions: this.getSessions(),
             levels: this.getLevelCounts()
         };
@@ -428,7 +431,6 @@ class StreamStore {
     constructor(maxEntriesPerChannel = 1000) {
         this.channels = new Map();  // channel -> Array<StreamEntry>
         this.maxEntries = maxEntriesPerChannel;
-        this.entryId = 0;
     }
 
     /**
@@ -453,7 +455,7 @@ class StreamStore {
         }
 
         const entry = {
-            id: ++this.entryId,
+            id: ++globalStreamEntryId,
             channel,
             data,
             timestamp: timestamp || new Date(),

@@ -1146,6 +1146,16 @@ const connectionManager = new ConnectionManager({
 
 connectionManager.attach(httpServer);
 
+// Wire room creation notification to broadcast to all viewers
+roomManager.onRoomCreated = (roomId) => {
+    console.log(`[Server] Broadcasting new room: ${roomId}`);
+    connectionManager.broadcast({
+        type: 'roomCreated',
+        roomId: roomId,
+        rooms: roomManager.listRooms()
+    });
+};
+
 // ==================== TCP Log Server ====================
 
 const tcpServer = new TcpLogServer({
