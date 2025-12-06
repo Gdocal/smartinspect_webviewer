@@ -198,6 +198,7 @@ export function VirtualLogGrid({
       setStuckToBottom(false);
     },
     lastEntryId,
+    componentName: 'AllLogs', // VirtualLogGrid used in All Logs view
   });
 
   // Handler for "Jump to bottom" button - for re-enabling autoscroll at high data rates

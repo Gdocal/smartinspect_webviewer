@@ -135,6 +135,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [autoScroll, setAutoScroll] = useState(true);
+    // Ref to track current autoScroll value for callbacks (avoids stale closure issues)
+    const autoScrollRef = useRef(autoScroll);
+    useEffect(() => { autoScrollRef.current = autoScroll; }, [autoScroll]);
     const [showHighlightRules, setShowHighlightRules] = useState(false);
     // Global streams pause state (server-side pause via WebSocket)
     const [allStreamsPaused, setAllStreamsPaused] = useState(false);
@@ -151,6 +154,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Slow mode playback control - absolute rate (entries/sec)
     const [isSlowMode, setIsSlowMode] = useState(false);
     const [displayRate, setDisplayRate] = useState(2); // 1-30 entries/sec when in slow mode (default 2/s)
+    const [showRatePopover, setShowRatePopover] = useState(false); // Popover for rate slider
     const [playbackBuffer, setPlaybackBuffer] = useState<StreamEntry[]>([]);
     const [slowModeDisplayEntries, setSlowModeDisplayEntries] = useState<StreamEntry[]>([]);
     const lastProcessedRef = useRef(0); // Track last processed entry from live stream
@@ -247,13 +251,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         }));
     }, [selectedChannel, streams, selectedEntryId, isSlowMode, slowModeDisplayEntries, streamTotalReceived]);
 
-    const exitSnapshotMode = useCallback(() => {
+    const exitSnapshotMode = useCallback((reEnableAutoScroll = true) => {
         if (!selectedChannel) return;
 
         const liveEntries = streams[selectedChannel] || [];
-        debugLog('STATE: Exiting snapshot mode', {
+        console.log('[exitSnapshotMode] called', {
             channel: selectedChannel,
             liveEntriesCount: liveEntries.length,
+            reEnableAutoScroll,
         });
 
         // Clean exit: reset all playback state
@@ -268,9 +273,14 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             delete newSnapshots[selectedChannel];
             return newSnapshots;
         });
-        // Re-enable auto-scroll when exiting snapshot
-        setAutoScroll(true);
-        setStuckToBottom(true);
+        // Only re-enable auto-scroll if requested (default behavior)
+        if (reEnableAutoScroll) {
+            console.log('[exitSnapshotMode] RE-ENABLING auto-scroll: setAutoScroll(true), setStuckToBottom(true)');
+            setAutoScroll(true);
+            setStuckToBottom(true);
+        } else {
+            console.log('[exitSnapshotMode] NOT re-enabling auto-scroll (reEnableAutoScroll=false)');
+        }
     }, [selectedChannel, streams]);
 
     // Playback buffer constant
@@ -720,6 +730,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Smooth auto-scroll hook
     const {
         markUserScroll,
+        markUserDisabled,
         markStuckToBottom,
         isProgrammaticScroll,
         instantScrollToBottom,
@@ -731,6 +742,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             setStuckToBottom(false);
         },
         lastEntryId: lastDisplayedEntryId,
+        componentName: 'StreamsView', // StreamsView uses this for individual stream tabs
     });
 
     // Scroll detection hook - now with snapshot trigger
@@ -748,11 +760,24 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             }
         }, [markUserScroll, isInSnapshotMode, enterSnapshotMode]),
         onScrollToBottom: useCallback(() => {
+            // Use ref to get CURRENT autoScroll value (avoids stale closure)
+            const currentAutoScroll = autoScrollRef.current;
+            console.log('[StreamsView:onScrollToBottom] fired', {
+                autoScroll: currentAutoScroll,
+                stuckToBottom,
+                isInSnapshotMode,
+            });
+            // Only re-attach if autoScroll is enabled
+            // This prevents re-enabling scroll when user has explicitly disabled it
+            if (!currentAutoScroll) {
+                console.log('[StreamsView:onScrollToBottom] BLOCKED - autoScroll is disabled');
+                return;
+            }
             debugLog('STATE: Scrolled to bottom - enabling stuckToBottom');
             markStuckToBottom();
             setStuckToBottom(true);
             setRowsBelowViewport(0);
-        }, [markStuckToBottom]),
+        }, [markStuckToBottom, stuckToBottom, isInSnapshotMode]),
         isProgrammaticScroll,
     });
 
@@ -1153,75 +1178,118 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         </svg>
                     </div>
 
-                    {/* Rate slider (only when in slow mode) */}
-                    {isSlowMode && (
-                        <div className="flex items-center gap-2 px-2 py-1 bg-amber-50 dark:bg-amber-900/30 rounded border border-amber-200 dark:border-amber-700">
-                            <input
-                                type="range"
-                                min="1"
-                                max="30"
-                                value={displayRate}
-                                onChange={(e) => {
-                                    const newRate = Number(e.target.value);
-                                    debugLog('USER ACTION: Display rate changed', {
-                                        from: displayRate,
-                                        to: newRate,
-                                    });
-                                    setDisplayRate(newRate);
-                                }}
-                                className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                                title="Display rate (entries per second)"
-                            />
-                            <span className="text-xs text-amber-700 dark:text-amber-300 font-mono tabular-nums min-w-[28px]">
-                                {displayRate}/s
-                            </span>
-                        </div>
-                    )}
-
                     {/* Spacer */}
                     <div className="flex-1" />
 
                     {/* Control buttons - icon only */}
                     <div className={`flex items-center ${density.buttonGap}`}>
-                        {/* Slow Mode toggle - speedometer icon */}
-                        <button
-                            onClick={() => {
-                                const newSlowMode = !isSlowMode;
-                                debugLog('USER ACTION: Slow mode toggle', {
-                                    from: isSlowMode,
-                                    to: newSlowMode,
-                                    displayRate,
-                                });
-                                setIsSlowMode(newSlowMode);
-                            }}
-                            className={`${density.buttonPadding} rounded transition-colors ${
-                                isSlowMode
-                                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
-                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-                            }`}
-                            title={isSlowMode ? `Slow mode: ${displayRate}/s (click to disable)` : 'Enable slow mode playback'}
-                        >
-                            {/* Speedometer icon */}
-                            <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </button>
+                        {/* Slow Mode toggle with dropdown popover */}
+                        <div className="relative">
+                            <div className="flex items-center">
+                                {/* Toggle button */}
+                                <button
+                                    onClick={() => {
+                                        const newSlowMode = !isSlowMode;
+                                        debugLog('USER ACTION: Slow mode toggle', {
+                                            from: isSlowMode,
+                                            to: newSlowMode,
+                                            displayRate,
+                                        });
+                                        setIsSlowMode(newSlowMode);
+                                        if (!newSlowMode) setShowRatePopover(false);
+                                    }}
+                                    className={`${density.buttonPadding} rounded-l transition-colors ${
+                                        isSlowMode
+                                            ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                                            : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                                    }`}
+                                    title={isSlowMode ? `Slow mode: ${displayRate}/s (click to disable)` : 'Enable slow mode playback'}
+                                >
+                                    <svg className={density.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </button>
+                                {/* Dropdown chevron (only when slow mode is on) */}
+                                {isSlowMode && (
+                                    <button
+                                        onClick={() => setShowRatePopover(!showRatePopover)}
+                                        className={`px-1 py-1 rounded-r border-l border-amber-300 dark:border-amber-600 transition-colors ${
+                                            showRatePopover
+                                                ? 'bg-amber-200 dark:bg-amber-800/60 text-amber-700 dark:text-amber-400'
+                                                : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/60'
+                                        }`}
+                                        title="Adjust playback rate"
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showRatePopover ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"} />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            {/* Rate popover dropdown */}
+                            {isSlowMode && showRatePopover && (
+                                <div
+                                    className="absolute top-full right-0 mt-1 p-2 bg-amber-50 dark:bg-amber-900/80 rounded-md border border-amber-200 dark:border-amber-700 shadow-lg z-50"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-amber-600 dark:text-amber-400">Rate:</span>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="30"
+                                            value={displayRate}
+                                            onChange={(e) => {
+                                                const newRate = Number(e.target.value);
+                                                debugLog('USER ACTION: Display rate changed', {
+                                                    from: displayRate,
+                                                    to: newRate,
+                                                });
+                                                setDisplayRate(newRate);
+                                            }}
+                                            className="w-20 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                                            title="Display rate (entries per second)"
+                                        />
+                                        <span className="text-xs text-amber-700 dark:text-amber-300 font-mono tabular-nums min-w-[28px]">
+                                            {displayRate}/s
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         {/* AutoScroll button - 3 states: disabled (gray), active (blue), paused (amber) */}
                         <button
                             onClick={() => {
                                 const newAutoScroll = !autoScroll;
-                                debugLog('USER ACTION: AutoScroll toggle', {
-                                    from: autoScroll,
-                                    to: newAutoScroll,
+                                console.log('[StreamsView:Toggle] CLICKED', {
+                                    currentAutoScroll: autoScroll,
+                                    newAutoScroll,
                                     stuckToBottom,
                                     isInSnapshotMode,
+                                    effectiveAutoScroll: autoScroll && stuckToBottom,
                                 });
                                 setAutoScroll(newAutoScroll);
 
-                                // If disabling autoscroll, exit snapshot mode
-                                if (!newAutoScroll && isInSnapshotMode) {
-                                    exitSnapshotMode();
+                                if (newAutoScroll) {
+                                    console.log('[StreamsView:Toggle] ENABLING - setStuckToBottom(true), instantScrollToBottom()');
+                                    // When enabling autoscroll, ensure we're stuck to bottom and scroll there
+                                    setStuckToBottom(true);
+                                    instantScrollToBottom();
+                                    // If was in snapshot mode, exit it (re-enable live view)
+                                    if (isInSnapshotMode) {
+                                        console.log('[StreamsView:Toggle] Exiting snapshot mode (with re-enable)');
+                                        exitSnapshotMode();
+                                    }
+                                } else {
+                                    console.log('[StreamsView:Toggle] DISABLING - markUserDisabled(), setStuckToBottom(false)');
+                                    // When disabling, explicitly stop auto-scroll in the hook
+                                    markUserDisabled();
+                                    setStuckToBottom(false);
+                                    // Exit snapshot mode WITHOUT re-enabling auto-scroll
+                                    if (isInSnapshotMode) {
+                                        console.log('[StreamsView:Toggle] Exiting snapshot mode (WITHOUT re-enable)');
+                                        exitSnapshotMode(false);
+                                    }
                                 }
                             }}
                             className={`${density.buttonPadding} rounded transition-colors ${
@@ -1448,29 +1516,27 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                             </button>
                         )}
 
-                        {/* Floating "Go to bottom" button - shows when autoscroll is enabled but user scrolled up (only when NOT in snapshot) */}
-                        {!isInSnapshotMode && autoScroll && !stuckToBottom && (
+                        {/* Floating "Go to bottom" button - shows when not at bottom (regardless of autoscroll state) */}
+                        {!isInSnapshotMode && !stuckToBottom && rowsBelowViewport > 0 && (
                             <button
                                 onClick={handleJumpToBottom}
                                 className="vlg-jump-to-bottom"
-                                title="Go to bottom and resume auto-scroll"
+                                title={autoScroll ? "Go to bottom and resume auto-scroll" : "Go to bottom"}
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                                 </svg>
                                 <span>Go to bottom</span>
-                                {rowsBelowViewport > 0 && (
-                                    <span className="vlg-new-entries-badge">
-                                        {rowsBelowViewport > 999 ? '999+' : rowsBelowViewport}
-                                    </span>
-                                )}
+                                <span className="vlg-new-entries-badge">
+                                    {rowsBelowViewport > 999 ? '999+' : rowsBelowViewport}
+                                </span>
                             </button>
                         )}
 
-                        {/* Buffer Full Warning - prominent floating banner */}
+                        {/* Buffer Full Warning - transparent banner at bottom */}
                         {isSlowMode && bufferFull && (
                             <div
-                                className="absolute top-14 right-4 px-3 py-1.5 bg-red-500/95 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-lg animate-pulse"
+                                className="absolute bottom-2 left-1/2 transform -translate-x-1/2 px-3 py-1.5 bg-red-500/20 text-red-500 dark:text-red-400 rounded-md text-xs font-semibold flex items-center gap-1.5"
                                 style={{ zIndex: 1002 }}
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -39,6 +39,7 @@ interface UseAutoScrollOptions {
   autoScrollEnabled: boolean;
   onUserScrollUp?: () => void;
   lastEntryId?: number | null; // Optional: track content changes when count stays same
+  componentName?: string; // Optional: identifier for debug logs (e.g., 'StreamsView', 'AllLogs')
 }
 
 // Lock duration: how long after a wheel-up event to block auto-scroll (ms)
@@ -50,7 +51,10 @@ export function useAutoScroll({
   autoScrollEnabled,
   onUserScrollUp,
   lastEntryId,
+  componentName = 'Unknown',
 }: UseAutoScrollOptions) {
+  // Component-specific log prefix for distinguishing multiple hook instances
+  const logPrefix = `[useAutoScroll:${componentName}]`;
   const stateRef = useRef<AutoScrollState>({
     isStuckToBottom: true,
     isProgrammaticScroll: false,
@@ -176,9 +180,10 @@ export function useAutoScroll({
   }, [onUserScrollUp, stopSmoothScrollLoop]);
 
   const markUserDisabled = useCallback(() => {
+    console.log(`${logPrefix} markUserDisabled() called - setting isStuckToBottom=false`);
     stateRef.current.userDisabledTime = Date.now();
     stateRef.current.isStuckToBottom = false;
-  }, []);
+  }, [logPrefix]);
 
   const markStuckToBottom = useCallback(() => {
     stateRef.current.isStuckToBottom = true;
@@ -222,7 +227,13 @@ export function useAutoScroll({
 
   // Effect: scroll when entries count increases OR content changes (when at capacity)
   useEffect(() => {
-    if (!autoScrollEnabled || !scrollElement) return;
+    if (!autoScrollEnabled || !scrollElement) {
+      if (!autoScrollEnabled) {
+        console.log(`${logPrefix} entriesEffect SKIPPED - autoScrollEnabled=false`);
+      }
+      return;
+    }
+    console.log(`${logPrefix} entriesEffect RUNNING - autoScrollEnabled=true, will check conditions`);
 
     const prevCount = stateRef.current.lastEntriesCount;
     const prevEntryId = stateRef.current.lastEntryId;
@@ -313,13 +324,14 @@ export function useAutoScroll({
         isStuckToBottom: stateRef.current.isStuckToBottom,
       });
     }
-  }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, instantScrollToBottom, scrollElement]);
+  }, [entriesCount, lastEntryId, autoScrollEnabled, scrollToBottom, instantScrollToBottom, scrollElement, logPrefix]);
 
   // Start/stop scroll loop when autoScrollEnabled changes
   useEffect(() => {
     if (autoScrollEnabled && scrollElement) {
-      debugLog('autoScrollEnabled changed: ENABLED - resetting state and jumping to bottom', {
-        prevRate: stateRef.current.averageRate.toFixed(2),
+      console.log(`${logPrefix} autoScrollEnabled=TRUE - enabling scroll, resetting state`, {
+        prevIsStuckToBottom: stateRef.current.isStuckToBottom,
+        prevUserDisabledTime: stateRef.current.userDisabledTime,
       });
       stateRef.current.isStuckToBottom = true;
       // Reset grace periods when autoscroll is explicitly enabled
@@ -332,11 +344,14 @@ export function useAutoScroll({
       // This avoids slow smooth scrolling through historical data on page refresh
       instantScrollToBottom();
     } else {
-      debugLog('autoScrollEnabled changed: DISABLED - stopping scroll loop');
+      console.log(`${logPrefix} autoScrollEnabled=FALSE - stopping scroll loop`, {
+        isStuckToBottom: stateRef.current.isStuckToBottom,
+        userDisabledTime: stateRef.current.userDisabledTime,
+      });
       // Stop the loop when autoscroll is disabled
       stopSmoothScrollLoop();
     }
-  }, [autoScrollEnabled, scrollElement, instantScrollToBottom, stopSmoothScrollLoop]);
+  }, [autoScrollEnabled, scrollElement, instantScrollToBottom, stopSmoothScrollLoop, logPrefix]);
 
   // Direct wheel event listener for race condition prevention
   // This captures wheel-up events synchronously before React state can update
