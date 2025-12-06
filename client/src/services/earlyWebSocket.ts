@@ -338,6 +338,8 @@ async function completeConnection(): Promise<void> {
     }
 
     store.setLoadingInitialData(false);
+    // Clear room switching state - we're now connected to the new room
+    store.setRoomSwitching(false);
 }
 
 function handleMessage(message: any, store: ReturnType<typeof useLogStore.getState>): void {
