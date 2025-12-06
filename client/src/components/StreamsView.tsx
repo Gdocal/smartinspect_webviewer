@@ -1268,6 +1268,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     isInSnapshotMode,
                                     effectiveAutoScroll: autoScroll && stuckToBottom,
                                 });
+                                // CRITICAL: Update ref SYNCHRONOUSLY before state update
+                                // This prevents race conditions where scroll events see stale value
+                                autoScrollRef.current = newAutoScroll;
                                 setAutoScroll(newAutoScroll);
 
                                 if (newAutoScroll) {

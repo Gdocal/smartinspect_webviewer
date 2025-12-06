@@ -180,10 +180,12 @@ export function useAutoScroll({
   }, [onUserScrollUp, stopSmoothScrollLoop]);
 
   const markUserDisabled = useCallback(() => {
-    console.log(`${logPrefix} markUserDisabled() called - setting isStuckToBottom=false`);
+    console.log(`${logPrefix} markUserDisabled() called - setting isStuckToBottom=false, stopping scroll loop`);
     stateRef.current.userDisabledTime = Date.now();
     stateRef.current.isStuckToBottom = false;
-  }, [logPrefix]);
+    // IMPORTANT: Stop the smooth scroll animation loop when user disables
+    stopSmoothScrollLoop();
+  }, [logPrefix, stopSmoothScrollLoop]);
 
   const markStuckToBottom = useCallback(() => {
     stateRef.current.isStuckToBottom = true;
