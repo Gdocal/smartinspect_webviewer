@@ -1035,7 +1035,7 @@ const connectionManager = new ConnectionManager({
                     // Send new room's initial state
                     const newRoom = roomManager.getOrCreate(msg.room);
                     connectionManager.send(ws, {
-                        type: 'roomChanged',
+                        type: 'roomSwitched',
                         data: {
                             room: msg.room,
                             stats: newRoom.logBuffer.getStats(),
