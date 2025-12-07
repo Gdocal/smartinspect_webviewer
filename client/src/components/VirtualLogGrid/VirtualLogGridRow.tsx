@@ -105,28 +105,60 @@ const decodedDataCache = new Map<string, string>();
 const DECODED_CACHE_MAX_SIZE = 1000;
 
 // Merged style cache - avoids creating new style objects on every render
-// Key: `${position}_${highlightKey}` where highlightKey is based on highlightStyle properties
+// Key: `${position}_${highlightKey}_${entryColorKey}` where keys are based on style properties
 const mergedStyleCache = new Map<string, CSSProperties>();
 const MERGED_STYLE_CACHE_MAX_SIZE = 500;
 
+// Entry color type for convenience
+type EntryColor = { r: number; g: number; b: number; a: number };
+
+// Convert entry.color to CSS background color
+// Returns undefined if color is too dark (nearly black) or not set
+function getEntryBackgroundColor(color: EntryColor | undefined): string | undefined {
+  if (!color) return undefined;
+  const { r, g, b, a } = color;
+  // Skip if too dark (nearly black) - threshold of 30
+  if (r < 30 && g < 30 && b < 30) return undefined;
+  return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+}
+
+// Simple check if entry has a valid (non-dark) color
+function hasValidEntryColor(color: EntryColor | undefined): boolean {
+  if (!color) return false;
+  return !(color.r < 30 && color.g < 30 && color.b < 30);
+}
+
 // Get or create merged row style with caching
+// Priority: highlightStyle > entryColor > baseStyle
 function getMergedRowStyle(
   baseStyle: CSSProperties,
-  highlightStyle: CSSProperties | undefined
+  highlightStyle: CSSProperties | undefined,
+  entryColor: EntryColor | undefined
 ): CSSProperties {
-  if (!highlightStyle) return baseStyle;
-
-  // Create a cache key from position (transform) and highlight properties
+  // Create a cache key from position (transform), highlight properties, and entry color
   const transform = baseStyle.transform || '';
   const height = baseStyle.height || '';
-  const highlightKey = `${highlightStyle.backgroundColor || ''}_${highlightStyle.color || ''}_${highlightStyle.fontWeight || ''}_${highlightStyle.fontStyle || ''}`;
-  const cacheKey = `${transform}_${height}_${highlightKey}`;
+  const highlightKey = highlightStyle
+    ? `${highlightStyle.backgroundColor || ''}_${highlightStyle.color || ''}_${highlightStyle.fontWeight || ''}_${highlightStyle.fontStyle || ''}`
+    : '';
+  const entryColorKey = entryColor ? `${entryColor.r}_${entryColor.g}_${entryColor.b}_${entryColor.a}` : '';
+  const cacheKey = `${transform}_${height}_${highlightKey}_${entryColorKey}`;
 
   let cached = mergedStyleCache.get(cacheKey);
   if (cached) return cached;
 
-  // Create merged style
-  cached = { ...baseStyle, ...highlightStyle };
+  // Highlight rules take priority over entry color
+  if (highlightStyle) {
+    cached = { ...baseStyle, ...highlightStyle };
+  } else {
+    // Apply entry color directly if no highlight and color is valid
+    const entryBg = getEntryBackgroundColor(entryColor);
+    if (entryBg) {
+      cached = { ...baseStyle, backgroundColor: entryBg };
+    } else {
+      cached = baseStyle;
+    }
+  }
 
   // LRU-style eviction
   if (mergedStyleCache.size >= MERGED_STYLE_CACHE_MAX_SIZE) {
@@ -304,13 +336,17 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
     return <SeparatorRow entry={entry} style={style} highlightStyle={highlightStyle} />;
   }
 
-  // Merge highlight style with row classes - use cached merged style to avoid allocations
-  const rowStyle = getMergedRowStyle(style, highlightStyle);
+  // Merge highlight style and entry color with row classes - use cached merged style to avoid allocations
+  // Priority: highlightStyle > entry.color > default
+  const rowStyle = getMergedRowStyle(style, highlightStyle, entry.color);
+
+  // Check if row has custom background (highlight or entry color)
+  const hasCustomBackground = highlightStyle || hasValidEntryColor(entry.color);
 
   // Build class names
   let className = 'vlg-row';
-  if (isOdd && !highlightStyle) className += ' odd';
-  if (highlightStyle) className += ' highlighted';
+  if (isOdd && !hasCustomBackground) className += ' odd';
+  if (hasCustomBackground) className += ' highlighted';
   if (isRowSelected) className += ' row-selected';
 
   return (
