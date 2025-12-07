@@ -765,6 +765,23 @@ export function VirtualLogGrid({
     if (!container) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+A to select all rows
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        if (onSelectionChange && entries.length > 0) {
+          onSelectionChange({
+            ranges: [{
+              startRow: 0,
+              startCol: 0,
+              endRow: entries.length - 1,
+              endCol: visibleColumns.length - 1,
+            }],
+            anchor: { row: 0, col: 0 },
+          });
+        }
+        return;
+      }
+
       if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
       if (!onSelectionChange) return;
 
