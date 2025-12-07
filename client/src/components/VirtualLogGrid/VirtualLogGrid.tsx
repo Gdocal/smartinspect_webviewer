@@ -315,9 +315,24 @@ export function VirtualLogGrid({
 
   // Track if initial scroll has been done (to prevent flicker on mount)
   const hasInitialScrollRef = useRef(false);
+  // Track previous entries length to detect room switches (entries cleared to 0)
+  const prevEntriesLengthRef = useRef(entries.length);
   // Track mount count for debugging
   const mountCountRef = useRef(0);
   mountCountRef.current++;
+
+  flickerLog('entries check', {
+    prevLen: prevEntriesLengthRef.current,
+    currentLen: entries.length,
+    hasInitialScroll: hasInitialScrollRef.current
+  });
+
+  // Reset initial scroll flag when entries are cleared (room switch)
+  if (prevEntriesLengthRef.current > 0 && entries.length === 0) {
+    flickerLog('RESET hasInitialScrollRef - entries cleared (room switch)');
+    hasInitialScrollRef.current = false;
+  }
+  prevEntriesLengthRef.current = entries.length;
 
   // Set initial scroll position to bottom BEFORE paint (prevents flicker)
   // This runs synchronously after DOM mutations but before browser paint

@@ -307,6 +307,7 @@ export function ViewGrid({
     const targetLenRef = useRef(targetLen);
     const displayCountRef = useRef(targetLen); // Sync ref for immediate reads
     const rafIdRef = useRef<number | null>(null);
+    const needsStateSyncRef = useRef(false); // Track when render-time snap needs state sync
     const [displayCount, setDisplayCount] = useState(targetLen);
 
     flickerLog('displayCount state', {
@@ -325,16 +326,28 @@ export function ViewGrid({
 
     // Synchronize displayCountRef with targetLen when it changes dramatically
     // This handles cases where state hasn't caught up yet (e.g., component re-mount)
-    if (Math.abs(targetLen - displayCountRef.current) > MAX_ANIMATE_DELTA) {
-        flickerLog('SNAP: large delta', { delta: targetLen - displayCountRef.current, targetLen, viewName: view.name });
+    // Also snap immediately when displayCountRef is 0 (fresh load after room switch)
+    const isInitialLoad = displayCountRef.current === 0 && targetLen > 0;
+    if (isInitialLoad || Math.abs(targetLen - displayCountRef.current) > MAX_ANIMATE_DELTA) {
+        flickerLog('SNAP: initial load or large delta', { delta: targetLen - displayCountRef.current, targetLen, isInitialLoad, viewName: view.name });
         displayCountRef.current = targetLen;
+        needsStateSyncRef.current = true; // Flag for useEffect to sync state
     } else if (displayCountRef.current > targetLen) {
         // Target shrunk - sync immediately
         flickerLog('SNAP: target shrunk', { displayCountRef: displayCountRef.current, targetLen, viewName: view.name });
         displayCountRef.current = targetLen;
+        needsStateSyncRef.current = true; // Flag for useEffect to sync state
     }
 
     useEffect(() => {
+        // If render-time snap occurred, sync state immediately
+        if (needsStateSyncRef.current) {
+            needsStateSyncRef.current = false;
+            flickerLog('STATE SYNC: render-time snap', { displayCountRef: displayCountRef.current, viewName: view.name });
+            setDisplayCount(displayCountRef.current);
+            return;
+        }
+
         const delta = targetLen - displayCountRef.current;
         flickerLog('progressive effect', { delta, targetLen, displayCountRef: displayCountRef.current, viewName: view.name });
 
