@@ -6,11 +6,35 @@ import { useState, useRef, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
 import { getSettings } from '../hooks/useSettings';
 import { Tooltip } from './Tooltip';
+import { formatDistanceToNow } from 'date-fns';
+
+// Format relative time in compact format
+function formatRelativeTime(timestamp: string | undefined): string {
+    if (!timestamp) return '';
+    try {
+        return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+    } catch {
+        return '';
+    }
+}
+
+// Check if a room is stale (no activity for >5 minutes)
+function isRoomStale(timestamp: string | undefined): boolean {
+    if (!timestamp) return true;
+    try {
+        const lastActivity = new Date(timestamp).getTime();
+        const now = Date.now();
+        return now - lastActivity > 5 * 60 * 1000; // 5 minutes
+    } catch {
+        return true;
+    }
+}
 
 export function RoomSelector() {
     const [isOpen, setIsOpen] = useState(false);
     const [newRoomName, setNewRoomName] = useState('');
     const [showNewRoomInput, setShowNewRoomInput] = useState(false);
+    const [, setTickCount] = useState(0); // Force re-render for live time updates
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const currentRoom = useLogStore(state => state.currentRoom);
@@ -19,6 +43,10 @@ export function RoomSelector() {
     const connected = useLogStore(state => state.connected);
     const switchRoom = useLogStore(state => state.switchRoom);
     const setAvailableRooms = useLogStore(state => state.setAvailableRooms);
+    const newRoomDetected = useLogStore(state => state.newRoomDetected);
+    const setNewRoomDetected = useLogStore(state => state.setNewRoomDetected);
+    const roomLastActivity = useLogStore(state => state.roomLastActivity);
+    const setRoomLastActivityBulk = useLogStore(state => state.setRoomLastActivityBulk);
 
     // Button is disabled when not connected or during room switch
     const isDisabled = !connected || roomSwitching;
@@ -45,6 +73,31 @@ export function RoomSelector() {
         }
     }, [connected]);
 
+    // Live time updates - tick every second when dropdown is open
+    useEffect(() => {
+        if (!isOpen) return;
+        const interval = setInterval(() => {
+            setTickCount(c => c + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isOpen]);
+
+    // Clear new room notification when dropdown is opened or after timeout
+    useEffect(() => {
+        if (newRoomDetected) {
+            if (isOpen) {
+                // Clear immediately when dropdown opens
+                setNewRoomDetected(false);
+            } else {
+                // Auto-clear after 5 seconds
+                const timeout = setTimeout(() => {
+                    setNewRoomDetected(false);
+                }, 5000);
+                return () => clearTimeout(timeout);
+            }
+        }
+    }, [newRoomDetected, isOpen, setNewRoomDetected]);
+
     // Fetch available rooms from server - only when connected
     useEffect(() => {
         if (!connected) return;
@@ -64,6 +117,10 @@ export function RoomSelector() {
                 const data = await response.json();
                 if (data.rooms && Array.isArray(data.rooms)) {
                     setAvailableRooms(data.rooms);
+                }
+                // Update last activity timestamps if provided
+                if (data.lastActivity) {
+                    setRoomLastActivityBulk(data.lastActivity);
                 }
             } catch (err) {
                 console.error('[RoomSelector] Failed to fetch rooms:', err);
@@ -120,6 +177,7 @@ export function RoomSelector() {
                         ${isDisabled
                             ? 'opacity-50 cursor-not-allowed'
                             : 'hover:text-slate-100 hover:bg-slate-700/50'}
+                        ${newRoomDetected ? 'animate-pulse bg-blue-600/30' : ''}
                     `}
                 >
                     {/* Room icon */}
@@ -150,27 +208,40 @@ export function RoomSelector() {
 
                     {/* Room list */}
                     <div className="max-h-48 overflow-y-auto">
-                        {availableRooms.map(room => (
-                            <button
-                                key={room}
-                                onClick={() => handleRoomSelect(room)}
-                                className={`
-                                    w-full px-3 py-1.5 text-left text-xs
-                                    flex items-center gap-2
-                                    ${room === currentRoom
-                                        ? 'bg-blue-600/30 text-blue-300'
-                                        : 'text-slate-200 hover:bg-slate-600/50'
-                                    }
-                                `}
-                            >
-                                {room === currentRoom && (
-                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                                    </svg>
-                                )}
-                                <span className={room === currentRoom ? '' : 'ml-5'}>{room}</span>
-                            </button>
-                        ))}
+                        {availableRooms.map(room => {
+                            const lastActivity = roomLastActivity[room];
+                            const stale = isRoomStale(lastActivity);
+                            const relativeTime = formatRelativeTime(lastActivity);
+
+                            return (
+                                <button
+                                    key={room}
+                                    onClick={() => handleRoomSelect(room)}
+                                    className={`
+                                        w-full px-3 py-1.5 text-left text-xs
+                                        flex items-center gap-2
+                                        ${room === currentRoom
+                                            ? 'bg-blue-600/30 text-blue-300'
+                                            : stale
+                                                ? 'text-slate-400 hover:bg-slate-600/50'
+                                                : 'text-slate-200 hover:bg-slate-600/50'
+                                        }
+                                    `}
+                                >
+                                    {room === currentRoom && (
+                                        <svg className="w-3 h-3 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                                        </svg>
+                                    )}
+                                    <span className={`flex-1 truncate ${room === currentRoom ? '' : 'ml-5'}`}>{room}</span>
+                                    {relativeTime && (
+                                        <span className={`text-[10px] flex-shrink-0 ${stale ? 'text-slate-500' : 'text-slate-400'}`}>
+                                            {relativeTime}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Separator */}

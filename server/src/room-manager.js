@@ -23,7 +23,7 @@ class RoomStorage {
         this.clients = new Set();    // TCP client IDs in this room
         this.viewers = new Set();    // WebSocket viewer IDs in this room
         this.createdAt = new Date();
-        this.lastActivity = new Date();
+        this.lastActivity = null;    // null until actual data is received
     }
 
     /**
@@ -41,7 +41,7 @@ class RoomStorage {
         this.watchStore.clear();
         this.methodTracker.clear();
         this.streamStore.clear();
-        this.touch();
+        this.lastActivity = null;  // Reset activity since data is cleared
     }
 
     /**
@@ -266,6 +266,18 @@ class RoomManager {
         for (const [, room] of this.rooms) {
             room.streamStore.setMaxEntries(maxStreamEntries);
         }
+    }
+
+    /**
+     * Get last activity timestamps for all rooms
+     * @returns {Object} Map of roomId -> ISO timestamp (null if no activity)
+     */
+    getLastActivityMap() {
+        const result = {};
+        for (const [roomId, room] of this.rooms) {
+            result[roomId] = room.lastActivity ? room.lastActivity.toISOString() : null;
+        }
+        return result;
     }
 
     /**

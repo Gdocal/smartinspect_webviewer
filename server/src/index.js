@@ -215,7 +215,8 @@ app.get('/api/rooms', (req, res) => {
 
     res.json({
         rooms: roomManager.listRooms(),
-        details: roomManager.getRoomsInfo()
+        details: roomManager.getRoomsInfo(),
+        lastActivity: roomManager.getLastActivityMap()
     });
 });
 
@@ -364,6 +365,58 @@ app.delete('/api/streams', (req, res) => {
 });
 
 /**
+ * DELETE /api/all/logs - Clear logs in ALL rooms
+ */
+app.delete('/api/all/logs', (req, res) => {
+    const rooms = roomManager.listRooms();
+    let clearedCount = 0;
+    for (const roomId of rooms) {
+        const room = roomManager.get(roomId);
+        if (room) {
+            room.logBuffer.clear();
+            room.methodTracker.clear();
+            connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'logs' });
+            clearedCount++;
+        }
+    }
+    res.json({ success: true, roomsCleared: clearedCount });
+});
+
+/**
+ * DELETE /api/all/watches - Clear watches in ALL rooms
+ */
+app.delete('/api/all/watches', (req, res) => {
+    const rooms = roomManager.listRooms();
+    let clearedCount = 0;
+    for (const roomId of rooms) {
+        const room = roomManager.get(roomId);
+        if (room) {
+            room.watchStore.clear();
+            connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'watches' });
+            clearedCount++;
+        }
+    }
+    res.json({ success: true, roomsCleared: clearedCount });
+});
+
+/**
+ * DELETE /api/all/streams - Clear streams in ALL rooms
+ */
+app.delete('/api/all/streams', (req, res) => {
+    const rooms = roomManager.listRooms();
+    let clearedCount = 0;
+    for (const roomId of rooms) {
+        const room = roomManager.get(roomId);
+        if (room) {
+            room.streamStore.clear();
+            connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'streams' });
+            clearedCount++;
+        }
+    }
+    res.json({ success: true, roomsCleared: clearedCount });
+});
+
+/**
  * DELETE /api/rooms/:roomId - Delete a room
  */
 app.delete('/api/rooms/:roomId', (req, res) => {
@@ -379,12 +432,32 @@ app.delete('/api/rooms/:roomId', (req, res) => {
     }
 });
 
+// CPU usage tracking for percentage calculation
+let lastCpuUsage = process.cpuUsage();
+let lastCpuTime = Date.now();
+
 /**
  * GET /api/server/stats - Server stats for monitoring
  */
 app.get('/api/server/stats', (req, res) => {
     const memUsage = process.memoryUsage();
     const cpuUsage = process.cpuUsage();
+    const now = Date.now();
+
+    // Calculate CPU percentage since last call
+    const elapsedMs = now - lastCpuTime;
+    const elapsedMicros = elapsedMs * 1000;
+    const userDelta = cpuUsage.user - lastCpuUsage.user;
+    const systemDelta = cpuUsage.system - lastCpuUsage.system;
+    const totalDelta = userDelta + systemDelta;
+
+    // CPU percentage (total CPU time / elapsed time * 100)
+    // For multi-core, this can exceed 100% (e.g., 200% = 2 cores fully used)
+    const cpuPercent = elapsedMicros > 0 ? (totalDelta / elapsedMicros) * 100 : 0;
+
+    // Update tracking
+    lastCpuUsage = cpuUsage;
+    lastCpuTime = now;
 
     res.json({
         memory: {
@@ -393,7 +466,11 @@ app.get('/api/server/stats', (req, res) => {
             rss: memUsage.rss,
             external: memUsage.external
         },
-        cpu: cpuUsage,
+        cpu: {
+            user: cpuUsage.user,
+            system: cpuUsage.system,
+            percent: Math.round(cpuPercent * 10) / 10  // 1 decimal place
+        },
         uptime: process.uptime(),
         rooms: roomManager.getTotalStats(),
         connections: {
@@ -1114,8 +1191,11 @@ roomManager.onRoomCreated = (roomId) => {
     console.log(`[Server] Broadcasting new room: ${roomId}`);
     connectionManager.broadcast({
         type: 'roomCreated',
-        roomId: roomId,
-        rooms: roomManager.listRooms()
+        data: {
+            roomId: roomId,
+            rooms: roomManager.listRooms(),
+            lastActivity: roomManager.getLastActivityMap()
+        }
     });
 };
 
@@ -1197,7 +1277,8 @@ function handlePacket(packet, clientInfo) {
                 packet.value,
                 packet.timestamp,
                 clientInfo.appName,
-                packet.watchType
+                packet.watchType,
+                packet.group || ''  // Pass group from packet, default empty
             );
             room.touch();
 

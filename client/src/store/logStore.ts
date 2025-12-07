@@ -324,12 +324,16 @@ interface LogState {
     reconnectIn: number | null; // Seconds until reconnect attempt
     serverUrl: string | null; // Current server URL being connected to
     authRequired: boolean; // True when server requires authentication (close code 4001)
+    wsLatency: number | null; // WebSocket round-trip latency in ms
+    wsThroughput: number; // WebSocket data throughput in bytes/sec
 
     // Room isolation (multi-project support)
     currentRoom: string; // Active room ID
     currentUser: string; // User identifier for settings
     availableRooms: string[]; // List of known rooms from server
     roomSwitching: boolean; // True while switching rooms
+    newRoomDetected: boolean; // True when a new room is created (triggers animation)
+    roomLastActivity: Record<string, string>; // Last activity timestamp per room (ISO string)
 
     // Log entries (limited buffer for performance)
     entries: LogEntry[];
@@ -429,12 +433,17 @@ interface LogState {
     setReconnectIn: (seconds: number | null) => void;
     setServerUrl: (url: string | null) => void;
     setAuthRequired: (required: boolean) => void;
+    setWsLatency: (latency: number | null) => void;
+    setWsThroughput: (bytesPerSec: number) => void;
 
     // Room actions
     setCurrentRoom: (room: string) => void;
     setCurrentUser: (user: string) => void;
     setAvailableRooms: (rooms: string[]) => void;
     setRoomSwitching: (switching: boolean) => void;
+    setNewRoomDetected: (detected: boolean) => void;
+    setRoomLastActivity: (room: string, timestamp: string) => void;
+    setRoomLastActivityBulk: (activities: Record<string, string>) => void;
     switchRoom: (room: string) => void; // Clears data and triggers reconnect
     addEntries: (entries: LogEntry[]) => void;
     addEntriesBatch: (entries: LogEntry[]) => void; // Optimized batch add
@@ -582,12 +591,16 @@ export const useLogStore = create<LogState>((set, get) => ({
     reconnectIn: null,
     serverUrl: null,
     authRequired: false,
+    wsLatency: null,
+    wsThroughput: 0,
 
     // Room state (persisted to localStorage)
     currentRoom: localStorage.getItem('si-room') || 'default',
     currentUser: 'default',
     availableRooms: ['default'],
     roomSwitching: false,
+    newRoomDetected: false,
+    roomLastActivity: {},
 
     entries: [],
     limits: { ...defaultLimits },
@@ -657,19 +670,28 @@ export const useLogStore = create<LogState>((set, get) => ({
     loadedProjectDirty: false,
 
     // Actions
-    setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined }),
+    setConnected: (connected) => set({ connected, reconnectIn: connected ? null : undefined, authRequired: connected ? false : undefined, wsLatency: connected ? undefined : null }),
     setConnecting: (connecting) => set({ connecting }),
     setLoadingInitialData: (loadingInitialData) => set({ loadingInitialData }),
     setError: (error) => set({ error }),
     setReconnectIn: (reconnectIn) => set({ reconnectIn }),
     setServerUrl: (serverUrl) => set({ serverUrl }),
     setAuthRequired: (authRequired) => set({ authRequired }),
+    setWsLatency: (wsLatency) => set({ wsLatency }),
+    setWsThroughput: (wsThroughput) => set({ wsThroughput }),
 
     // Room actions
     setCurrentRoom: (currentRoom) => set({ currentRoom }),
     setCurrentUser: (currentUser) => set({ currentUser }),
     setAvailableRooms: (availableRooms) => set({ availableRooms }),
     setRoomSwitching: (roomSwitching) => set({ roomSwitching }),
+    setNewRoomDetected: (newRoomDetected) => set({ newRoomDetected }),
+    setRoomLastActivity: (room, timestamp) => set((state) => ({
+        roomLastActivity: { ...state.roomLastActivity, [room]: timestamp }
+    })),
+    setRoomLastActivityBulk: (activities) => set((state) => ({
+        roomLastActivity: { ...state.roomLastActivity, ...activities }
+    })),
     switchRoom: (room) => {
         // Persist room to localStorage
         localStorage.setItem('si-room', room);

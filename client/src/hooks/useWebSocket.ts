@@ -101,6 +101,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     const fetchAbortControllerRef = useRef<AbortController | null>(null);
     const lastWatchFlushRef = useRef<number>(0);
 
+    // Throughput tracking refs
+    const bytesReceivedRef = useRef<number>(0);
+    const throughputIntervalRef = useRef<number | null>(null);
+    const pingIntervalRef = useRef<number | null>(null);
+
     // Store refs for callbacks to avoid dependency issues
     const storeRef = useRef(useLogStore.getState());
 
@@ -256,15 +261,41 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 break;
 
             case 'rooms': {
-                // Server sending list of available rooms
-                const roomsData = message.data as { rooms: string[] };
+                // Server sending list of available rooms (with optional lastActivity)
+                const roomsData = message.data as { rooms: string[]; lastActivity?: Record<string, string> };
                 store.setAvailableRooms(roomsData.rooms);
+                // Update last activity timestamps if provided
+                if (roomsData.lastActivity) {
+                    store.setRoomLastActivityBulk(roomsData.lastActivity);
+                }
+                break;
+            }
+
+            case 'roomCreated': {
+                // New room was created - trigger notification animation
+                const roomCreatedData = message.data as { roomId: string; rooms: string[]; lastActivity?: Record<string, string> };
+                console.log('[WS] New room created:', roomCreatedData.roomId);
+                store.setAvailableRooms(roomCreatedData.rooms);
+                store.setNewRoomDetected(true);
+                if (roomCreatedData.lastActivity) {
+                    store.setRoomLastActivityBulk(roomCreatedData.lastActivity);
+                }
                 break;
             }
 
             case 'roomSwitched': {
                 // Confirmation that room switch completed
                 store.setRoomSwitching(false);
+                break;
+            }
+
+            case 'pong': {
+                // Server responding to our ping - calculate latency
+                const pongData = message as unknown as { timestamp: number };
+                if (pongData.timestamp) {
+                    const latency = Math.round(performance.now() - pongData.timestamp);
+                    store.setWsLatency(latency);
+                }
                 break;
             }
 
@@ -498,15 +529,43 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                     useLogStore.getState().setAllStreamSubscriptions(stored);
                 }
             }, 200);
+
+            // Start throughput calculation interval (every 1 second)
+            throughputIntervalRef.current = window.setInterval(() => {
+                storeRef.current.setWsThroughput(bytesReceivedRef.current);
+                bytesReceivedRef.current = 0;
+            }, 1000);
+
+            // Start ping interval for latency measurement (every 2 seconds)
+            pingIntervalRef.current = window.setInterval(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
+                }
+            }, 2000);
+
+            // Send initial ping immediately
+            ws.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
         };
 
         ws.onclose = (event) => {
             console.log('[WS] Disconnected:', event.code, event.reason);
             if (!mountedRef.current) return;
 
+            // Clean up throughput and ping intervals
+            if (throughputIntervalRef.current) {
+                clearInterval(throughputIntervalRef.current);
+                throughputIntervalRef.current = null;
+            }
+            if (pingIntervalRef.current) {
+                clearInterval(pingIntervalRef.current);
+                pingIntervalRef.current = null;
+            }
+            bytesReceivedRef.current = 0;
+
             const store = storeRef.current;
             store.setConnected(false);
             store.setConnecting(false);
+            store.setWsThroughput(0);
             wsRef.current = null;
 
             // Check for auth failure (close code 4001)
@@ -553,6 +612,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
         ws.onmessage = (event) => {
             try {
+                // Track bytes received for throughput calculation
+                const dataSize = typeof event.data === 'string' ? event.data.length : event.data.size;
+                bytesReceivedRef.current += dataSize;
+
                 const message = JSON.parse(event.data);
                 handleMessage(message);
             } catch (err) {

@@ -216,6 +216,14 @@ class ConnectionManager {
 
         try {
             const msg = JSON.parse(message.toString());
+
+            // Handle ping/pong for latency measurement
+            if (msg.type === 'ping') {
+                // Echo back pong with the same timestamp
+                this.send(ws, { type: 'pong', timestamp: msg.timestamp });
+                return;
+            }
+
             this.onViewerMessage(msg, viewerInfo, ws);
         } catch (err) {
             console.error('[WS] Invalid message from viewer:', err.message);
@@ -319,7 +327,8 @@ class ConnectionManager {
                 name: watch.name,
                 value: watch.value,
                 timestamp: watch.timestamp,
-                watchType: watch.watchType
+                watchType: watch.watchType,
+                group: watch.group || ''
             }
         };
         this.broadcastToRoom(roomId, message);
@@ -335,7 +344,8 @@ class ConnectionManager {
                 name: watch.name,
                 value: watch.value,
                 timestamp: watch.timestamp,
-                watchType: watch.watchType
+                watchType: watch.watchType,
+                group: watch.group || ''
             }
         };
         this.broadcast(message);
