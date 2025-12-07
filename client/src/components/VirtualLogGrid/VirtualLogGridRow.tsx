@@ -45,22 +45,22 @@ function SeparatorRow({
   };
 
   // Determine line color:
-  // - Default to white (visible on dark background)
+  // - Default: let CSS handle it (uses --vlg-text-muted which adapts to theme)
   // - Use entry.color only if it's bright enough to be visible
-  let lineColor = 'rgba(255, 255, 255, 0.8)'; // Default: white
+  let lineStyle: CSSProperties = {};
   if (entry.color) {
     const { r, g, b, a } = entry.color;
     // Check if color is too dark (nearly black) - use threshold of 30
     const isDark = r < 30 && g < 30 && b < 30;
     if (!isDark) {
-      lineColor = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+      lineStyle = { background: `rgba(${r}, ${g}, ${b}, ${a / 255})` };
     }
-    // If too dark, keep default white
+    // If too dark, let CSS handle it with theme-appropriate color
   }
 
   return (
     <div className="vlg-row vlg-separator-row" style={rowStyle}>
-      <div className="vlg-separator-line" style={{ background: lineColor }} />
+      <div className="vlg-separator-line" style={lineStyle} />
     </div>
   );
 }
