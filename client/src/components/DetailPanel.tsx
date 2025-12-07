@@ -122,16 +122,7 @@ function DataViewer({ data, encoding, entryType, wordWrap }: { data?: string; en
         );
     }
 
-    // Source code highlighting
-    if (entryType === LogEntryType.Source) {
-        return (
-            <pre className={`text-xs font-mono bg-slate-900 text-blue-300 p-3 rounded ${wrapClass}`}>
-                {decodedData}
-            </pre>
-        );
-    }
-
-    // Try to parse as JSON for ANY type (not just Object)
+    // Try to parse as JSON for ANY type (including Source)
     // This handles dictionaries, lists, objects, config data, etc.
     try {
         const parsed = JSON.parse(decodedData);
@@ -148,7 +139,16 @@ function DataViewer({ data, encoding, entryType, wordWrap }: { data?: string; en
             );
         }
     } catch {
-        // Not valid JSON, continue to text display
+        // Not valid JSON, continue to type-specific or text display
+    }
+
+    // Source code highlighting (for non-JSON source)
+    if (entryType === LogEntryType.Source) {
+        return (
+            <pre className={`text-xs font-mono bg-slate-900 text-blue-300 p-3 rounded ${wrapClass}`}>
+                {decodedData}
+            </pre>
+        );
     }
 
     // Default text view
