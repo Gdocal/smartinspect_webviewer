@@ -73,7 +73,20 @@ function decodeData(data: string | undefined, encoding: string | undefined): str
 
     if (encoding === 'base64') {
         try {
-            return atob(data);
+            // Decode base64 to binary, then convert to UTF-8
+            const binaryStr = atob(data);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) {
+                bytes[i] = binaryStr.charCodeAt(i);
+            }
+            // Use TextDecoder to properly decode UTF-8 (handles BOM automatically)
+            const decoder = new TextDecoder('utf-8');
+            let decoded = decoder.decode(bytes);
+            // Strip UTF-8 BOM if present (TextDecoder doesn't always strip it)
+            if (decoded.charCodeAt(0) === 0xFEFF) {
+                decoded = decoded.slice(1);
+            }
+            return decoded;
         } catch {
             return '[Binary data - cannot decode]';
         }
@@ -91,35 +104,8 @@ function DataViewer({ data, encoding, entryType, wordWrap }: { data?: string; en
 
     const wrapClass = wordWrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre';
 
-    // Try to parse as JSON for Object type
-    if (entryType === LogEntryType.Object) {
-        try {
-            const parsed = JSON.parse(decodedData);
-            return (
-                <div className="text-xs font-mono bg-slate-900 p-3 rounded overflow-auto json-viewer-wrapper">
-                    <JsonView
-                        data={parsed}
-                        style={jsonStyles}
-                        shouldExpandNode={() => true}
-                    />
-                </div>
-            );
-        } catch {
-            // Not valid JSON, show as text
-        }
-    }
-
-    // Source code highlighting
-    if (entryType === LogEntryType.Source) {
-        return (
-            <pre className={`text-xs font-mono bg-slate-900 text-blue-300 p-3 rounded ${wrapClass}`}>
-                {decodedData}
-            </pre>
-        );
-    }
-
-    // Binary data
-    if (entryType === LogEntryType.Binary || encoding === 'base64') {
+    // Binary data - hex dump (only for Binary type, not all base64)
+    if (entryType === LogEntryType.Binary) {
         // Show hex dump style
         const bytes = decodedData.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0'));
         const lines = [];
@@ -134,6 +120,35 @@ function DataViewer({ data, encoding, entryType, wordWrap }: { data?: string; en
                 {lines.length > 20 && `\n... (${lines.length - 20} more lines)`}
             </pre>
         );
+    }
+
+    // Source code highlighting
+    if (entryType === LogEntryType.Source) {
+        return (
+            <pre className={`text-xs font-mono bg-slate-900 text-blue-300 p-3 rounded ${wrapClass}`}>
+                {decodedData}
+            </pre>
+        );
+    }
+
+    // Try to parse as JSON for ANY type (not just Object)
+    // This handles dictionaries, lists, objects, config data, etc.
+    try {
+        const parsed = JSON.parse(decodedData);
+        // Only use JSON viewer for objects/arrays, not primitive values
+        if (typeof parsed === 'object' && parsed !== null) {
+            return (
+                <div className="text-xs font-mono bg-slate-900 p-3 rounded overflow-auto json-viewer-wrapper">
+                    <JsonView
+                        data={parsed}
+                        style={jsonStyles}
+                        shouldExpandNode={() => true}
+                    />
+                </div>
+            );
+        }
+    } catch {
+        // Not valid JSON, continue to text display
     }
 
     // Default text view
