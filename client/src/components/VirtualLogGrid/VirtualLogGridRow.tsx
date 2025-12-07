@@ -26,6 +26,45 @@ export interface VirtualLogGridRowProps {
   isRowSelected?: boolean;
 }
 
+// Separator row component - renders a horizontal line with optional color
+function SeparatorRow({
+  entry,
+  style,
+  highlightStyle,
+}: {
+  entry: LogEntry;
+  style: CSSProperties;
+  highlightStyle?: CSSProperties;
+}) {
+  const rowStyle: CSSProperties = {
+    ...style,
+    ...highlightStyle,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
+  // Determine line color:
+  // - Default to white (visible on dark background)
+  // - Use entry.color only if it's bright enough to be visible
+  let lineColor = 'rgba(255, 255, 255, 0.8)'; // Default: white
+  if (entry.color) {
+    const { r, g, b, a } = entry.color;
+    // Check if color is too dark (nearly black) - use threshold of 30
+    const isDark = r < 30 && g < 30 && b < 30;
+    if (!isDark) {
+      lineColor = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+    }
+    // If too dark, keep default white
+  }
+
+  return (
+    <div className="vlg-row vlg-separator-row" style={rowStyle}>
+      <div className="vlg-separator-line" style={{ background: lineColor }} />
+    </div>
+  );
+}
+
 // Log entry type to icon mapping - matches ViewGrid
 const EntryTypeIcons: Record<number, { icon: string; color: string; title: string }> = {
   [LogEntryType.EnterMethod]: { icon: '→', color: '#22c55e', title: 'Enter Method' },
@@ -127,7 +166,19 @@ function decodeBase64Data(data: string, maxLength: number): string {
   if (cached !== undefined) return cached;
 
   try {
-    const decoded = atob(data);
+    // Decode base64 to binary, then convert to UTF-8
+    const binaryStr = atob(data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    // Use TextDecoder to properly decode UTF-8 (handles BOM automatically)
+    const decoder = new TextDecoder('utf-8');
+    let decoded = decoder.decode(bytes);
+    // Strip UTF-8 BOM if present
+    if (decoded.charCodeAt(0) === 0xFEFF) {
+      decoded = decoded.slice(1);
+    }
     cached = decoded.length > maxLength ? decoded.substring(0, maxLength) + '...' : decoded;
   } catch {
     cached = '[Binary Data]';
@@ -247,6 +298,11 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   isRowSelected,
 }: VirtualLogGridRowProps) {
   void _selectionKey; // Suppress unused warning - used in memo comparison
+
+  // Render separator entries as horizontal lines
+  if (entry.logEntryType === LogEntryType.Separator) {
+    return <SeparatorRow entry={entry} style={style} highlightStyle={highlightStyle} />;
+  }
 
   // Merge highlight style with row classes - use cached merged style to avoid allocations
   const rowStyle = getMergedRowStyle(style, highlightStyle);

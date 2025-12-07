@@ -543,6 +543,18 @@ html, body, #root {
     background: var(--vlg-selected-bg);
 }
 
+/* Separator rows - display as horizontal line */
+.vlg-separator-row {
+    cursor: default;
+}
+
+.vlg-separator-line {
+    flex: 1;
+    height: 1px;
+    margin: 0 8px;
+    background: var(--vlg-text-muted);
+}
+
 /* Skeleton loading rows */
 .vlg-skeleton-row {
     pointer-events: none;
