@@ -152,7 +152,12 @@ function extractProjectFromStore(): Omit<Project, 'id' | 'name' | 'description' 
             showStreamPanel: state.showStreamPanel
         },
         limits: { ...state.limits },
-        theme: state.theme
+        theme: state.theme,
+        watchPanelColumnWidths: state.watchPanelColumnWidths,
+        streamsViewColumnWidths: state.streamsViewColumnWidths,
+        watchPanelHiddenColumns: state.watchPanelHiddenColumns,
+        streamsViewHiddenColumns: state.streamsViewHiddenColumns,
+        streamsChannelHiddenColumns: state.streamsChannelHiddenColumns
     };
 }
 
@@ -206,6 +211,25 @@ function applyProjectToStore(project: Project): void {
         maxBufferEntries: limits.maxBufferEntries ?? defaultLimits.maxBufferEntries,
         maxGridRows: limits.maxGridRows ?? defaultLimits.maxGridRows
     });
+
+    // Apply column widths with defaults for backward compatibility
+    if (project.watchPanelColumnWidths && Array.isArray(project.watchPanelColumnWidths) && project.watchPanelColumnWidths.length === 4) {
+        store.setWatchPanelColumnWidths(project.watchPanelColumnWidths);
+    }
+    if (project.streamsViewColumnWidths && Array.isArray(project.streamsViewColumnWidths) && project.streamsViewColumnWidths.length === 3) {
+        store.setStreamsViewColumnWidths(project.streamsViewColumnWidths);
+    }
+
+    // Apply hidden columns with defaults for backward compatibility
+    if (project.watchPanelHiddenColumns && Array.isArray(project.watchPanelHiddenColumns)) {
+        store.setWatchPanelHiddenColumns(project.watchPanelHiddenColumns);
+    }
+    if (project.streamsViewHiddenColumns && Array.isArray(project.streamsViewHiddenColumns)) {
+        store.setStreamsViewHiddenColumns(project.streamsViewHiddenColumns);
+    }
+    if (project.streamsChannelHiddenColumns && Array.isArray(project.streamsChannelHiddenColumns)) {
+        store.setStreamsChannelHiddenColumns(project.streamsChannelHiddenColumns);
+    }
 }
 
 /**
@@ -223,6 +247,11 @@ export function useProjectPersistence() {
     const showStreamPanel = useLogStore(state => state.showStreamPanel);
     const detailPanelHeightPercent = useLogStore(state => state.detailPanelHeightPercent);
     const watchPanelWidthPercent = useLogStore(state => state.watchPanelWidthPercent);
+    const watchPanelColumnWidths = useLogStore(state => state.watchPanelColumnWidths);
+    const streamsViewColumnWidths = useLogStore(state => state.streamsViewColumnWidths);
+    const watchPanelHiddenColumns = useLogStore(state => state.watchPanelHiddenColumns);
+    const streamsViewHiddenColumns = useLogStore(state => state.streamsViewHiddenColumns);
+    const streamsChannelHiddenColumns = useLogStore(state => state.streamsChannelHiddenColumns);
     const theme = useLogStore(state => state.theme);
 
     // Project tracking state from global store (shared across components)
@@ -385,7 +414,8 @@ export function useProjectPersistence() {
         console.log('[ProjectPersistence] Auto-save effect running');
         scheduleSave();
     }, [views, activeViewId, showDetailPanel, showWatchPanel, showStreamPanel,
-        detailPanelHeightPercent, watchPanelWidthPercent, theme, scheduleSave]);
+        detailPanelHeightPercent, watchPanelWidthPercent, watchPanelColumnWidths, streamsViewColumnWidths,
+        watchPanelHiddenColumns, streamsViewHiddenColumns, streamsChannelHiddenColumns, theme, scheduleSave]);
 
     // Helper function to mark project as dirty (exported for use by other actions)
     // Respects skipCount to avoid marking dirty during project load/reset

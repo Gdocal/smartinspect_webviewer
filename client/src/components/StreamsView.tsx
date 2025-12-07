@@ -15,6 +15,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAutoScroll } from './VirtualLogGrid/useAutoScroll';
 import { useScrollDetection } from './VirtualLogGrid/useScrollDetection';
 import { getStreamRowHeight, getFontSize, getHeaderHeight } from './VirtualLogGrid/constants';
+import { ColumnChooserMenu, type ColumnDef } from './ColumnChooserMenu';
+
+// Type for column menu context (which panel the menu is for)
+type ColumnMenuContext = 'entries' | 'channels';
 
 // Density-based sizing configuration - matches FilterBar and WatchPanel
 const DENSITY_CONFIG = {
@@ -47,6 +51,7 @@ const DENSITY_CONFIG = {
         // Status bar
         statusBarHeight: 20,
         statusBarText: 'text-[10px]',
+        filterButtonSize: 'w-2.5 h-2.5',
     },
     default: {
         barHeight: 'h-[36px]',
@@ -71,6 +76,7 @@ const DENSITY_CONFIG = {
         footerText: 'text-xs',
         statusBarHeight: 24,
         statusBarText: 'text-[11px]',
+        filterButtonSize: 'w-3 h-3',
     },
     comfortable: {
         barHeight: 'h-[42px]',
@@ -95,6 +101,7 @@ const DENSITY_CONFIG = {
         footerText: 'text-xs',
         statusBarHeight: 28,
         statusBarText: 'text-xs',
+        filterButtonSize: 'w-3.5 h-3.5',
     },
 };
 
@@ -125,14 +132,36 @@ interface StreamsViewProps {
     selectedEntryId: number | null;
 }
 
+// Column definitions for StreamsView entries grid (right panel)
+const STREAM_COLUMNS: { id: string; label: string }[] = [
+    { id: 'content', label: 'Content' },
+    { id: 'type', label: 'Type' },
+    { id: 'time', label: 'Time' },
+];
+
+// Column definitions for channel list (left panel)
+const CHANNEL_COLUMNS: { id: string; label: string }[] = [
+    { id: 'channel', label: 'Channel' },
+    { id: 'group', label: 'Group' },
+    { id: 'speed', label: '/s' },
+    { id: 'count', label: '#' },
+];
+
 export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps) {
-    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity, autoPausedStreams, removeAutoPausedStream, addManualOverride, streamSubscriptions } = useLogStore();
+    const { streams, streamTotalReceived, clearAllStreams, clearStream, theme, rowDensity, autoPausedStreams, removeAutoPausedStream, addManualOverride, streamSubscriptions, streamsViewColumnWidths, setStreamsViewColumnWidths, streamsViewHiddenColumns, setStreamsViewHiddenColumns, streamsChannelHiddenColumns, setStreamsChannelHiddenColumns } = useLogStore();
     const { pauseAllStreams, resumeAllStreams, pauseStream, resumeStream } = useWebSocket();
     const density = DENSITY_CONFIG[rowDensity];
     const rowHeight = getStreamRowHeight(rowDensity);
     const fontSize = getFontSize(rowDensity);
     const headerHeight = getHeaderHeight(rowDensity);
     const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
+
+    // Column chooser menu state (shared between entries grid and channel list)
+    const [columnMenuState, setColumnMenuState] = useState<{
+        isOpen: boolean;
+        position: { x: number; y: number };
+        context: ColumnMenuContext;
+    }>({ isOpen: false, position: { x: 0, y: 0 }, context: 'entries' });
     const [filterTextByChannel, setFilterTextByChannel] = useState<Record<string, string>>({});
     const [autoScroll, setAutoScroll] = useState(true);
     // Ref to track current autoScroll value for callbacks (avoids stale closure issues)
@@ -213,6 +242,129 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
         document.body.style.cursor = 'ew-resize';
         document.body.style.userSelect = 'none';
     }, [listWidth]);
+
+    // Column resize state
+    // [content (flex weight, not used for resize), type (px), time (px)]
+    const columnWidths = streamsViewColumnWidths;
+    const resizingColRef = useRef<number | null>(null);
+    const colStartXRef = useRef(0);
+    const colStartWidthsRef = useRef<[number, number, number]>([1, 100, 110]);
+
+    // Column resize handler - resizes Type and Time columns (indices 1 and 2)
+    const startColumnResize = useCallback((colIndex: number, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizingColRef.current = colIndex;
+        colStartXRef.current = e.clientX;
+        colStartWidthsRef.current = [...columnWidths] as [number, number, number];
+
+        const handleMouseMove = (moveEvent: MouseEvent) => {
+            if (resizingColRef.current === null) return;
+
+            const deltaX = moveEvent.clientX - colStartXRef.current;
+            const newWidths = [...colStartWidthsRef.current] as [number, number, number];
+            const idx = resizingColRef.current;
+
+            // Minimum width for columns (in pixels)
+            const minWidth = 60;
+
+            if (idx === 1) {
+                // Resizing between Type and Time columns
+                const newTypeWidth = Math.max(minWidth, colStartWidthsRef.current[1] + deltaX);
+                newWidths[1] = newTypeWidth;
+            } else if (idx === 0) {
+                // Resizing between Content and Type - just adjust Type column
+                const newTypeWidth = Math.max(minWidth, colStartWidthsRef.current[1] - deltaX);
+                newWidths[1] = newTypeWidth;
+            }
+
+            setStreamsViewColumnWidths(newWidths);
+        };
+
+        const handleMouseUp = () => {
+            resizingColRef.current = null;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    }, [columnWidths, setStreamsViewColumnWidths]);
+
+    // Column chooser handlers for entries grid (right panel)
+    const handleHeaderContextMenu = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[StreamsView] Entries context menu triggered at', e.clientX, e.clientY);
+        setColumnMenuState({
+            isOpen: true,
+            position: { x: e.clientX, y: e.clientY },
+            context: 'entries',
+        });
+    }, []);
+
+    // Column chooser handlers for channel list (left panel)
+    const handleChannelHeaderContextMenu = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[StreamsView] Channel list context menu triggered at', e.clientX, e.clientY);
+        setColumnMenuState({
+            isOpen: true,
+            position: { x: e.clientX, y: e.clientY },
+            context: 'channels',
+        });
+    }, []);
+
+    const handleToggleColumn = useCallback((columnId: string) => {
+        if (columnMenuState.context === 'channels') {
+            // Toggle channel list column
+            const newHidden = streamsChannelHiddenColumns.includes(columnId)
+                ? streamsChannelHiddenColumns.filter(id => id !== columnId)
+                : [...streamsChannelHiddenColumns, columnId];
+            setStreamsChannelHiddenColumns(newHidden);
+        } else {
+            // Toggle entries grid column
+            const newHidden = streamsViewHiddenColumns.includes(columnId)
+                ? streamsViewHiddenColumns.filter(id => id !== columnId)
+                : [...streamsViewHiddenColumns, columnId];
+            setStreamsViewHiddenColumns(newHidden);
+        }
+    }, [columnMenuState.context, streamsViewHiddenColumns, setStreamsViewHiddenColumns, streamsChannelHiddenColumns, setStreamsChannelHiddenColumns]);
+
+    // Column defs for entries grid (right panel)
+    const columnDefs: ColumnDef[] = useMemo(() =>
+        STREAM_COLUMNS.map(col => ({
+            id: col.id,
+            label: col.label,
+            hidden: streamsViewHiddenColumns.includes(col.id),
+        })),
+        [streamsViewHiddenColumns]
+    );
+
+    // Column defs for channel list (left panel) - exclude 'channel' since it's the primary identifier
+    const channelColumnDefs: ColumnDef[] = useMemo(() =>
+        CHANNEL_COLUMNS
+            .filter(col => col.id !== 'channel') // Channel column is always visible
+            .map(col => ({
+                id: col.id,
+                label: col.label,
+                hidden: streamsChannelHiddenColumns.includes(col.id),
+            })),
+        [streamsChannelHiddenColumns]
+    );
+
+    // Get visible columns in order
+    const visibleStreamColumns = useMemo(() =>
+        STREAM_COLUMNS.filter(col => !streamsViewHiddenColumns.includes(col.id)),
+        [streamsViewHiddenColumns]
+    );
+
+    // Check if channel columns are visible
+    const isChannelColVisible = (colId: string) => !streamsChannelHiddenColumns.includes(colId);
 
     // Snapshot mode handlers
     const isInSnapshotMode = selectedChannel ? (snapshotMode[selectedChannel] || false) : false;
@@ -916,8 +1068,11 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                 </div>
 
                 {/* Column Headers */}
-                <div className={`flex items-center border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700/50 ${density.channelPx} py-1 ${density.headerText} text-slate-500 dark:text-slate-400 flex-shrink-0`}>
-                    {/* Channel header */}
+                <div
+                    className={`flex items-center border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700/50 ${density.channelPx} py-1 ${density.headerText} text-slate-500 dark:text-slate-400 flex-shrink-0`}
+                    onContextMenu={handleChannelHeaderContextMenu}
+                >
+                    {/* Channel header - always visible */}
                     <div
                         className="flex items-center gap-1 min-w-0 flex-1 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200"
                         onClick={() => handleSort('channel')}
@@ -934,13 +1089,107 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                     </div>
 
                     {/* Group header with filter */}
-                    <div className="relative w-16 flex-shrink-0">
+                    {isChannelColVisible('group') && (
+                        <div className="relative w-16 flex-shrink-0">
+                            <div
+                                className="flex items-center gap-1 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200"
+                                onClick={() => handleSort('group')}
+                            >
+                                <span>Group</span>
+                                {sortBy === 'group' && (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        {sortDir === 'asc'
+                                            ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                            : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        }
+                                    </svg>
+                                )}
+                            </div>
+                            {/* Filter icon */}
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setShowGroupFilter(!showGroupFilter); }}
+                                className={`absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-600 ${
+                                    selectedGroups.size > 0 ? 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30' : 'text-slate-400'
+                                }`}
+                                title="Filter by group"
+                            >
+                                <svg className={density.filterButtonSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                                </svg>
+                            </button>
+
+                            {/* Group filter dropdown */}
+                            {showGroupFilter && (
+                                <div
+                                    ref={groupFilterRef}
+                                    className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50"
+                                >
+                                    {/* Search input */}
+                                    <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+                                        <input
+                                            type="text"
+                                            value={groupFilterText}
+                                            onChange={(e) => setGroupFilterText(e.target.value)}
+                                            placeholder="Filter groups..."
+                                            className="w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                                            autoFocus
+                                        />
+                                    </div>
+
+                                    {/* Select All / Unselect All */}
+                                    <div className="flex gap-2 p-2 border-b border-slate-200 dark:border-slate-700 text-xs">
+                                        <button
+                                            onClick={selectAllGroups}
+                                            className="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                            Select All
+                                        </button>
+                                        <span className="text-slate-300 dark:text-slate-600">|</span>
+                                        <button
+                                            onClick={unselectAllGroups}
+                                            className="text-blue-600 dark:text-blue-400 hover:underline"
+                                        >
+                                            Unselect All
+                                        </button>
+                                    </div>
+
+                                    {/* Checkbox list */}
+                                    <div className="max-h-48 overflow-y-auto p-2">
+                                        {filteredGroups.map(group => (
+                                            <label
+                                                key={group || '__empty__'}
+                                                className="flex items-center gap-2 py-1 px-1 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedGroups.size === 0 || selectedGroups.has(group)}
+                                                    onChange={() => toggleGroup(group)}
+                                                    className="rounded border-slate-300 dark:border-slate-600"
+                                                />
+                                                <span className="text-slate-700 dark:text-slate-300 truncate">
+                                                    {group || '(no group)'}
+                                                </span>
+                                            </label>
+                                        ))}
+                                        {filteredGroups.length === 0 && (
+                                            <div className="text-xs text-slate-400 dark:text-slate-500 py-2 text-center">
+                                                No groups found
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Speed header */}
+                    {isChannelColVisible('speed') && (
                         <div
-                            className="flex items-center gap-1 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200"
-                            onClick={() => handleSort('group')}
+                            className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
+                            onClick={() => handleSort('speed')}
                         >
-                            <span>Group</span>
-                            {sortBy === 'group' && (
+                            <span>/s</span>
+                            {sortBy === 'speed' && (
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     {sortDir === 'asc'
                                         ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -949,113 +1198,25 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                 </svg>
                             )}
                         </div>
-                        {/* Filter icon */}
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setShowGroupFilter(!showGroupFilter); }}
-                            className={`absolute right-0 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-600 ${
-                                selectedGroups.size > 0 ? 'text-purple-600 dark:text-purple-400' : ''
-                            }`}
-                            title="Filter by group"
-                        >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                            </svg>
-                        </button>
-
-                        {/* Group filter dropdown */}
-                        {showGroupFilter && (
-                            <div
-                                ref={groupFilterRef}
-                                className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md shadow-lg z-50"
-                            >
-                                {/* Search input */}
-                                <div className="p-2 border-b border-slate-200 dark:border-slate-700">
-                                    <input
-                                        type="text"
-                                        value={groupFilterText}
-                                        onChange={(e) => setGroupFilterText(e.target.value)}
-                                        placeholder="Filter groups..."
-                                        className="w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                                        autoFocus
-                                    />
-                                </div>
-
-                                {/* Select All / Unselect All */}
-                                <div className="flex gap-2 p-2 border-b border-slate-200 dark:border-slate-700 text-xs">
-                                    <button
-                                        onClick={selectAllGroups}
-                                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                                    >
-                                        Select All
-                                    </button>
-                                    <span className="text-slate-300 dark:text-slate-600">|</span>
-                                    <button
-                                        onClick={unselectAllGroups}
-                                        className="text-blue-600 dark:text-blue-400 hover:underline"
-                                    >
-                                        Unselect All
-                                    </button>
-                                </div>
-
-                                {/* Checkbox list */}
-                                <div className="max-h-48 overflow-y-auto p-2">
-                                    {filteredGroups.map(group => (
-                                        <label
-                                            key={group || '__empty__'}
-                                            className="flex items-center gap-2 py-1 px-1 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedGroups.size === 0 || selectedGroups.has(group)}
-                                                onChange={() => toggleGroup(group)}
-                                                className="rounded border-slate-300 dark:border-slate-600"
-                                            />
-                                            <span className="text-slate-700 dark:text-slate-300 truncate">
-                                                {group || '(no group)'}
-                                            </span>
-                                        </label>
-                                    ))}
-                                    {filteredGroups.length === 0 && (
-                                        <div className="text-xs text-slate-400 dark:text-slate-500 py-2 text-center">
-                                            No groups found
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Speed header */}
-                    <div
-                        className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
-                        onClick={() => handleSort('speed')}
-                    >
-                        <span>/s</span>
-                        {sortBy === 'speed' && (
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                {sortDir === 'asc'
-                                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                }
-                            </svg>
-                        )}
-                    </div>
+                    )}
 
                     {/* Count header */}
-                    <div
-                        className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
-                        onClick={() => handleSort('count')}
-                    >
-                        <span>#</span>
-                        {sortBy === 'count' && (
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                {sortDir === 'asc'
-                                    ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                    : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                }
-                            </svg>
-                        )}
-                    </div>
+                    {isChannelColVisible('count') && (
+                        <div
+                            className="w-10 text-right flex-shrink-0 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 flex items-center justify-end gap-1"
+                            onClick={() => handleSort('count')}
+                        >
+                            <span>#</span>
+                            {sortBy === 'count' && (
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    {sortDir === 'asc'
+                                        ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                        : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    }
+                                </svg>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* Channel list */}
@@ -1168,35 +1329,41 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                     </div>
 
                                     {/* Group column */}
-                                    <span className={`${density.speedText} w-16 truncate flex-shrink-0 ${
-                                        isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'
-                                    }`}>
-                                        {group || '-'}
-                                    </span>
+                                    {isChannelColVisible('group') && (
+                                        <span className={`${density.speedText} w-16 truncate flex-shrink-0 ${
+                                            isSelected ? 'text-purple-200' : 'text-slate-400 dark:text-slate-500'
+                                        }`}>
+                                            {group || '-'}
+                                        </span>
+                                    )}
 
                                     {/* Speed column */}
-                                    <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
-                                        isSelected
-                                            ? 'text-purple-200'
-                                            : isPaused
-                                                ? 'text-slate-400 dark:text-slate-500'
-                                                : speed > 0
-                                                    ? 'text-green-600 dark:text-green-400'
-                                                    : 'text-slate-400 dark:text-slate-500'
-                                    }`}>
-                                        {speed.toFixed(1)}/s
-                                    </span>
+                                    {isChannelColVisible('speed') && (
+                                        <span className={`${density.speedText} font-mono tabular-nums w-10 text-right flex-shrink-0 ${
+                                            isSelected
+                                                ? 'text-purple-200'
+                                                : isPaused
+                                                    ? 'text-slate-400 dark:text-slate-500'
+                                                    : speed > 0
+                                                        ? 'text-green-600 dark:text-green-400'
+                                                        : 'text-slate-400 dark:text-slate-500'
+                                        }`}>
+                                            {speed.toFixed(1)}/s
+                                        </span>
+                                    )}
 
                                     {/* Entry count badge */}
-                                    <div className="w-10 flex-shrink-0 flex justify-end">
-                                        <span className={`${density.badgeText} px-1 py-0.5 rounded text-center min-w-[2rem] ${
-                                            isSelected
-                                                ? 'bg-purple-600 text-purple-100'
-                                                : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
-                                        }`}>
-                                            {count}
-                                        </span>
-                                    </div>
+                                    {isChannelColVisible('count') && (
+                                        <div className="w-10 flex-shrink-0 flex justify-end">
+                                            <span className={`${density.badgeText} px-1 py-0.5 rounded text-center min-w-[2rem] ${
+                                                isSelected
+                                                    ? 'bg-purple-600 text-purple-100'
+                                                    : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'
+                                            }`}>
+                                                {count}
+                                            </span>
+                                        </div>
+                                    )}
 
                                 </button>
                             );
@@ -1467,16 +1634,36 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         onKeyDown={handleKeyDown}
                     >
                         {/* Header row */}
-                        <div className="vlg-header">
-                            <div className="vlg-header-cell" style={{ flex: 1, minWidth: 200 }}>
-                                Content
-                            </div>
-                            <div className="vlg-header-cell" style={{ width: 100 }}>
-                                Type
-                            </div>
-                            <div className="vlg-header-cell" style={{ width: 110 }}>
-                                Time
-                            </div>
+                        <div className="vlg-header" onContextMenu={handleHeaderContextMenu}>
+                            {visibleStreamColumns.map((col, idx) => {
+                                const isLast = idx === visibleStreamColumns.length - 1;
+                                const originalIdx = STREAM_COLUMNS.findIndex(c => c.id === col.id);
+
+                                // Determine style based on column type
+                                let style: React.CSSProperties;
+                                if (col.id === 'content') {
+                                    style = { flex: 1, minWidth: 100, position: 'relative' };
+                                } else if (col.id === 'type') {
+                                    style = { width: columnWidths[1], minWidth: 60, position: 'relative', flexShrink: 0 };
+                                } else {
+                                    style = { width: columnWidths[2], minWidth: 60, flexShrink: 0 };
+                                }
+
+                                return (
+                                    <div key={col.id} className="vlg-header-cell" style={style}>
+                                        {col.label}
+                                        {/* Resize handle (not on last column) */}
+                                        {!isLast && (
+                                            <div
+                                                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 group"
+                                                onMouseDown={(e) => startColumnResize(originalIdx, e)}
+                                            >
+                                                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-slate-400 dark:bg-slate-500 group-hover:bg-blue-500 rounded" />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         {/* Virtualized body */}
@@ -1529,27 +1716,25 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                                                 }
                                             }}
                                         >
-                                            {/* Content cell */}
-                                            <div
-                                                className="vlg-cell"
-                                                style={{ flex: 1, minWidth: 200, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                            >
-                                                <StreamContentCell data={entry.data} />
-                                            </div>
-                                            {/* Type cell */}
-                                            <div
-                                                className="vlg-cell"
-                                                style={{ width: 100, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--vlg-text-muted)' }}
-                                            >
-                                                {entry.streamType}
-                                            </div>
-                                            {/* Time cell */}
-                                            <div
-                                                className="vlg-cell"
-                                                style={{ width: 110, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                            >
-                                                {formatTime(entry.timestamp)}
-                                            </div>
+                                            {visibleStreamColumns.map(col => {
+                                                // Determine style based on column type
+                                                let style: React.CSSProperties;
+                                                if (col.id === 'content') {
+                                                    style = { flex: 1, minWidth: 100, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+                                                } else if (col.id === 'type') {
+                                                    style = { width: columnWidths[1], minWidth: 60, flexShrink: 0, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--vlg-text-muted)' };
+                                                } else {
+                                                    style = { width: columnWidths[2], minWidth: 60, flexShrink: 0, padding: '0 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+                                                }
+
+                                                return (
+                                                    <div key={col.id} className="vlg-cell" style={style}>
+                                                        {col.id === 'content' && <StreamContentCell data={entry.data} />}
+                                                        {col.id === 'type' && entry.streamType}
+                                                        {col.id === 'time' && formatTime(entry.timestamp)}
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     );
                                 })}
@@ -1681,6 +1866,16 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
             {/* Highlight rules modal */}
             {showHighlightRules && (
                 <HighlightRulesPanel onClose={() => setShowHighlightRules(false)} />
+            )}
+
+            {/* Column chooser menu - works for both entries grid and channel list */}
+            {columnMenuState.isOpen && (
+                <ColumnChooserMenu
+                    columns={columnMenuState.context === 'channels' ? channelColumnDefs : columnDefs}
+                    position={columnMenuState.position}
+                    onClose={() => setColumnMenuState({ isOpen: false, position: { x: 0, y: 0 }, context: 'entries' })}
+                    onToggleColumn={handleToggleColumn}
+                />
             )}
         </div>
     );

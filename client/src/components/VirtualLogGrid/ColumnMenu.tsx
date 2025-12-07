@@ -6,7 +6,7 @@ interface ColumnMenuProps {
   position: { x: number; y: number };
   onClose: () => void;
   onToggleColumn: (columnId: string) => void;
-  onMoveColumn: (columnId: string, direction: 'left' | 'right') => void;
+  onMoveColumn?: (columnId: string, direction: 'left' | 'right') => void;
   targetColumnId?: string;
 }
 
@@ -15,8 +15,6 @@ export const ColumnMenu = memo(function ColumnMenu({
   position,
   onClose,
   onToggleColumn,
-  onMoveColumn,
-  targetColumnId,
 }: ColumnMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -59,11 +57,6 @@ export const ColumnMenu = memo(function ColumnMenu({
     }
   }, [position]);
 
-  const visibleColumns = columns.filter(col => !col.hidden);
-  const targetIndex = targetColumnId
-    ? visibleColumns.findIndex(col => col.id === targetColumnId)
-    : -1;
-
   return (
     <div
       ref={menuRef}
@@ -91,33 +84,6 @@ export const ColumnMenu = memo(function ColumnMenu({
           </label>
         ))}
       </div>
-
-      {/* Move column section (only if right-clicked on a specific column) */}
-      {targetColumnId && (
-        <div className="vlg-menu-section">
-          <div className="vlg-menu-section-title">Move Column</div>
-          <button
-            className="vlg-menu-item"
-            disabled={targetIndex <= 0}
-            onClick={() => {
-              onMoveColumn(targetColumnId, 'left');
-              onClose();
-            }}
-          >
-            Move Left
-          </button>
-          <button
-            className="vlg-menu-item"
-            disabled={targetIndex >= visibleColumns.length - 1}
-            onClick={() => {
-              onMoveColumn(targetColumnId, 'right');
-              onClose();
-            }}
-          >
-            Move Right
-          </button>
-        </div>
-      )}
     </div>
   );
 });

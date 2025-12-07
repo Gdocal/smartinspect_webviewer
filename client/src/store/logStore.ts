@@ -82,6 +82,7 @@ export interface WatchValue {
     timestamp: string;
     session?: string;
     watchType?: number;
+    group?: string;  // Optional group for organizing watches
 }
 
 export interface Filter {
@@ -262,6 +263,13 @@ export interface Project {
     };
     limits: ProjectLimits;
     theme: 'light' | 'dark';
+    // Column widths for panels (percentages)
+    watchPanelColumnWidths?: [number, number, number, number];  // [name, group, value, updated]
+    streamsViewColumnWidths?: [number, number, number];  // [content (flex), type (px), time (px)]
+    // Hidden columns for panels
+    watchPanelHiddenColumns?: string[];
+    streamsViewHiddenColumns?: string[];
+    streamsChannelHiddenColumns?: string[];
 }
 
 // Project summary (without full project data, for listing)
@@ -404,6 +412,15 @@ interface LogState {
     detailPanelHeightPercent: number;
     watchPanelWidthPercent: number;
 
+    // Column widths for panels (percentages)
+    watchPanelColumnWidths: [number, number, number, number];  // [name, group, value, updated]
+    streamsViewColumnWidths: [number, number, number];  // [content (flex weight), type (px), time (px)]
+
+    // Hidden columns for panels (column ids)
+    watchPanelHiddenColumns: string[];  // e.g., ['group', 'updated']
+    streamsViewHiddenColumns: string[];  // e.g., ['type'] - right panel (entries grid)
+    streamsChannelHiddenColumns: string[];  // e.g., ['group', 'speed'] - left panel (channel list)
+
     // Actions
     setConnected: (connected: boolean) => void;
     setConnecting: (connecting: boolean) => void;
@@ -505,6 +522,11 @@ interface LogState {
     // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
     setWatchPanelWidthPercent: (percent: number) => void;
+    setWatchPanelColumnWidths: (widths: [number, number, number, number]) => void;
+    setStreamsViewColumnWidths: (widths: [number, number, number]) => void;
+    setWatchPanelHiddenColumns: (columns: string[]) => void;
+    setStreamsViewHiddenColumns: (columns: string[]) => void;
+    setStreamsChannelHiddenColumns: (columns: string[]) => void;
 
     // Project tracking actions
     setLoadedProjectId: (id: string | null) => void;
@@ -619,6 +641,15 @@ export const useLogStore = create<LogState>((set, get) => ({
     // Percentage-based panel sizes (defaults: detail=25%, watch=20%)
     detailPanelHeightPercent: 25,
     watchPanelWidthPercent: 20,
+
+    // Column widths for panels (percentages)
+    watchPanelColumnWidths: [30, 15, 40, 15] as [number, number, number, number],  // [name, group, value, updated]
+    streamsViewColumnWidths: [1, 100, 110] as [number, number, number],  // [content (flex), type (px), time (px)]
+
+    // Hidden columns for panels (empty = all visible)
+    watchPanelHiddenColumns: [] as string[],
+    streamsViewHiddenColumns: [] as string[],
+    streamsChannelHiddenColumns: [] as string[],
 
     // Project tracking (initialized by useProjectPersistence)
     loadedProjectId: null,
@@ -1040,6 +1071,21 @@ export const useLogStore = create<LogState>((set, get) => ({
     }),
     setWatchPanelWidthPercent: (percent) => set({
         watchPanelWidthPercent: Math.max(10, Math.min(40, percent)) // Clamp 10-40%
+    }),
+    setWatchPanelColumnWidths: (widths) => set({
+        watchPanelColumnWidths: widths
+    }),
+    setStreamsViewColumnWidths: (widths) => set({
+        streamsViewColumnWidths: widths
+    }),
+    setWatchPanelHiddenColumns: (columns) => set({
+        watchPanelHiddenColumns: columns
+    }),
+    setStreamsViewHiddenColumns: (columns) => set({
+        streamsViewHiddenColumns: columns
+    }),
+    setStreamsChannelHiddenColumns: (columns) => set({
+        streamsChannelHiddenColumns: columns
     }),
 
     // Project tracking actions
