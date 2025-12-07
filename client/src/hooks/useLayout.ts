@@ -80,6 +80,19 @@ export function useLayout() {
     const setDetailPanelHeightPercent = useLogStore(state => state.setDetailPanelHeightPercent);
     const setWatchPanelWidthPercent = useLogStore(state => state.setWatchPanelWidthPercent);
 
+    // Track window dimensions to trigger re-renders on resize
+    const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+    // Listen for window resize events
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+        };
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     // Track previous room/user to detect changes
     const prevRoomRef = useRef(currentRoom);
     const prevUserRef = useRef(currentUser);
@@ -168,16 +181,18 @@ export function useLayout() {
     }, [currentRoom, currentUser, setDetailPanelHeightPercent, setWatchPanelWidthPercent]);
 
     // Convert percentage to pixels for detail panel height
+    // Uses tracked windowSize for reactivity on window resize
     const getDetailPanelHeightPx = useCallback((containerHeight?: number): number => {
-        const height = containerHeight ?? (window.innerHeight - HEADER_HEIGHT);
+        const height = containerHeight ?? (windowSize.height - HEADER_HEIGHT);
         return Math.round((detailPanelHeightPercent / 100) * height);
-    }, [detailPanelHeightPercent]);
+    }, [detailPanelHeightPercent, windowSize.height]);
 
     // Convert percentage to pixels for watch panel width
+    // Uses tracked windowSize for reactivity on window resize
     const getWatchPanelWidthPx = useCallback((containerWidth?: number): number => {
-        const width = containerWidth ?? window.innerWidth;
+        const width = containerWidth ?? windowSize.width;
         return Math.round((watchPanelWidthPercent / 100) * width);
-    }, [watchPanelWidthPercent]);
+    }, [watchPanelWidthPercent, windowSize.width]);
 
     // Update detail panel height from pixel value (for resize handlers)
     const updateDetailPanelHeightFromPx = useCallback((heightPx: number, containerHeight?: number) => {
