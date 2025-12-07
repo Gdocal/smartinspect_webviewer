@@ -25,6 +25,10 @@ export function useScrollDetection({
 
     // Track wheel scrolling UP (user wants to see history)
     const handleWheel = (e: WheelEvent) => {
+      // Only trigger if there's actually content to scroll (scrollbar exists)
+      const hasScrollbar = scrollElement.scrollHeight > scrollElement.clientHeight;
+      if (!hasScrollbar) return;
+
       if (e.deltaY < 0) {
         // Scrolling UP = negative deltaY
         userScrolledUpRef.current = true;

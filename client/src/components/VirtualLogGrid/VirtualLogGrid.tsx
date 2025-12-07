@@ -407,6 +407,14 @@ export function VirtualLogGrid({
     onStuckToBottomChange?.(stuckToBottom);
   }, [stuckToBottom, onStuckToBottomChange]);
 
+  // Reset scroll state when entries are cleared
+  useEffect(() => {
+    if (entries.length === 0) {
+      setStuckToBottom(true);
+      setRowsBelowViewport(0);
+    }
+  }, [entries.length]);
+
   // Calculate rows below viewport dynamically on scroll and entries change
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -987,7 +995,7 @@ export function VirtualLogGrid({
       )}
 
       {/* Floating "Go to bottom" button - shows when autoscroll is enabled but user scrolled up */}
-      {autoScroll && !stuckToBottom && (
+      {autoScroll && !stuckToBottom && hasScrollbar && entries.length > 0 && (
         <button
           onClick={handleJumpToBottom}
           className="vlg-jump-to-bottom"

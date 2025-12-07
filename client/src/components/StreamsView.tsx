@@ -210,6 +210,9 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
     // Track number of rows below visible viewport (updated on scroll)
     const [rowsBelowViewport, setRowsBelowViewport] = useState(0);
 
+    // Track if scrollbar is visible
+    const [hasScrollbar, setHasScrollbar] = useState(false);
+
     // Resizable panel width
     const [listWidth, setListWidth] = useState(280);
     const resizingRef = useRef(false);
@@ -998,6 +1001,34 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
 
         return () => container.removeEventListener('scroll', calculateRowsBelow);
     }, [displayedEntries.length, rowHeight]);
+
+    // Detect scrollbar visibility
+    useEffect(() => {
+        const container = parentRef.current;
+        if (!container) return;
+
+        const checkScrollbar = () => {
+            const hasVerticalScrollbar = container.scrollHeight > container.clientHeight;
+            setHasScrollbar(hasVerticalScrollbar);
+        };
+
+        // Check initially and when entries change
+        checkScrollbar();
+
+        // Use ResizeObserver to detect size changes
+        const resizeObserver = new ResizeObserver(checkScrollbar);
+        resizeObserver.observe(container);
+
+        return () => resizeObserver.disconnect();
+    }, [displayedEntries.length]);
+
+    // Reset scroll state when entries are cleared
+    useEffect(() => {
+        if (displayedEntries.length === 0) {
+            setStuckToBottom(true);
+            setRowsBelowViewport(0);
+        }
+    }, [displayedEntries.length]);
 
     // Handler for "Jump to Live" button - exits snapshot mode
     const handleJumpToLive = useCallback(() => {
@@ -1821,7 +1852,7 @@ export function StreamsView({ onSelectEntry, selectedEntryId }: StreamsViewProps
                         )}
 
                         {/* Floating "Go to bottom" button - shows when not at bottom (regardless of autoscroll state) */}
-                        {!isInSnapshotMode && !stuckToBottom && rowsBelowViewport > 0 && (
+                        {!isInSnapshotMode && !stuckToBottom && hasScrollbar && rowsBelowViewport > 0 && (
                             <button
                                 onClick={handleJumpToBottom}
                                 className="vlg-jump-to-bottom"
