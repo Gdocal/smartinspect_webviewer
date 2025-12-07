@@ -68,11 +68,32 @@ export function Tooltip({ content, children, position = 'top', delay = 200, disa
         }
     }, [isVisible, position]);
 
+    // Hide tooltip when disabled changes to true
+    useEffect(() => {
+        if (disabled) {
+            hideTooltip();
+        }
+    }, [disabled]);
+
+    // Hide tooltip on any mousedown outside trigger (handles click-away scenarios)
+    useEffect(() => {
+        if (!isVisible) return;
+
+        function handleMouseDown(event: MouseEvent) {
+            if (triggerRef.current && !triggerRef.current.contains(event.target as Node)) {
+                hideTooltip();
+            }
+        }
+        document.addEventListener('mousedown', handleMouseDown);
+        return () => document.removeEventListener('mousedown', handleMouseDown);
+    }, [isVisible]);
+
     useEffect(() => {
         return () => {
             if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
             }
+            setIsVisible(false);
         };
     }, []);
 
