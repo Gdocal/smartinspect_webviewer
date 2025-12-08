@@ -6,18 +6,12 @@ import { useState, useRef, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
 import { getSettings } from '../hooks/useSettings';
 import { Tooltip } from './Tooltip';
-// Format relative time in compact format
+// Format relative time in compact, scannable format
 function formatRelativeTime(timestamp: string | undefined): string {
     if (!timestamp) return '';
     try {
         const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
-        if (seconds < 0) return 'now';
-        if (seconds < 60) return `${seconds}s`;
-        if (seconds < 600) {  // Under 10 minutes: show minutes + seconds
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            return s > 0 ? `${m}m ${s}s` : `${m}m`;
-        }
+        if (seconds < 30) return 'now';
         if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
         if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
         return `${Math.floor(seconds / 86400)}d`;
@@ -81,12 +75,12 @@ export function RoomSelector() {
         }
     }, [connected]);
 
-    // Live time updates - tick every second when dropdown is open
+    // Live time updates - tick every 30 seconds when dropdown is open
     useEffect(() => {
         if (!isOpen) return;
         const interval = setInterval(() => {
             setTickCount(c => c + 1);
-        }, 1000);
+        }, 30000);
         return () => clearInterval(interval);
     }, [isOpen]);
 
