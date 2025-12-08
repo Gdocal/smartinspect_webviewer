@@ -6,13 +6,21 @@ import { useState, useRef, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
 import { getSettings } from '../hooks/useSettings';
 import { Tooltip } from './Tooltip';
-import { formatDistanceToNow } from 'date-fns';
-
 // Format relative time in compact format
 function formatRelativeTime(timestamp: string | undefined): string {
     if (!timestamp) return '';
     try {
-        return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+        const seconds = Math.floor((Date.now() - new Date(timestamp).getTime()) / 1000);
+        if (seconds < 0) return 'now';
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 600) {  // Under 10 minutes: show minutes + seconds
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return s > 0 ? `${m}m ${s}s` : `${m}m`;
+        }
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+        return `${Math.floor(seconds / 86400)}d`;
     } catch {
         return '';
     }
@@ -201,7 +209,7 @@ export function RoomSelector() {
 
             {/* Dropdown menu */}
             {isOpen && (
-                <div className="absolute bottom-full mb-1 left-0 bg-slate-700 rounded-lg shadow-lg border border-slate-600 min-w-[180px] py-1 z-50">
+                <div className="absolute bottom-full mb-1 left-0 bg-slate-700 rounded-lg shadow-lg border border-slate-600 min-w-[210px] py-1 z-50">
                     <div className="px-2 py-1 text-[10px] text-slate-400 uppercase tracking-wider">
                         Rooms
                     </div>
