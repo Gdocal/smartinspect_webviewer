@@ -277,6 +277,18 @@ class ConnectionManager {
     }
 
     /**
+     * Broadcast a message to all viewers (all rooms)
+     */
+    broadcastToAll(message) {
+        const data = JSON.stringify(message);
+        for (const [ws] of this.viewers) {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(data);
+            }
+        }
+    }
+
+    /**
      * Send a message to a specific viewer
      */
     send(ws, message) {

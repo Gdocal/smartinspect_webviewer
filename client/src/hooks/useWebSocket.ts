@@ -420,6 +420,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         console.log('[WS] Connecting to:', url);
         const ws = new WebSocket(url);
         wsRef.current = ws;
+        // Expose WebSocket for ClientsModal live updates
+        (window as unknown as { __siWebSocket?: WebSocket }).__siWebSocket = ws;
 
         ws.onopen = async () => {
             console.log('[WS] Connected to room:', currentRoomValue);

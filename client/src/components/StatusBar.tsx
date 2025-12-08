@@ -9,9 +9,10 @@ import { useProjectPersistence } from '../hooks/useProjectPersistence';
 
 interface StatusBarProps {
     onServerInfoClick?: () => void;
+    onClientsClick?: () => void;
 }
 
-export function StatusBar({ onServerInfoClick }: StatusBarProps) {
+export function StatusBar({ onServerInfoClick, onClientsClick }: StatusBarProps) {
     const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, limits, roomSwitching, authRequired, currentUser, theme, toggleTheme, tcpClientCount } = useLogStore();
     const { markDirty } = useProjectPersistence();
 
@@ -116,15 +117,18 @@ export function StatusBar({ onServerInfoClick }: StatusBarProps) {
                 {/* Separator */}
                 <span className="text-slate-700">|</span>
 
-                {/* TCP Client count (log sources) */}
-                <Tooltip content="Number of log sources connected to this room" position="top">
-                    <div className="flex items-center gap-1.5 text-slate-400 cursor-default">
+                {/* TCP Client count (log sources) - clickable to show details */}
+                <Tooltip content="Click to view connected log sources" position="top">
+                    <button
+                        onClick={onClientsClick}
+                        className="flex items-center gap-1.5 text-slate-400 hover:text-slate-200 transition-colors"
+                    >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                         <span className="text-slate-300 font-mono tabular-nums">{tcpClientCount}</span>
                         <span className="text-slate-500">{tcpClientCount === 1 ? 'source' : 'sources'}</span>
-                    </div>
+                    </button>
                 </Tooltip>
 
                 {/* Separator */}

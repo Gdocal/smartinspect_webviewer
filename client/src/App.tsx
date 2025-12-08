@@ -59,6 +59,7 @@ import { ViewTabs, ViewGridContainer } from './components/ViewTabs';
 import { StatusBar } from './components/StatusBar';
 import { StreamsView } from './components/StreamsView';
 import { ServerInfoModal } from './components/ServerInfoModal';
+import { ClientsModal } from './components/ClientsModal';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ProjectDropdown } from './components/ProjectDropdown';
 import { AutoPauseNotification } from './components/AutoPauseNotification';
@@ -118,6 +119,7 @@ export function App() {
         setSelectedStreamEntryId(entry?.id || null);
     }, [setSelectedStreamEntryId]);
     const [showServerInfo, setShowServerInfo] = useState(false);
+    const [showClients, setShowClients] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
 
     // PWA install
@@ -369,6 +371,7 @@ export function App() {
             {/* Status bar */}
             <StatusBar
                 onServerInfoClick={() => setShowServerInfo(true)}
+                onClientsClick={() => setShowClients(true)}
             />
 
 
@@ -376,6 +379,12 @@ export function App() {
             <ServerInfoModal
                 isOpen={showServerInfo}
                 onClose={() => setShowServerInfo(false)}
+            />
+
+            {/* Clients modal */}
+            <ClientsModal
+                isOpen={showClients}
+                onClose={() => setShowClients(false)}
             />
 
             {/* Settings modal */}

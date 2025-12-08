@@ -18,6 +18,7 @@ const { RoomManager } = require('./room-manager');
 const { SettingsDB } = require('./settings-db');
 const { PacketType, ControlCommandType, Level, LogEntryType } = require('./packet-parser');
 const { registerQueryRoutes } = require('./query-api');
+const { connectionLogger } = require('./connection-logger');
 
 // Configuration from environment
 const config = {
@@ -327,6 +328,26 @@ app.get('/api/watches/:name/history', (req, res) => {
  */
 app.get('/api/clients', (req, res) => {
     res.json(tcpServer.getClients());
+});
+
+/**
+ * GET /api/viewers - Get connected viewers (WebSocket clients)
+ */
+app.get('/api/viewers', (req, res) => {
+    res.json(connectionManager.getViewers());
+});
+
+/**
+ * GET /api/connections/history - Get connection event history
+ * Query params: type (source|viewer), room, limit
+ */
+app.get('/api/connections/history', (req, res) => {
+    const { type, room, limit } = req.query;
+    res.json(connectionLogger.getHistory({
+        type,
+        room,
+        limit: limit ? parseInt(limit, 10) : undefined
+    }));
 });
 
 /**
@@ -1048,6 +1069,14 @@ const connectionManager = new ConnectionManager({
     roomManager: roomManager,
     onViewerConnect: (viewerInfo) => {
         console.log(`[Server] Viewer ${viewerInfo.id} connected to room: ${viewerInfo.room}`);
+        // Log viewer connection event
+        const event = connectionLogger.logViewerConnect(viewerInfo);
+        // Broadcast connection event globally for live updates
+        connectionManager.broadcastToAll({
+            type: 'connectionEvent',
+            data: event
+        });
+
         // Send initial state for the viewer's room
         const room = roomManager.getOrCreate(viewerInfo.room);
         const ws = [...connectionManager.viewers.entries()]
@@ -1075,6 +1104,16 @@ const connectionManager = new ConnectionManager({
                 console.log(`[Server] Auto-subscribed viewer ${viewerInfo.id} to ${existingChannels.length} existing channel(s)`);
             }
         }
+    },
+    onViewerDisconnect: (viewerInfo) => {
+        console.log(`[Server] Viewer ${viewerInfo.id} disconnected from room: ${viewerInfo.room}`);
+        // Log viewer disconnection event
+        const event = connectionLogger.logViewerDisconnect(viewerInfo);
+        // Broadcast connection event globally for live updates
+        connectionManager.broadcastToAll({
+            type: 'connectionEvent',
+            data: event
+        });
     },
     onViewerMessage: (msg, viewerInfo, ws) => {
         const room = roomManager.getOrCreate(viewerInfo.room);
@@ -1210,16 +1249,32 @@ const tcpServer = new TcpLogServer({
     },
     onClientConnect: (clientInfo) => {
         console.log(`[Server] Log source ${clientInfo.id} connected: ${clientInfo.address} -> room: ${clientInfo.room}`);
+        // Log connection event
+        const event = connectionLogger.logSourceConnect(clientInfo);
+        // Broadcast to room viewers
         connectionManager.broadcastToRoom(clientInfo.room, {
             type: 'clientConnect',
             data: { id: clientInfo.id, address: clientInfo.address, room: clientInfo.room }
         });
+        // Broadcast connection event globally for live updates
+        connectionManager.broadcastToAll({
+            type: 'connectionEvent',
+            data: event
+        });
     },
     onClientDisconnect: (clientInfo) => {
         console.log(`[Server] Log source ${clientInfo.id} disconnected from room: ${clientInfo.room}`);
+        // Log disconnection event
+        const event = connectionLogger.logSourceDisconnect(clientInfo);
+        // Broadcast to room viewers
         connectionManager.broadcastToRoom(clientInfo.room, {
             type: 'clientDisconnect',
             data: { id: clientInfo.id }
+        });
+        // Broadcast connection event globally for live updates
+        connectionManager.broadcastToAll({
+            type: 'connectionEvent',
+            data: event
         });
     },
     onClientRoomChange: (clientInfo, oldRoom, newRoom) => {
