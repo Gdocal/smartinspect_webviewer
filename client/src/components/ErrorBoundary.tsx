@@ -1,9 +1,12 @@
 /**
  * ErrorBoundary - Catches React errors and shows a friendly message
  * Prevents white screen on crashes (e.g., network changes, HMR failures)
+ * Auto-refreshes after 5 seconds
  */
 
 import { Component, ReactNode } from 'react';
+
+const AUTO_REFRESH_SECONDS = 5;
 
 interface Props {
     children: ReactNode;
@@ -12,24 +15,59 @@ interface Props {
 interface State {
     hasError: boolean;
     error: Error | null;
+    countdown: number;
+    autoRefreshCancelled: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
+    private countdownInterval: ReturnType<typeof setInterval> | null = null;
+
     constructor(props: Props) {
         super(props);
-        this.state = { hasError: false, error: null };
+        this.state = {
+            hasError: false,
+            error: null,
+            countdown: AUTO_REFRESH_SECONDS,
+            autoRefreshCancelled: false
+        };
     }
 
-    static getDerivedStateFromError(error: Error): State {
-        return { hasError: true, error };
+    static getDerivedStateFromError(error: Error): Partial<State> {
+        return { hasError: true, error, countdown: AUTO_REFRESH_SECONDS, autoRefreshCancelled: false };
     }
 
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
         console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+        this.startCountdown();
+    }
+
+    startCountdown = () => {
+        this.countdownInterval = setInterval(() => {
+            this.setState(prev => {
+                if (prev.autoRefreshCancelled) {
+                    if (this.countdownInterval) clearInterval(this.countdownInterval);
+                    return prev;
+                }
+                if (prev.countdown <= 1) {
+                    window.location.reload();
+                    return prev;
+                }
+                return { ...prev, countdown: prev.countdown - 1 };
+            });
+        }, 1000);
+    };
+
+    componentWillUnmount() {
+        if (this.countdownInterval) clearInterval(this.countdownInterval);
     }
 
     handleRefresh = () => {
         window.location.reload();
+    };
+
+    handleCancelAutoRefresh = () => {
+        this.setState({ autoRefreshCancelled: true });
+        if (this.countdownInterval) clearInterval(this.countdownInterval);
     };
 
     render() {
@@ -48,12 +86,34 @@ export class ErrorBoundary extends Component<Props, State> {
                         <p className="text-slate-400 text-sm mb-6">
                             The application encountered an error. This can happen due to network changes or connection issues.
                         </p>
-                        <button
-                            onClick={this.handleRefresh}
-                            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
-                        >
-                            Refresh Page
-                        </button>
+
+                        {!this.state.autoRefreshCancelled ? (
+                            <div className="space-y-3">
+                                <button
+                                    onClick={this.handleRefresh}
+                                    className="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
+                                >
+                                    Refresh Now
+                                </button>
+                                <div className="flex items-center justify-center gap-2 text-slate-500 text-sm">
+                                    <span>Auto-refresh in {this.state.countdown}s</span>
+                                    <button
+                                        onClick={this.handleCancelAutoRefresh}
+                                        className="text-slate-400 hover:text-slate-300 underline"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={this.handleRefresh}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
+                            >
+                                Refresh Page
+                            </button>
+                        )}
+
                         {this.state.error && (
                             <details className="mt-6 text-left">
                                 <summary className="text-slate-500 text-xs cursor-pointer hover:text-slate-400">
