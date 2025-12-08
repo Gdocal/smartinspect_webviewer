@@ -45,6 +45,21 @@ si.stream('metrics', { cpu: 45.2, memory: 2048 }, 'json');
 si.stream('events', 'User logged in', 'text');
 ```
 
+### Shell Script Integration
+
+Log from shell scripts without any library:
+
+```bash
+# HTTP method
+curl -X POST "http://localhost:5174/api/log?level=info&app=myscript" -d "Task completed"
+
+# Named pipe method (server creates pipe automatically)
+echo "INFO: Backup finished" > /tmp/smartinspect.pipe
+echo "[myproject] ERROR: Connection failed" > /tmp/smartinspect.pipe
+```
+
+See [SMARTINSPECT_SHELL.md](../SMARTINSPECT_SHELL.md) for full documentation.
+
 ## Key Features
 
 - **High-performance virtual grid** - Custom-built in-house grid with TanStack Virtual for smooth rendering of 100K+ entries
@@ -96,10 +111,13 @@ Server runs on **http://localhost:3000**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HTTP_PORT` | 3000 | Web UI and WebSocket port |
+| `HTTP_PORT` | 5174 | Web UI and WebSocket port |
 | `TCP_PORT` | 4229 | TCP port for log intake |
 | `MAX_ENTRIES` | 100000 | Maximum log entries in memory buffer |
 | `SI_AUTH_TOKEN` | - | Optional auth token for TCP clients |
+| `SI_PIPE_PATH` | `/tmp/smartinspect.pipe` | Named pipe file path for shell logging |
+| `SI_PIPE_ENABLED` | `true` | Enable/disable named pipe listener |
+| `SI_PIPE_ROOM` | `default` | Default room for pipe messages |
 
 ## WSL Users
 

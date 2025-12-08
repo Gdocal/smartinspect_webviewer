@@ -19,6 +19,7 @@ const { SettingsDB } = require('./settings-db');
 const { PacketType, ControlCommandType, Level, LogEntryType } = require('./packet-parser');
 const { registerQueryRoutes } = require('./query-api');
 const { connectionLogger } = require('./connection-logger');
+const { PipeLogger } = require('./pipe-logger');
 
 // Configuration from environment
 const config = {
@@ -27,7 +28,11 @@ const config = {
     authToken: process.env.SI_AUTH_TOKEN || null,
     authRequired: process.env.SI_AUTH_REQUIRED === 'true',
     maxEntries: parseInt(process.env.MAX_ENTRIES) || 100000,
-    maxStreamEntries: parseInt(process.env.MAX_STREAM_ENTRIES) || 1000
+    maxStreamEntries: parseInt(process.env.MAX_STREAM_ENTRIES) || 1000,
+    // Named pipe configuration
+    pipePath: process.env.SI_PIPE_PATH || '/tmp/smartinspect.pipe',
+    pipeEnabled: process.env.SI_PIPE_ENABLED !== 'false',
+    pipeRoom: process.env.SI_PIPE_ROOM || 'default'
 };
 
 // Initialize room manager (replaces global storage)
@@ -160,6 +165,101 @@ const settingsDB = new SettingsDB();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// ==================== Shell Script Logging API ====================
+
+/**
+ * POST /api/log - Simple log injection for shell scripts
+ *
+ * Query params:
+ *   - level: debug|verbose|info|warning|error|fatal (default: info)
+ *   - app: Application name (default: 'shell')
+ *   - session: Session name (default: 'Main')
+ *   - room: Room ID (default: 'default')
+ *
+ * Body: Plain text message or JSON { message, title, data }
+ *
+ * Examples:
+ *   curl -X POST "http://host:5174/api/log?level=info&app=myscript" -d "message"
+ *   curl -X POST "http://host:5174/api/log" -H "Content-Type: application/json" -d '{"message":"text"}'
+ */
+app.post('/api/log', express.text({ type: '*/*' }), (req, res) => {
+    const roomId = req.query.room || 'default';
+    const appName = req.query.app || 'shell';
+    const sessionName = req.query.session || 'Main';
+    const levelParam = (req.query.level || 'info').toLowerCase();
+
+    // Level mapping
+    const levelMap = {
+        'debug': Level.Debug,
+        'verbose': Level.Verbose,
+        'info': Level.Message,
+        'message': Level.Message,
+        'warning': Level.Warning,
+        'warn': Level.Warning,
+        'error': Level.Error,
+        'fatal': Level.Fatal
+    };
+    const level = levelMap[levelParam] ?? Level.Message;
+
+    // Entry type mapping
+    const entryTypeMap = {
+        [Level.Debug]: LogEntryType.Debug,
+        [Level.Verbose]: LogEntryType.Verbose,
+        [Level.Message]: LogEntryType.Message,
+        [Level.Warning]: LogEntryType.Warning,
+        [Level.Error]: LogEntryType.Error,
+        [Level.Fatal]: LogEntryType.Fatal
+    };
+
+    // Parse body - handle both plain text and JSON
+    let message = '';
+    let title = '';
+    let data = null;
+
+    if (typeof req.body === 'string') {
+        message = req.body;
+        title = message.substring(0, 100);
+    } else if (typeof req.body === 'object' && req.body !== null) {
+        message = req.body.message || '';
+        title = req.body.title || message.substring(0, 100);
+        data = req.body.data ? Buffer.from(JSON.stringify(req.body.data)) : null;
+    }
+
+    if (!message) {
+        return res.status(400).json({ error: 'Message required in body' });
+    }
+
+    // Get/create room and inject log
+    const room = roomManager.getOrCreate(roomId);
+    const entry = {
+        type: 'logEntry',
+        logEntryType: entryTypeMap[level],
+        viewerId: 0,
+        appName: appName,
+        sessionName: sessionName,
+        title: title,
+        hostName: 'shell',
+        processId: 0,
+        threadId: 0,
+        timestamp: new Date(),
+        color: { r: 0, g: 0, b: 0, a: 0 },
+        data: data || (message.length > 100 ? Buffer.from(message) : null),
+        level: level
+    };
+
+    const storedEntry = room.logBuffer.push(entry);
+    room.touch();
+
+    // Broadcast to viewers
+    throttledEntryBroadcast(roomId, [storedEntry]);
+
+    res.json({
+        success: true,
+        id: storedEntry.id,
+        room: roomId
+    });
+});
 
 // Serve static files from client build (if available)
 const clientBuildPath = path.join(__dirname, '../../client/dist');
@@ -1414,10 +1514,31 @@ function handleControlCommand(packet, roomId) {
 
 // ==================== Start Servers ====================
 
+// Named pipe logger instance (initialized in start())
+let pipeLogger = null;
+
 async function start() {
     try {
         // Start TCP server for log sources
         await tcpServer.start();
+
+        // Start named pipe logger (if enabled)
+        if (config.pipeEnabled) {
+            pipeLogger = new PipeLogger({
+                pipePath: config.pipePath,
+                defaultRoom: config.pipeRoom,
+                roomManager: roomManager,
+                onEntry: (roomId, entry) => {
+                    throttledEntryBroadcast(roomId, [entry]);
+                }
+            });
+            try {
+                await pipeLogger.start();
+            } catch (err) {
+                console.warn(`[Server] Named pipe disabled: ${err.message}`);
+                pipeLogger = null;
+            }
+        }
 
         // Start HTTP server for web UI (bind to 0.0.0.0 for WSL/Docker access)
         httpServer.listen(config.httpPort, '0.0.0.0', () => {
@@ -1435,6 +1556,9 @@ async function start() {
             console.log(`Auth required: ${config.authRequired ? 'Yes' : 'No'}`);
             console.log(`Max entries: ${config.maxEntries.toLocaleString()} per room`);
             console.log(`Rooms:       ${roomManager.listRooms().join(', ')}`);
+            if (pipeLogger) {
+                console.log(`Named pipe:  ${config.pipePath} (room: ${config.pipeRoom})`);
+            }
             console.log('');
         });
 
@@ -1447,12 +1571,14 @@ async function start() {
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('\nShutting down...');
+    if (pipeLogger) pipeLogger.stop();
     await tcpServer.stop();
     httpServer.close();
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+    if (pipeLogger) pipeLogger.stop();
     await tcpServer.stop();
     httpServer.close();
     process.exit(0);
