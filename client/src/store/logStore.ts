@@ -511,6 +511,10 @@ interface LogState {
     // View editing
     setEditingViewId: (id: string | null) => void;
 
+    // Preview highlighting (for TitleFilterModal live preview)
+    previewTitleFilter: { pattern: string; operator: 'contains' | 'starts-with' | 'regex'; caseSensitive: boolean } | null;
+    setPreviewTitleFilter: (filter: { pattern: string; operator: 'contains' | 'starts-with' | 'regex'; caseSensitive: boolean } | null) => void;
+
     // Runtime view state (not persisted)
     viewStuckToBottom: Map<string, boolean>;
     setViewStuckToBottom: (viewId: string, stuckToBottom: boolean) => void;
@@ -642,6 +646,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     showStreamPanel: false,
     isStreamsMode: false,
     editingViewId: null,
+    previewTitleFilter: null,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
     rowDensity: (localStorage.getItem('si-row-density') as 'compact' | 'default' | 'comfortable') || 'compact',
 
@@ -1050,6 +1055,9 @@ export const useLogStore = create<LogState>((set, get) => ({
     // View editing
     setEditingViewId: (id) => set({ editingViewId: id }),
 
+    // Preview highlighting
+    setPreviewTitleFilter: (filter) => set({ previewTitleFilter: filter }),
+
     // Runtime view state (stuckToBottom per view)
     setViewStuckToBottom: (viewId, stuckToBottom) => set((state) => {
         const newMap = new Map(state.viewStuckToBottom);
@@ -1292,4 +1300,29 @@ export function getEntryStyle(entry: LogEntry, rules: HighlightRule[]): React.CS
     }
 
     return undefined;
+}
+
+// Preview title filter type
+export type PreviewTitleFilter = { pattern: string; operator: 'contains' | 'starts-with' | 'regex'; caseSensitive: boolean };
+
+// Helper to match preview title filter
+export function matchesPreviewTitleFilter(entry: LogEntry, filter: PreviewTitleFilter): boolean {
+    if (!filter.pattern) return false;
+
+    const title = entry.title || '';
+    const pattern = filter.caseSensitive ? filter.pattern : filter.pattern.toLowerCase();
+    const text = filter.caseSensitive ? title : title.toLowerCase();
+
+    switch (filter.operator) {
+        case 'contains':
+            return text.includes(pattern);
+        case 'starts-with':
+            return text.startsWith(pattern);
+        case 'regex': {
+            const regex = getCachedRegex(filter.pattern, filter.caseSensitive);
+            return regex ? regex.test(title) : false;
+        }
+        default:
+            return false;
+    }
 }

@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect, useLayoutEffect, useMemo, useState, CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { LogEntry, HighlightRule, matchesHighlightRule, useLogStore } from '../../store/logStore';
+import { LogEntry, HighlightRule, matchesHighlightRule, matchesPreviewTitleFilter, useLogStore } from '../../store/logStore';
 import { VirtualLogGridRow, SkeletonRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
@@ -148,8 +148,9 @@ export function VirtualLogGrid({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get row density from store
+  // Get row density and preview filter from store
   const rowDensity = useLogStore((state) => state.rowDensity);
+  const previewTitleFilter = useLogStore((state) => state.previewTitleFilter);
   const rowHeight = getRowHeight(rowDensity);
   const fontSize = getFontSize(rowDensity);
   const headerHeight = getHeaderHeight(rowDensity);
@@ -177,7 +178,8 @@ export function VirtualLogGrid({
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     position: { x: number; y: number };
-  }>({ isOpen: false, position: { x: 0, y: 0 } });
+    clickedEntry: LogEntry | null;
+  }>({ isOpen: false, position: { x: 0, y: 0 }, clickedEntry: null });
 
   // Drag selection state
   const [isDragging, setIsDragging] = useState(false);
@@ -466,13 +468,22 @@ export function VirtualLogGrid({
   // Pre-compute highlight styles for visible entries (computed once per render, not per row)
   const virtualItems = virtualizer.getVirtualItems();
   const highlightStyleMap = useMemo(() => {
-    if (sortedHighlightRules.length === 0) return new Map<number, CSSProperties>();
-
     const map = new Map<number, CSSProperties>();
+
+    // Preview highlight style (yellow background for title filter preview)
+    const previewStyle: CSSProperties = { backgroundColor: 'rgba(250, 204, 21, 0.3)' };
+
     for (const virtualRow of virtualItems) {
       const entry = entries[virtualRow.index];
       if (!entry) continue;
 
+      // Check preview filter first (highest priority)
+      if (previewTitleFilter && matchesPreviewTitleFilter(entry, previewTitleFilter)) {
+        map.set(entry.id, previewStyle);
+        continue;
+      }
+
+      // Then check regular highlight rules
       for (const rule of sortedHighlightRules) {
         if (matchesHighlightRule(entry, rule)) {
           map.set(entry.id, getRuleStyle(rule));
@@ -481,7 +492,7 @@ export function VirtualLogGrid({
       }
     }
     return map;
-  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle]);
+  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle, previewTitleFilter]);
 
   // Get visible columns
   const visibleColumns = useMemo(
@@ -879,11 +890,14 @@ export function VirtualLogGrid({
   // Handle context menu on rows
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    const rowIndex = getRowIndexFromY(e.clientY);
+    const clickedEntry = entries[rowIndex] || null;
     setContextMenu({
       isOpen: true,
       position: { x: e.clientX, y: e.clientY },
+      clickedEntry,
     });
-  }, []);
+  }, [getRowIndexFromY, entries]);
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
@@ -991,6 +1005,7 @@ export function VirtualLogGrid({
           entries={entries}
           columns={selectedColumns}
           onClose={handleCloseContextMenu}
+          clickedEntry={contextMenu.clickedEntry}
         />
       )}
 

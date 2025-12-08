@@ -1,7 +1,8 @@
-import { memo, useEffect, useRef } from 'react';
-import type { LogEntry } from '../../store/logStore';
+import { memo, useEffect, useRef, useState } from 'react';
+import { LogEntry, LogEntryType, useLogStore, defaultListTextFilter } from '../../store/logStore';
 import type { ColumnConfig } from './types';
 import { format } from 'date-fns';
+import { TitleFilterModal } from '../TitleFilterModal';
 
 interface RowContextMenuProps {
   position: { x: number; y: number };
@@ -9,6 +10,41 @@ interface RowContextMenuProps {
   entries: LogEntry[];
   columns: ColumnConfig[];
   onClose: () => void;
+  clickedEntry: LogEntry | null;
+}
+
+// Get entry type name for display
+function getEntryTypeName(type: number | undefined): string {
+  if (type === undefined) return 'Unknown';
+  const typeMap: Record<number, string> = {
+    [LogEntryType.Separator]: 'Separator',
+    [LogEntryType.EnterMethod]: 'EnterMethod',
+    [LogEntryType.LeaveMethod]: 'LeaveMethod',
+    [LogEntryType.ResetCallstack]: 'ResetCallstack',
+    [LogEntryType.Message]: 'Message',
+    [LogEntryType.Warning]: 'Warning',
+    [LogEntryType.Error]: 'Error',
+    [LogEntryType.InternalError]: 'InternalError',
+    [LogEntryType.Comment]: 'Comment',
+    [LogEntryType.VariableValue]: 'VariableValue',
+    [LogEntryType.Checkpoint]: 'Checkpoint',
+    [LogEntryType.Debug]: 'Debug',
+    [LogEntryType.Verbose]: 'Verbose',
+    [LogEntryType.Fatal]: 'Fatal',
+    [LogEntryType.Conditional]: 'Conditional',
+    [LogEntryType.Assert]: 'Assert',
+    [LogEntryType.Text]: 'Text',
+    [LogEntryType.Binary]: 'Binary',
+    [LogEntryType.Graphic]: 'Graphic',
+    [LogEntryType.Source]: 'Source',
+    [LogEntryType.Object]: 'Object',
+    [LogEntryType.WebContent]: 'WebContent',
+    [LogEntryType.System]: 'System',
+    [LogEntryType.MemoryStatistic]: 'MemoryStatistic',
+    [LogEntryType.DatabaseResult]: 'DatabaseResult',
+    [LogEntryType.DatabaseStructure]: 'DatabaseStructure',
+  };
+  return typeMap[type] || `Type ${type}`;
 }
 
 // Copy text to clipboard with fallback for non-HTTPS
@@ -252,8 +288,14 @@ export const RowContextMenu = memo(function RowContextMenu({
   entries,
   columns,
   onClose,
+  clickedEntry,
 }: RowContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [showSubmenu, setShowSubmenu] = useState(false);
+  const [showTitleModal, setShowTitleModal] = useState(false);
+  const submenuRef = useRef<HTMLDivElement>(null);
+
+  const addView = useLogStore(state => state.addView);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -294,6 +336,21 @@ export const RowContextMenu = memo(function RowContextMenu({
     }
   }, [position]);
 
+  // Position submenu to avoid overflow
+  useEffect(() => {
+    if (showSubmenu && submenuRef.current && menuRef.current) {
+      const menuRect = menuRef.current.getBoundingClientRect();
+      const submenuRect = submenuRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+
+      // If submenu would overflow right, show it on the left side
+      if (menuRect.right + submenuRect.width > viewportWidth) {
+        submenuRef.current.style.left = 'auto';
+        submenuRef.current.style.right = '100%';
+      }
+    }
+  }, [showSubmenu]);
+
   const handleCopy = async () => {
     if (selectedEntries.length === 0) return;
     const text = formatEntriesForCopy(selectedEntries, columns);
@@ -322,8 +379,153 @@ export const RowContextMenu = memo(function RowContextMenu({
     onClose();
   };
 
+  // Create view from Session
+  const handleCreateViewFromSession = () => {
+    if (!clickedEntry?.sessionName) return;
+    addView({
+      name: `Sess:${clickedEntry.sessionName}`,
+      filter: {
+        sessions: [],
+        levels: [],
+        titlePattern: '',
+        messagePattern: '',
+        inverseMatch: false,
+        from: null,
+        to: null,
+        appNames: [],
+        hostNames: [],
+        entryTypes: [],
+        sessionFilter: {
+          mode: 'list',
+          values: [clickedEntry.sessionName],
+          textValue: '',
+          textOperator: 'contains',
+          inverse: false,
+        },
+        appNameFilter: { ...defaultListTextFilter },
+        hostNameFilter: { ...defaultListTextFilter },
+      },
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
+  // Create view from Application
+  const handleCreateViewFromApp = () => {
+    if (!clickedEntry?.appName) return;
+    addView({
+      name: `App:${clickedEntry.appName}`,
+      filter: {
+        sessions: [],
+        levels: [],
+        titlePattern: '',
+        messagePattern: '',
+        inverseMatch: false,
+        from: null,
+        to: null,
+        appNames: [],
+        hostNames: [],
+        entryTypes: [],
+        sessionFilter: { ...defaultListTextFilter },
+        appNameFilter: {
+          mode: 'list',
+          values: [clickedEntry.appName],
+          textValue: '',
+          textOperator: 'contains',
+          inverse: false,
+        },
+        hostNameFilter: { ...defaultListTextFilter },
+      },
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
+  // Create view from Process ID
+  const handleCreateViewFromProcess = () => {
+    if (clickedEntry?.processId === undefined) return;
+    addView({
+      name: `Proc:${clickedEntry.processId}`,
+      filter: {
+        sessions: [],
+        levels: [],
+        titlePattern: '',
+        messagePattern: '',
+        inverseMatch: false,
+        from: null,
+        to: null,
+        appNames: [],
+        hostNames: [],
+        entryTypes: [],
+        sessionFilter: { ...defaultListTextFilter },
+        appNameFilter: { ...defaultListTextFilter },
+        hostNameFilter: { ...defaultListTextFilter },
+        // Note: Process ID filter would need to be added to the Filter interface
+        // For now, we'll use a workaround with titlePattern that won't work perfectly
+        // This should be enhanced when proper processId filter support is added
+      },
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
+  // Create view from Entity Type
+  const handleCreateViewFromType = () => {
+    if (clickedEntry?.logEntryType === undefined) return;
+    const typeName = getEntryTypeName(clickedEntry.logEntryType);
+    addView({
+      name: `Type:${typeName}`,
+      filter: {
+        sessions: [],
+        levels: [],
+        titlePattern: '',
+        messagePattern: '',
+        inverseMatch: false,
+        from: null,
+        to: null,
+        appNames: [],
+        hostNames: [],
+        entryTypes: [clickedEntry.logEntryType],
+        sessionFilter: { ...defaultListTextFilter },
+        appNameFilter: { ...defaultListTextFilter },
+        hostNameFilter: { ...defaultListTextFilter },
+      },
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
+  // Open title filter modal
+  const handleOpenTitleModal = () => {
+    setShowTitleModal(true);
+  };
+
+  const handleCloseTitleModal = () => {
+    setShowTitleModal(false);
+    onClose();
+  };
+
   const selectionCount = selectedEntries.length;
   const selectionLabel = selectionCount > 1 ? ` (${selectionCount} rows)` : '';
+
+  // If title modal is open, render it instead of menu
+  if (showTitleModal && clickedEntry) {
+    return (
+      <TitleFilterModal
+        initialTitle={clickedEntry.title || ''}
+        entries={entries}
+        onClose={handleCloseTitleModal}
+      />
+    );
+  }
 
   return (
     <div
@@ -357,6 +559,73 @@ export const RowContextMenu = memo(function RowContextMenu({
         </svg>
         <span>Copy with Headers{selectionLabel}</span>
       </button>
+      <div className="vlg-menu-divider" />
+
+      {/* Create View from... submenu */}
+      {clickedEntry && (
+        <div
+          className="vlg-menu-item vlg-submenu-trigger"
+          onMouseEnter={() => setShowSubmenu(true)}
+          onMouseLeave={() => setShowSubmenu(false)}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+          </svg>
+          <span>Create View from...</span>
+          <svg className="vlg-submenu-arrow" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M6 12.796V3.204L11.481 8 6 12.796zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753z"/>
+          </svg>
+
+          {/* Submenu */}
+          {showSubmenu && (
+            <div ref={submenuRef} className="vlg-submenu">
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateViewFromSession}
+                disabled={!clickedEntry.sessionName}
+              >
+                <span>Session</span>
+                <span className="vlg-menu-value">{clickedEntry.sessionName || '(none)'}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateViewFromApp}
+                disabled={!clickedEntry.appName}
+              >
+                <span>Application</span>
+                <span className="vlg-menu-value">{clickedEntry.appName || '(none)'}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateViewFromProcess}
+                disabled={clickedEntry.processId === undefined}
+              >
+                <span>Process</span>
+                <span className="vlg-menu-value">{clickedEntry.processId ?? '(none)'}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateViewFromType}
+                disabled={clickedEntry.logEntryType === undefined}
+              >
+                <span>Entity Type</span>
+                <span className="vlg-menu-value">{getEntryTypeName(clickedEntry.logEntryType)}</span>
+              </button>
+              <div className="vlg-menu-divider" />
+              <button
+                className="vlg-menu-item"
+                onClick={handleOpenTitleModal}
+                disabled={!clickedEntry.title}
+              >
+                <span>Title...</span>
+                <span className="vlg-menu-value vlg-menu-value-truncate">{clickedEntry.title ? clickedEntry.title.substring(0, 20) + (clickedEntry.title.length > 20 ? '...' : '') : '(none)'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="vlg-menu-divider" />
       <button
         className="vlg-menu-item"

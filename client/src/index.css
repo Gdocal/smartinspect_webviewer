@@ -912,6 +912,355 @@ svg.vlg-menu-icon {
     background: rgba(59, 130, 246, 0.25) !important;
 }
 
+/* Context menu submenu */
+.vlg-submenu-trigger {
+    position: relative;
+}
+
+.vlg-submenu-arrow {
+    width: 12px;
+    height: 12px;
+    margin-left: auto;
+    opacity: 0.6;
+}
+
+.vlg-submenu {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 200px;
+    padding: 4px 0;
+    z-index: 1001;
+}
+
+.vlg-menu-value {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 11px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vlg-menu-value-truncate {
+    max-width: 100px;
+}
+
+/* Light theme submenu */
+.virtual-log-grid.light .vlg-submenu {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.virtual-log-grid.light .vlg-menu-value {
+    color: #94a3b8;
+}
+
+/* Preview highlighting for title filter modal */
+.vlg-row.preview-highlight {
+    background: rgba(250, 204, 21, 0.3) !important; /* yellow highlight */
+}
+
+.virtual-log-grid.light .vlg-row.preview-highlight {
+    background: rgba(250, 204, 21, 0.4) !important;
+}
+
+/* Title Filter Modal */
+.title-filter-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.title-filter-modal {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    width: 420px;
+    max-width: 90vw;
+    color: #e2e8f0;
+}
+
+.title-filter-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #334155;
+}
+
+.title-filter-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.title-filter-modal-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.title-filter-modal-close:hover {
+    background: #334155;
+    color: #e2e8f0;
+}
+
+.title-filter-modal-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.title-filter-modal-content {
+    padding: 16px;
+}
+
+.title-filter-field {
+    margin-bottom: 12px;
+}
+
+.title-filter-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #94a3b8;
+    margin-bottom: 6px;
+}
+
+.title-filter-field input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    color: #e2e8f0;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.title-filter-field input[type="text"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+.title-filter-field input[type="text"].error {
+    border-color: #ef4444;
+}
+
+.title-filter-error {
+    color: #ef4444;
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.title-filter-type-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.title-filter-type-btn {
+    flex: 1;
+    padding: 6px 12px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    color: #94a3b8;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.title-filter-type-btn:hover {
+    background: #1e293b;
+    color: #e2e8f0;
+}
+
+.title-filter-type-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+}
+
+.title-filter-checkbox {
+    display: flex;
+    align-items: center;
+}
+
+.title-filter-checkbox label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-bottom: 0;
+    color: #e2e8f0;
+}
+
+.title-filter-checkbox input[type="checkbox"] {
+    accent-color: #3b82f6;
+    width: 14px;
+    height: 14px;
+}
+
+.title-filter-match-count {
+    padding: 10px 12px;
+    background: #0f172a;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.title-filter-match-number {
+    font-size: 18px;
+    font-weight: 600;
+    color: #3b82f6;
+}
+
+.title-filter-match-label {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.title-filter-divider {
+    height: 1px;
+    background: #334155;
+    margin: 12px 0;
+}
+
+.title-filter-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid #334155;
+}
+
+.title-filter-btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.title-filter-btn-secondary {
+    background: #334155;
+    border: 1px solid #475569;
+    color: #e2e8f0;
+}
+
+.title-filter-btn-secondary:hover {
+    background: #475569;
+}
+
+.title-filter-btn-primary {
+    background: #3b82f6;
+    border: 1px solid #3b82f6;
+    color: white;
+}
+
+.title-filter-btn-primary:hover {
+    background: #2563eb;
+}
+
+.title-filter-btn-primary:disabled {
+    background: #475569;
+    border-color: #475569;
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+/* Light theme Title Filter Modal */
+.virtual-log-grid.light ~ .title-filter-modal-overlay .title-filter-modal,
+body.light .title-filter-modal {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    color: #1e293b;
+}
+
+body.light .title-filter-modal-header {
+    border-bottom-color: #e2e8f0;
+}
+
+body.light .title-filter-modal-close {
+    color: #64748b;
+}
+
+body.light .title-filter-modal-close:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+body.light .title-filter-field label {
+    color: #64748b;
+}
+
+body.light .title-filter-field input[type="text"] {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #1e293b;
+}
+
+body.light .title-filter-type-btn {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #64748b;
+}
+
+body.light .title-filter-type-btn:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+body.light .title-filter-checkbox label {
+    color: #1e293b;
+}
+
+body.light .title-filter-match-count {
+    background: #f8fafc;
+}
+
+body.light .title-filter-match-label {
+    color: #64748b;
+}
+
+body.light .title-filter-divider {
+    background: #e2e8f0;
+}
+
+body.light .title-filter-modal-footer {
+    border-top-color: #e2e8f0;
+}
+
+body.light .title-filter-btn-secondary {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #1e293b;
+}
+
+body.light .title-filter-btn-secondary:hover {
+    background: #e2e8f0;
+}
+
 /* Ensure row-selected cells use standard text color (override highlight inheritance) */
 .vlg-row.row-selected .vlg-cell {
     color: inherit;
