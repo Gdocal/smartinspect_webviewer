@@ -216,6 +216,89 @@ function formatEntriesWithHeaders(entries: LogEntry[], columns: ColumnConfig[]):
   return [headerLine, ...dataLines].join('\n');
 }
 
+// Get decoded data/details from entry
+function getEntryDetails(entry: LogEntry): string | null {
+  if (!entry.data) return null;
+  let decoded: string;
+  if (entry.dataEncoding === 'base64') {
+    try {
+      decoded = atob(entry.data);
+    } catch {
+      return null;
+    }
+  } else {
+    decoded = entry.data;
+  }
+  // Strip UTF-8 BOM if present (appears as ï»¿ or \uFEFF)
+  if (decoded.charCodeAt(0) === 0xFEFF || decoded.startsWith('\ufeff')) {
+    decoded = decoded.slice(1);
+  }
+  // Also handle the mojibake version (ï»¿) that appears when UTF-8 BOM is misinterpreted
+  if (decoded.startsWith('ï»¿')) {
+    decoded = decoded.slice(3);
+  }
+  return decoded;
+}
+
+// Format entries with details (data field) for copy
+function formatEntriesWithDetails(entries: LogEntry[], columns: ColumnConfig[]): string {
+  const visibleColumns = columns.filter(col => !col.hidden && col.type !== 'icon');
+
+  const lines: string[] = [];
+  for (const entry of entries) {
+    const values = visibleColumns.map(col => getCellText(entry, col.field));
+    lines.push(values.join('\t'));
+
+    // Add details if present
+    const details = getEntryDetails(entry);
+    if (details) {
+      // Indent details with a tab and prefix
+      const detailLines = details.split('\n').map(line => `\t${line}`);
+      lines.push(...detailLines);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// Format entries with headers AND details for copy
+function formatEntriesWithHeadersAndDetails(entries: LogEntry[], columns: ColumnConfig[]): string {
+  const visibleColumns = columns.filter(col => !col.hidden && col.type !== 'icon');
+  const headers = visibleColumns.map(col => col.header);
+  const headerLine = headers.join('\t');
+
+  const lines: string[] = [headerLine];
+  for (const entry of entries) {
+    const values = visibleColumns.map(col => getCellText(entry, col.field));
+    lines.push(values.join('\t'));
+
+    // Add details if present
+    const details = getEntryDetails(entry);
+    if (details) {
+      // Indent details with a tab and prefix
+      const detailLines = details.split('\n').map(line => `\t${line}`);
+      lines.push(...detailLines);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// Check if any entries have details
+function hasAnyDetails(entries: LogEntry[]): boolean {
+  return entries.some(entry => {
+    if (!entry.data) return false;
+    if (entry.dataEncoding === 'base64') {
+      try {
+        return atob(entry.data).length > 0;
+      } catch {
+        return false;
+      }
+    }
+    return entry.data.length > 0;
+  });
+}
+
 // Format entries for CSV export
 function formatEntriesForCSV(entries: LogEntry[], columns: ColumnConfig[]): string {
   const visibleColumns = columns.filter(col => !col.hidden && col.type !== 'icon');
@@ -292,8 +375,10 @@ export const RowContextMenu = memo(function RowContextMenu({
 }: RowContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [showSubmenu, setShowSubmenu] = useState(false);
+  const [showCopySubmenu, setShowCopySubmenu] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
   const submenuRef = useRef<HTMLDivElement>(null);
+  const copySubmenuRef = useRef<HTMLDivElement>(null);
 
   const addView = useLogStore(state => state.addView);
 
@@ -351,6 +436,20 @@ export const RowContextMenu = memo(function RowContextMenu({
     }
   }, [showSubmenu]);
 
+  // Position copy submenu to avoid overflow
+  useEffect(() => {
+    if (showCopySubmenu && copySubmenuRef.current && menuRef.current) {
+      const menuRect = menuRef.current.getBoundingClientRect();
+      const submenuRect = copySubmenuRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+
+      if (menuRect.right + submenuRect.width > viewportWidth) {
+        copySubmenuRef.current.style.left = 'auto';
+        copySubmenuRef.current.style.right = '100%';
+      }
+    }
+  }, [showCopySubmenu]);
+
   const handleCopy = async () => {
     if (selectedEntries.length === 0) return;
     const text = formatEntriesForCopy(selectedEntries, columns);
@@ -364,6 +463,23 @@ export const RowContextMenu = memo(function RowContextMenu({
     await copyToClipboard(text);
     onClose();
   };
+
+  const handleCopyWithDetails = async () => {
+    if (selectedEntries.length === 0) return;
+    const text = formatEntriesWithDetails(selectedEntries, columns);
+    await copyToClipboard(text);
+    onClose();
+  };
+
+  const handleCopyWithHeadersAndDetails = async () => {
+    if (selectedEntries.length === 0) return;
+    const text = formatEntriesWithHeadersAndDetails(selectedEntries, columns);
+    await copyToClipboard(text);
+    onClose();
+  };
+
+  // Check if selected entries have any details
+  const entriesHaveDetails = hasAnyDetails(selectedEntries);
 
   const handleExportCSV = () => {
     const csv = formatEntriesForCSV(entries, columns);
@@ -549,16 +665,48 @@ export const RowContextMenu = memo(function RowContextMenu({
         <span>Copy{selectionLabel}</span>
         <span className="vlg-menu-shortcut">Ctrl+C</span>
       </button>
-      <button
-        className="vlg-menu-item"
-        onClick={handleCopyWithHeaders}
-        disabled={selectionCount === 0}
+
+      {/* Copy as... submenu */}
+      <div
+        className="vlg-menu-item vlg-submenu-trigger"
+        onMouseEnter={() => setShowCopySubmenu(true)}
+        onMouseLeave={() => setShowCopySubmenu(false)}
       >
         <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
           <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
         </svg>
-        <span>Copy with Headers{selectionLabel}</span>
-      </button>
+        <span>Copy as...{selectionLabel}</span>
+        <svg className="vlg-submenu-arrow" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M6 12.796V3.204L11.481 8 6 12.796zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753z"/>
+        </svg>
+
+        {showCopySubmenu && (
+          <div ref={copySubmenuRef} className="vlg-submenu">
+            <button
+              className="vlg-menu-item"
+              onClick={handleCopyWithHeaders}
+              disabled={selectionCount === 0}
+            >
+              <span>With Headers</span>
+            </button>
+            <button
+              className="vlg-menu-item"
+              onClick={handleCopyWithDetails}
+              disabled={selectionCount === 0 || !entriesHaveDetails}
+            >
+              <span>With Details</span>
+              {!entriesHaveDetails && <span className="vlg-menu-value">(none)</span>}
+            </button>
+            <button
+              className="vlg-menu-item"
+              onClick={handleCopyWithHeadersAndDetails}
+              disabled={selectionCount === 0}
+            >
+              <span>With Headers & Details</span>
+            </button>
+          </div>
+        )}
+      </div>
       <div className="vlg-menu-divider" />
 
       {/* Create View from... submenu */}
@@ -642,4 +790,12 @@ export const RowContextMenu = memo(function RowContextMenu({
 });
 
 // Export utility functions for use in keyboard shortcuts
-export { formatEntriesForCopy, formatEntriesWithHeaders, formatSelectionForCopy, copyToClipboard };
+export {
+  formatEntriesForCopy,
+  formatEntriesWithHeaders,
+  formatEntriesWithDetails,
+  formatEntriesWithHeadersAndDetails,
+  formatSelectionForCopy,
+  copyToClipboard,
+  hasAnyDetails
+};
