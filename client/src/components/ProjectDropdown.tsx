@@ -413,7 +413,34 @@ export function ProjectDropdown({ className }: ProjectDropdownProps) {
                         <div className="flex">
                             {/* New Project */}
                             <button
-                                onClick={() => {
+                                onClick={async () => {
+                                    // Check for unsaved changes before creating new project
+                                    if (loadedProjectId) {
+                                        // Named project - use standard unsaved check
+                                        const result = await checkUnsavedChanges();
+                                        if (result === 'cancel') return;
+                                        if (result === 'save') {
+                                            await updateProject(loadedProjectId);
+                                        }
+                                    } else {
+                                        // Unnamed project - warn that current layout will be lost
+                                        const confirmed = await confirmDialog.confirm({
+                                            title: 'Unsaved Layout',
+                                            message: 'Current layout has not been saved and will be lost. Save as new project first?',
+                                            confirmText: 'Save As...',
+                                            cancelText: 'Discard',
+                                            danger: false
+                                        });
+                                        if (confirmed === null) return; // Dialog dismissed
+                                        if (confirmed) {
+                                            // User wants to save - show Save As dialog instead of New
+                                            setIsCreatingNew(false);
+                                            setShowSaveDialog(true);
+                                            return;
+                                        }
+                                        // User chose discard - continue to New
+                                    }
+
                                     setNewProjectName('');
                                     setIsCreatingNew(true);
                                     setShowSaveDialog(true);
