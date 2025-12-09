@@ -70,6 +70,8 @@ export function useAutoScroll({
   const isAnimatingRef = useRef(false);
   // Direct wheel-up timestamp for race condition prevention
   const wheelUpTimestampRef = useRef(0);
+  // Track mouse down state to pause during scrollbar drag
+  const isMouseDownRef = useRef(false);
 
   // Continuous smooth scroll - lerps toward bottom
   const startSmoothScrollLoop = useCallback(() => {
@@ -100,6 +102,13 @@ export function useAutoScroll({
         isAnimatingRef.current = false;
         stateRef.current.isProgrammaticScroll = false;
         stateRef.current.isStuckToBottom = false;
+        return;
+      }
+
+      // Pause animation during mouse drag (scrollbar drag)
+      if (isMouseDownRef.current) {
+        // Keep the loop running but don't adjust scroll
+        animationRef.current = requestAnimationFrame(animate);
         return;
       }
 
@@ -139,6 +148,12 @@ export function useAutoScroll({
   const instantScrollToBottom = useCallback(() => {
     if (!scrollElement) return;
 
+    // Don't scroll during mouse drag
+    if (isMouseDownRef.current) {
+      debugLog('instantScrollToBottom: BLOCKED by mouse down');
+      return;
+    }
+
     debugLog('instantScrollToBottom: using INSTANT scroll');
     stopSmoothScrollLoop();
 
@@ -153,6 +168,12 @@ export function useAutoScroll({
   // Smart scroll - chooses smooth or instant based on rate
   const scrollToBottom = useCallback(() => {
     if (!scrollElement) return;
+
+    // Don't scroll during mouse drag
+    if (isMouseDownRef.current) {
+      debugLog('scrollToBottom: BLOCKED by mouse down');
+      return;
+    }
 
     const rate = stateRef.current.averageRate;
     const useSmooth = rate < SMOOTH_SCROLL_RATE_THRESHOLD;
@@ -271,6 +292,11 @@ export function useAutoScroll({
       // Use requestAnimationFrame to delay scroll slightly
       // This allows any pending wheel events to fire first, preventing race conditions
       requestAnimationFrame(() => {
+        // Check for mouse drag - don't scroll while user is dragging scrollbar
+        if (isMouseDownRef.current) {
+          debugLog('entriesEffect: CANCELLED in rAF - mouse down');
+          return;
+        }
         // Re-check for recent wheel events inside the frame
         const timeSinceWheelUpInFrame = Date.now() - wheelUpTimestampRef.current;
         if (timeSinceWheelUpInFrame < WHEEL_LOCK_DURATION) {
@@ -357,6 +383,50 @@ export function useAutoScroll({
     return () => scrollElement.removeEventListener('wheel', handleWheel);
   }, [scrollElement]);
 
+  // Track mouse down state to pause smooth scroll during scrollbar drag
+  useEffect(() => {
+    const handleMouseDown = () => {
+      isMouseDownRef.current = true;
+    };
+    const handleMouseUp = () => {
+      isMouseDownRef.current = false;
+
+      // Delay the bottom check to allow:
+      // 1. ViewGrid's freeze logic to release (scrollHeight changes)
+      // 2. VirtualLogGrid's scroll-to-bottom to execute
+      // We need to wait for all that before checking if user is at bottom
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              // Check if user is at bottom - if so, re-enable stuck-to-bottom
+              if (scrollElement) {
+                const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+                const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+                const isAtBottom = distanceFromBottom < 50; // 50px threshold
+
+                if (isAtBottom) {
+                  debugLog('handleMouseUp: user released at bottom, re-enabling stuckToBottom');
+                  stateRef.current.isStuckToBottom = true;
+                  // Reset user scroll time to allow immediate auto-scroll
+                  stateRef.current.userScrollTime = 0;
+                }
+              }
+            });
+          });
+        });
+      });
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [scrollElement]);
+
   // Cleanup animation on unmount
   useEffect(() => {
     return () => {
@@ -373,5 +443,9 @@ export function useAutoScroll({
     isProgrammaticScroll: () => stateRef.current.isProgrammaticScroll,
     isStuckToBottom: () => stateRef.current.isStuckToBottom,
     getCurrentRate: () => stateRef.current.averageRate,
+    /** Is smooth scroll animation currently running */
+    isAnimating: () => isAnimatingRef.current,
+    /** Would use smooth scroll at current rate (rate < 10/sec) */
+    wouldUseSmooth: () => stateRef.current.averageRate < SMOOTH_SCROLL_RATE_THRESHOLD,
   };
 }

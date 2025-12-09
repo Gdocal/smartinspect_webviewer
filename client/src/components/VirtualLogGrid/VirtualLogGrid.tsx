@@ -6,7 +6,7 @@ import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
-import { OVERSCAN, OVERSCAN_FAST, getRowHeight, getFontSize, getHeaderHeight } from './constants';
+import { OVERSCAN, OVERSCAN_FAST, OVERSCAN_DRAG, getRowHeight, getFontSize, getHeaderHeight } from './constants';
 import { DEFAULT_COLUMNS, ColumnConfig } from './types';
 
 // Scroll velocity tracking for dynamic overscan
@@ -68,6 +68,10 @@ export interface VirtualLogGridProps {
   actualEntryCount?: number;
   /** Cumulative count of trimmed entries for virtual padding scroll stability */
   lastTrimCount?: number;
+  /** Called when first visible row changes (for safe trimming) */
+  onFirstVisibleRowChange?: (firstVisibleRow: number) => void;
+  /** Called with scroll mode info for debug display */
+  onScrollModeChange?: (info: { isAnimating: boolean; wouldUseSmooth: boolean; rate: number }) => void;
 }
 
 // Get normalized range (start <= end)
@@ -144,6 +148,8 @@ export function VirtualLogGrid({
   onStuckToBottomChange,
   actualEntryCount,
   lastTrimCount = 0,
+  onFirstVisibleRowChange,
+  onScrollModeChange,
 }: VirtualLogGridProps) {
   flickerLog('RENDER', { entriesCount: entries.length, autoScroll });
 
@@ -160,6 +166,13 @@ export function VirtualLogGrid({
 
   // Internal state: is the scrollbar at the bottom?
   const [stuckToBottom, setStuckToBottom] = useState(true);
+
+  // Track if mouse is down on scroll container (to pause scroll compensation during drag)
+  const isMouseDownRef = useRef(false);
+  // Track if user was at bottom when mouse went down (to scroll to bottom on release)
+  const wasAtBottomOnMouseDownRef = useRef(false);
+  // Track scroll position when mouse went down (to detect if user scrolled up during drag)
+  const scrollTopOnMouseDownRef = useRef(0);
 
   // Track trim count for scroll compensation
   const prevTrimCountRef = useRef(lastTrimCount);
@@ -193,6 +206,26 @@ export function VirtualLogGrid({
   const autoScrollIntervalRef = useRef<number | null>(null);
   const clickStartRef = useRef<{ row: number; time: number } | null>(null);
 
+  // Refs for values that change frequently but shouldn't cause listener re-attachment
+  // This prevents mouseup events from being missed during rapid updates
+  const entriesRef = useRef(entries);
+  const selectionRef = useRef(selection);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  const onRowClickRef = useRef(onRowClick);
+  entriesRef.current = entries;
+  selectionRef.current = selection;
+  onSelectionChangeRef.current = onSelectionChange;
+  onRowClickRef.current = onRowClick;
+
+  // Track if grid is active (clicked) for keyboard event handling
+  const isGridActiveRef = useRef(false);
+
+  // Track mount state to ensure keyboard listeners are attached after container is ready
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Effective autoscroll = user wants it AND scrollbar is at bottom
   const effectiveAutoScroll = autoScroll && stuckToBottom && !isDragging;
 
@@ -208,6 +241,9 @@ export function VirtualLogGrid({
     markStuckToBottom,
     isProgrammaticScroll,
     instantScrollToBottom,
+    isAnimating,
+    wouldUseSmooth,
+    getCurrentRate,
   } = useAutoScroll({
     scrollElement: scrollContainerRef.current,
     entriesCount: rateTrackingCount, // Use actual count for rate tracking
@@ -218,6 +254,19 @@ export function VirtualLogGrid({
     lastEntryId,
     componentName: 'AllLogs', // VirtualLogGrid used in All Logs view
   });
+
+  // Report scroll mode for debug display
+  useEffect(() => {
+    if (!onScrollModeChange) return;
+    const interval = setInterval(() => {
+      onScrollModeChange({
+        isAnimating: isAnimating(),
+        wouldUseSmooth: wouldUseSmooth(),
+        rate: getCurrentRate(),
+      });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [onScrollModeChange, isAnimating, wouldUseSmooth, getCurrentRate]);
 
   // Handler for "Jump to bottom" button - for re-enabling autoscroll at high data rates
   const handleJumpToBottom = useCallback(() => {
@@ -240,6 +289,9 @@ export function VirtualLogGrid({
       setRowsBelowViewport(0);
     }, [markStuckToBottom]),
     isProgrammaticScroll,
+    // Signal to useScrollDetection that user stopped autoscroll (e.g., clicked on row)
+    // This enables scrolling back to bottom to re-enable autoscroll
+    userStoppedAutoscroll: !stuckToBottom,
   });
 
   // Calculate initial scroll offset for auto-scroll mode
@@ -261,7 +313,8 @@ export function VirtualLogGrid({
   }, []); // Empty deps - only calculate once on mount
 
   // Dynamic overscan based on scroll velocity
-  const currentOverscan = isScrollingFast ? OVERSCAN_FAST : OVERSCAN;
+  // Higher overscan during mouse drag prevents visual gaps when scrollbar is dragged fast
+  const currentOverscan = isMouseDownRef.current ? OVERSCAN_DRAG : (isScrollingFast ? OVERSCAN_FAST : OVERSCAN);
 
   // TanStack Virtual virtualizer
   const virtualizer = useVirtualizer({
@@ -424,6 +477,92 @@ export function VirtualLogGrid({
     }
   }, [entries.length]);
 
+  // Track if this is a scrollbar drag (vs content click)
+  const isScrollbarDragRef = useRef(false);
+
+  // Track mouse down state to pause scroll compensation during scrollbar drag
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      isMouseDownRef.current = true;
+
+      // Track if click is inside the grid container (for keyboard event handling)
+      const gridContainer = containerRef.current;
+      isGridActiveRef.current = gridContainer ? gridContainer.contains(e.target as Node) : false;
+
+      // Check if clicking on scrollbar area (right edge of scroll container)
+      const container = scrollContainerRef.current;
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const scrollbarWidth = container.offsetWidth - container.clientWidth;
+        // Only track as scrollbar drag if clicking on the scrollbar area
+        isScrollbarDragRef.current = e.clientX > rect.right - scrollbarWidth - 5;
+
+        if (isScrollbarDragRef.current) {
+          const { scrollTop, scrollHeight, clientHeight } = container;
+          const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+          wasAtBottomOnMouseDownRef.current = distanceFromBottom < 20;
+          scrollTopOnMouseDownRef.current = scrollTop;
+        }
+      }
+    };
+    const handleMouseUp = () => {
+      isMouseDownRef.current = false;
+
+      // Only process autoscroll re-enable for scrollbar drags, not content clicks
+      if (!isScrollbarDragRef.current) {
+        isScrollbarDragRef.current = false;
+        return;
+      }
+
+      // Check if user is at bottom of CURRENT (frozen) view BEFORE unfreeze happens
+      const container = scrollContainerRef.current;
+      let wasAtFrozenBottom = false;
+      let didScrollUp = false;
+      if (container) {
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        // Use tight threshold - only if truly at the bottom of frozen view
+        const threshold = 50; // 50px from bottom
+        wasAtFrozenBottom = distanceFromBottom < threshold;
+        // Check if user scrolled UP during drag (they want to see history, not autoscroll)
+        didScrollUp = scrollTop < scrollTopOnMouseDownRef.current - 20; // 20px buffer for noise
+      }
+
+      // Only re-enable autoscroll if:
+      // 1. User is at the frozen bottom (wasAtFrozenBottom)
+      // 2. AND user didn't scroll up during the drag
+      const shouldReEnableAutoscroll = wasAtFrozenBottom && !didScrollUp;
+
+      if (shouldReEnableAutoscroll) {
+        // Wait 2 frames for ViewGrid's freeze to release and scrollHeight to update
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // Re-fetch container to get fresh scrollHeight after unfreeze
+            const freshContainer = scrollContainerRef.current;
+            if (freshContainer) {
+              const newBottom = freshContainer.scrollHeight - freshContainer.clientHeight;
+              freshContainer.scrollTop = newBottom;
+              // Re-enable stuckToBottom React state after scrolling to bottom
+              setStuckToBottom(true);
+              markStuckToBottom();
+            }
+          });
+        });
+      }
+      wasAtBottomOnMouseDownRef.current = false;
+      scrollTopOnMouseDownRef.current = 0;
+      isScrollbarDragRef.current = false;
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [markStuckToBottom]);
+
   // Scroll compensation when rows are trimmed (only when not stuck to bottom)
   // Adjusts scroll position to keep the same content visible
   useEffect(() => {
@@ -432,6 +571,7 @@ export function VirtualLogGrid({
 
     if (trimmedSinceLastCheck <= 0) return;
     if (stuckToBottom) return; // No compensation needed when at bottom
+    if (isMouseDownRef.current) return; // Don't compensate during mouse drag
 
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -443,27 +583,37 @@ export function VirtualLogGrid({
   }, [lastTrimCount, stuckToBottom, rowHeight]);
 
   // Calculate rows below viewport dynamically on scroll and entries change
+  // Also report first visible row for safe trimming
+  const lastReportedFirstVisibleRef = useRef(-1);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const calculateRowsBelow = () => {
+    const calculateScrollMetrics = () => {
       const { scrollTop, clientHeight } = container;
       const totalHeight = entries.length * rowHeight;
       const visibleBottom = scrollTop + clientHeight;
       const hiddenHeight = totalHeight - visibleBottom;
       const rowsBelow = Math.max(0, Math.floor(hiddenHeight / rowHeight));
       setRowsBelowViewport(rowsBelow);
+
+      // Calculate and report first visible row (for safe trimming)
+      const firstVisibleRow = Math.floor(scrollTop / rowHeight);
+      if (onFirstVisibleRowChange && firstVisibleRow !== lastReportedFirstVisibleRef.current) {
+        lastReportedFirstVisibleRef.current = firstVisibleRow;
+        onFirstVisibleRowChange(firstVisibleRow);
+      }
     };
 
     // Calculate initially
-    calculateRowsBelow();
+    calculateScrollMetrics();
 
     // Listen to scroll events
-    container.addEventListener('scroll', calculateRowsBelow, { passive: true });
+    container.addEventListener('scroll', calculateScrollMetrics, { passive: true });
 
-    return () => container.removeEventListener('scroll', calculateRowsBelow);
-  }, [entries.length, rowHeight]);
+    return () => container.removeEventListener('scroll', calculateScrollMetrics);
+  }, [entries.length, rowHeight, onFirstVisibleRowChange]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -634,6 +784,10 @@ export function VirtualLogGrid({
 
     e.preventDefault();
 
+    // Stop autoscroll when user clicks on a row - they're interacting with specific content
+    setStuckToBottom(false);
+    markUserScroll();
+
     // Focus container so it can receive keyboard events (like Ctrl+C)
     containerRef.current?.focus();
 
@@ -698,20 +852,24 @@ export function VirtualLogGrid({
         });
       }
     }
-  }, [onSelectionChange, selection]);
+  }, [onSelectionChange, selection, markUserScroll]);
 
   // Handle mouse move during drag
+  // Uses refs for frequently-changing values to prevent listener re-attachment
+  // which can cause mouseup events to be missed during rapid updates
   useEffect(() => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragStartRef.current || !onSelectionChange) return;
+      const onSelectionChangeCurrent = onSelectionChangeRef.current;
+      const selectionCurrent = selectionRef.current;
+      if (!dragStartRef.current || !onSelectionChangeCurrent) return;
 
       const rowIndex = getRowIndexFromY(e.clientY);
       const colIndex = getColumnIndexFromX(e.clientX);
 
       // Update the last range in the selection (the one being dragged)
-      const existingRanges = selection?.ranges || [];
+      const existingRanges = selectionCurrent?.ranges || [];
       const updatedRange: CellRange = {
         startRow: dragStartRef.current.row,
         startCol: dragStartRef.current.col,
@@ -724,9 +882,9 @@ export function VirtualLogGrid({
         ? [...existingRanges.slice(0, -1), updatedRange]
         : [updatedRange];
 
-      onSelectionChange({
+      onSelectionChangeCurrent({
         ranges: newRanges,
-        anchor: selection?.anchor,
+        anchor: selectionCurrent?.anchor,
       });
 
       // Auto-scroll when near edges
@@ -747,15 +905,18 @@ export function VirtualLogGrid({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
+      const onRowClickCurrent = onRowClickRef.current;
+      const entriesCurrent = entriesRef.current;
+
       // Check if this was a click (not a drag) - same row and quick (<200ms)
-      if (clickStartRef.current && onRowClick) {
+      if (clickStartRef.current && onRowClickCurrent) {
         const rowIndex = getRowIndexFromY(e.clientY);
         const elapsed = Date.now() - clickStartRef.current.time;
         const sameRow = rowIndex === clickStartRef.current.row;
 
         // Fire onRowClick if it was a quick click on the same row
-        if (sameRow && elapsed < 200 && entries[rowIndex]) {
-          onRowClick(entries[rowIndex], rowIndex);
+        if (sameRow && elapsed < 200 && entriesCurrent[rowIndex]) {
+          onRowClickCurrent(entriesCurrent[rowIndex], rowIndex);
         }
       }
 
@@ -773,7 +934,7 @@ export function VirtualLogGrid({
       document.removeEventListener('mouseup', handleMouseUp);
       stopAutoScroll();
     };
-  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, onSelectionChange, startAutoScroll, stopAutoScroll, onRowClick, entries, selection]);
+  }, [isDragging, getRowIndexFromY, getColumnIndexFromX, startAutoScroll, stopAutoScroll]);
 
   // Get selected entries for copy/context menu (from all ranges)
   const selectedEntries = useMemo(() => {
@@ -803,22 +964,32 @@ export function VirtualLogGrid({
     return sortedCols.map(i => visibleColumns[i]).filter(Boolean);
   }, [selection, visibleColumns]);
 
-  // Keyboard navigation
+  // Ref for visibleColumns to avoid listener re-attachment
+  const visibleColumnsRef = useRef(visibleColumns);
+  visibleColumnsRef.current = visibleColumns;
+
+  // Keyboard navigation - attached to container element
+  // Uses refs for frequently-changing values to minimize listener re-attachment
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const entriesCurrent = entriesRef.current;
+      const selectionCurrent = selectionRef.current;
+      const onSelectionChangeCurrent = onSelectionChangeRef.current;
+      const visibleColumnsCurrent = visibleColumnsRef.current;
+
       // Ctrl+A to select all rows
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
-        if (onSelectionChange && entries.length > 0) {
-          onSelectionChange({
+        if (onSelectionChangeCurrent && entriesCurrent.length > 0) {
+          onSelectionChangeCurrent({
             ranges: [{
               startRow: 0,
               startCol: 0,
-              endRow: entries.length - 1,
-              endCol: visibleColumns.length - 1,
+              endRow: entriesCurrent.length - 1,
+              endCol: visibleColumnsCurrent.length - 1,
             }],
             anchor: { row: 0, col: 0 },
           });
@@ -827,25 +998,25 @@ export function VirtualLogGrid({
       }
 
       if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
-      if (!onSelectionChange) return;
+      if (!onSelectionChangeCurrent) return;
 
       e.preventDefault();
 
       // Use the last range for current position
-      const lastRange = selection?.ranges[selection.ranges.length - 1];
+      const lastRange = selectionCurrent?.ranges[selectionCurrent.ranges.length - 1];
       const currentRange = lastRange || { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
       let newRow = currentRange.endRow;
       let newCol = currentRange.endCol;
 
       switch (e.key) {
         case 'ArrowDown':
-          newRow = Math.min(currentRange.endRow + 1, entries.length - 1);
+          newRow = Math.min(currentRange.endRow + 1, entriesCurrent.length - 1);
           break;
         case 'ArrowUp':
           newRow = Math.max(currentRange.endRow - 1, 0);
           break;
         case 'ArrowRight':
-          newCol = Math.min(currentRange.endCol + 1, visibleColumns.length - 1);
+          newCol = Math.min(currentRange.endCol + 1, visibleColumnsCurrent.length - 1);
           break;
         case 'ArrowLeft':
           newCol = Math.max(currentRange.endCol - 1, 0);
@@ -854,7 +1025,7 @@ export function VirtualLogGrid({
 
       if (e.shiftKey) {
         // Extend selection from anchor
-        const anchor = selection?.anchor || { row: currentRange.startRow, col: currentRange.startCol };
+        const anchor = selectionCurrent?.anchor || { row: currentRange.startRow, col: currentRange.startCol };
         const extendedRange: CellRange = {
           startRow: anchor.row,
           startCol: anchor.col,
@@ -862,10 +1033,10 @@ export function VirtualLogGrid({
           endCol: newCol,
         };
         // Replace last range with extended range
-        const newRanges = selection && selection.ranges.length > 0
-          ? [...selection.ranges.slice(0, -1), extendedRange]
+        const newRanges = selectionCurrent && selectionCurrent.ranges.length > 0
+          ? [...selectionCurrent.ranges.slice(0, -1), extendedRange]
           : [extendedRange];
-        onSelectionChange({
+        onSelectionChangeCurrent({
           ranges: newRanges,
           anchor,
         });
@@ -877,7 +1048,7 @@ export function VirtualLogGrid({
           endRow: newRow,
           endCol: newCol,
         };
-        onSelectionChange({
+        onSelectionChangeCurrent({
           ranges: [newRange],
           anchor: { row: newRow, col: newCol },
         });
@@ -888,20 +1059,22 @@ export function VirtualLogGrid({
 
     container.addEventListener('keydown', handleKeyDown);
     return () => container.removeEventListener('keydown', handleKeyDown);
-  }, [entries.length, selection, visibleColumns.length, onSelectionChange, virtualizer]);
+  }, [virtualizer, isMounted]);
 
   // Ctrl+C to copy selected cells (with smart formatting for non-contiguous selections)
+  // Attached to container, uses refs
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const handleCopy = async (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        if (!selection || selection.ranges.length === 0) return;
+        const selectionCurrent = selectionRef.current;
+        if (!selectionCurrent || selectionCurrent.ranges.length === 0) return;
 
         e.preventDefault();
         // Use smart format that handles non-contiguous selections with headers
-        const text = formatSelectionForCopy(entries, visibleColumns, selection);
+        const text = formatSelectionForCopy(entriesRef.current, visibleColumnsRef.current, selectionCurrent);
         if (text) {
           await copyToClipboard(text);
         }
@@ -910,11 +1083,15 @@ export function VirtualLogGrid({
 
     container.addEventListener('keydown', handleCopy);
     return () => container.removeEventListener('keydown', handleCopy);
-  }, [entries, visibleColumns, selection]);
+  }, [isMounted]);
 
   // Handle context menu on rows
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    // Stop autoscroll when user opens context menu - they're interacting with specific rows
+    setStuckToBottom(false);
+    markUserScroll();
+
     const rowIndex = getRowIndexFromY(e.clientY);
     const clickedEntry = entries[rowIndex] || null;
     setContextMenu({
@@ -922,7 +1099,7 @@ export function VirtualLogGrid({
       position: { x: e.clientX, y: e.clientY },
       clickedEntry,
     });
-  }, [getRowIndexFromY, entries]);
+  }, [getRowIndexFromY, entries, markUserScroll]);
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
@@ -967,6 +1144,9 @@ export function VirtualLogGrid({
     position: 'relative' as const,
     // Striped background pattern matching row heights - fallback when rows not yet rendered during fast scroll
     background: `repeating-linear-gradient(to bottom, var(--vlg-row-bg) 0px, var(--vlg-row-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight * 2}px)`,
+    // Performance optimizations for smooth scrolling
+    willChange: 'transform' as const,
+    transform: 'translateZ(0)', // Force GPU acceleration
   }), [totalSize, rowHeight]);
 
   return (

@@ -6,6 +6,8 @@ interface UseScrollDetectionOptions {
   onScrollToBottom: () => void;
   isProgrammaticScroll: () => boolean;
   bottomThreshold?: number;
+  /** External signal that user wants to stop autoscroll (e.g., clicked on a row) */
+  userStoppedAutoscroll?: boolean;
 }
 
 export function useScrollDetection({
@@ -14,11 +16,24 @@ export function useScrollDetection({
   onScrollToBottom,
   isProgrammaticScroll,
   bottomThreshold = 30,
+  userStoppedAutoscroll = false,
 }: UseScrollDetectionOptions) {
   const lastScrollTopRef = useRef(0);
   const isScrollbarDragRef = useRef(false);
   // Track if user scrolled up - only re-enable when they scroll back to bottom
   const userScrolledUpRef = useRef(false);
+  // Grace period timestamp - don't re-enable autoscroll immediately after user stops it
+  const userStopTimeRef = useRef(0);
+  const GRACE_PERIOD_MS = 300;
+
+  // Sync external signal to internal ref (e.g., when user clicks on a row)
+  useEffect(() => {
+    if (userStoppedAutoscroll) {
+      userScrolledUpRef.current = true;
+      // Record when user stopped autoscroll to prevent immediate re-enable
+      userStopTimeRef.current = performance.now();
+    }
+  }, [userStoppedAutoscroll]);
 
   useEffect(() => {
     if (!scrollElement) return;
@@ -38,8 +53,6 @@ export function useScrollDetection({
 
     // Track scroll position changes
     const handleScroll = () => {
-      if (isProgrammaticScroll()) return;
-
       const { scrollTop, scrollHeight, clientHeight } = scrollElement;
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
@@ -47,31 +60,62 @@ export function useScrollDetection({
       const scrollingUp = scrollTop < lastScrollTopRef.current;
       lastScrollTopRef.current = scrollTop;
 
-      // If user scrolled up via any method, disable autoscroll
-      if (scrollingUp && isScrollbarDragRef.current) {
-        userScrolledUpRef.current = true;
-        onUserScrollUp();
+      // During scrollbar drag, detect scroll up and bottom
+      if (isScrollbarDragRef.current) {
+        if (scrollingUp) {
+          userScrolledUpRef.current = true;
+          onUserScrollUp();
+        }
+        // Check for reaching bottom during drag
+        // Check grace period - don't re-enable immediately after user stopped autoscroll
+        const withinGracePeriod = performance.now() - userStopTimeRef.current < GRACE_PERIOD_MS;
+        if (distanceFromBottom < bottomThreshold && userScrolledUpRef.current && !withinGracePeriod) {
+          userScrolledUpRef.current = false;
+          onScrollToBottom();
+        }
+        return;
       }
+
+      // Skip other scroll handling during programmatic scroll
+      if (isProgrammaticScroll()) return;
 
       // Only re-enable autoscroll at bottom if user previously scrolled up
       // (not if they clicked the button to disable)
-      if (distanceFromBottom < bottomThreshold && userScrolledUpRef.current) {
+      // Also check grace period to prevent immediate re-enable after click
+      const withinGracePeriod = performance.now() - userStopTimeRef.current < GRACE_PERIOD_MS;
+      if (distanceFromBottom < bottomThreshold && userScrolledUpRef.current && !withinGracePeriod) {
         userScrolledUpRef.current = false;
         onScrollToBottom();
       }
     };
 
-    // Track scrollbar drag start
+    // Track scrollbar drag start - immediately disable autoscroll when user grabs scrollbar
     const handleMouseDown = (e: MouseEvent) => {
       // Check if clicking on scrollbar area (right edge of element)
       const rect = scrollElement.getBoundingClientRect();
       const scrollbarWidth = scrollElement.offsetWidth - scrollElement.clientWidth;
       if (e.clientX > rect.right - scrollbarWidth - 5) {
         isScrollbarDragRef.current = true;
+        // Immediately disable autoscroll when user grabs scrollbar
+        // This prevents the "fighting" behavior where autoscroll tries to take over
+        userScrolledUpRef.current = true;
+        onUserScrollUp();
       }
     };
 
     const handleMouseUp = () => {
+      // On mouseup after scrollbar drag, check if we're at the bottom
+      if (isScrollbarDragRef.current && scrollElement) {
+        const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+        // Use absolute distance: if within 50px of bottom, user wants autoscroll
+        // This is more reliable than percentage, especially with frozen entries during drag
+        if (distanceFromBottom < 50 && userScrolledUpRef.current) {
+          userScrolledUpRef.current = false;
+          onScrollToBottom();
+        }
+      }
       isScrollbarDragRef.current = false;
     };
 

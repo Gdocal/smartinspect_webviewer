@@ -12,13 +12,24 @@
       // Apply dark mode immediately to prevent flash
       (function() {
         const theme = localStorage.getItem('si-theme');
-        if (theme === 'dark') {
+        const isDark = theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
           document.documentElement.classList.add('dark');
+          document.documentElement.style.backgroundColor = '#0f172a';
+          document.documentElement.style.colorScheme = 'dark';
+        } else {
+          document.documentElement.style.backgroundColor = '#f8fafc';
+          document.documentElement.style.colorScheme = 'light';
         }
       })();
     </script>
+    <style>
+      /* Prevent flash of white on reload */
+      html { background-color: #0f172a; }
+      html:not(.dark) { background-color: #f8fafc; }
+    </style>
   </head>
-  <body>
+  <body style="margin: 0;">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

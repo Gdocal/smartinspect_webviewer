@@ -15,6 +15,9 @@ import { ColumnConfig, DEFAULT_COLUMNS } from './VirtualLogGrid/types';
 
 // Debug flicker logging
 const DEBUG_FLICKER = false;
+
+// Batch trimming constant - instead of continuous trimming, accumulate and trim in batches
+const BATCH_TRIM_BUFFER = 5000;  // Allow 5K extra rows before triggering batch trim
 const flickerLog = (msg: string, data?: Record<string, unknown>) => {
   if (!DEBUG_FLICKER) return;
   const ts = performance.now().toFixed(2);
@@ -24,6 +27,171 @@ const flickerLog = (msg: string, data?: Record<string, unknown>) => {
     console.log(`[ViewGrid:${ts}] ${msg}`);
   }
 };
+
+// Debug overlay section header
+const DebugSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div style={{ marginTop: 6, borderTop: '1px solid #333', paddingTop: 4 }}>
+        <div style={{ color: '#888', fontSize: 9, marginBottom: 2 }}>{title}</div>
+        {children}
+    </div>
+);
+
+// Debug overlay component
+interface GridDebugOverlayProps {
+    // Buffer
+    storeRowCount: number;
+    filteredCount: number;
+    rowsPerSec: number;
+    // Grid
+    cappedCount: number;
+    maxGridRows: number;
+    hardMaxRows: number;
+    // Trim
+    trimStrategy: 'aggressive' | 'batch-pending' | 'batch-trim' | 'none';
+    sliceOffset: number;
+    cumulativeTrimCount: number;
+    safeToTrim: number;
+    excessRows: number;
+    // Scroll
+    isStuckToBottom: boolean;
+    firstVisibleRow: number;
+    // Scroll mode
+    scrollMode: { isAnimating: boolean; wouldUseSmooth: boolean; rate: number };
+    // Display
+    displayLag: number;
+    targetLen: number;
+    displayCount: number;
+    // Content tracking
+    lastEntryId: number | null;
+    entriesVersion: number;
+    // Control
+    onClose: () => void;
+}
+
+function GridDebugOverlay({
+    storeRowCount,
+    filteredCount,
+    rowsPerSec,
+    cappedCount,
+    maxGridRows,
+    hardMaxRows,
+    trimStrategy,
+    sliceOffset,
+    cumulativeTrimCount,
+    safeToTrim,
+    excessRows,
+    isStuckToBottom,
+    firstVisibleRow,
+    scrollMode,
+    displayLag,
+    targetLen,
+    displayCount,
+    lastEntryId,
+    entriesVersion,
+    onClose,
+}: GridDebugOverlayProps) {
+    const isOverflow = cappedCount > maxGridRows;
+    const utilizationPct = ((cappedCount / maxGridRows) * 100).toFixed(0);
+
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                top: 8,
+                right: 8,
+                backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                color: '#0f0',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 10,
+                fontFamily: 'monospace',
+                zIndex: 9999,
+                minWidth: 220,
+                maxWidth: 280,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+            }}
+        >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontWeight: 'bold', color: '#fff', fontSize: 11 }}>Grid Debug</span>
+                <button
+                    onClick={onClose}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#888',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontSize: 14,
+                        lineHeight: 1,
+                    }}
+                >
+                    ×
+                </button>
+            </div>
+
+            <DebugSection title="BUFFER">
+                <div>store: <span style={{ color: '#fff' }}>{storeRowCount.toLocaleString()}</span></div>
+                <div>filtered: <span style={{ color: '#fff' }}>{filteredCount.toLocaleString()}</span></div>
+                <div>rate: <span style={{ color: rowsPerSec > 50 ? '#ff0' : '#fff' }}>{rowsPerSec.toFixed(1)}/s</span></div>
+            </DebugSection>
+
+            <DebugSection title="GRID">
+                <div>
+                    capped: <span style={{ color: isOverflow ? '#f00' : '#fff' }}>{cappedCount.toLocaleString()}</span>
+                    <span style={{ color: '#666' }}> / {maxGridRows.toLocaleString()}</span>
+                    <span style={{ color: isOverflow ? '#f00' : '#888' }}> ({utilizationPct}%)</span>
+                </div>
+                <div>batchThreshold: <span style={{ color: '#888' }}>{hardMaxRows.toLocaleString()}</span></div>
+                <div>excess: <span style={{ color: excessRows > 0 ? '#ff0' : '#888' }}>{excessRows.toLocaleString()}</span></div>
+            </DebugSection>
+
+            <DebugSection title="TRIM">
+                <div>
+                    strategy: <span style={{
+                        color: trimStrategy === 'aggressive' ? '#f80' :
+                               trimStrategy === 'batch-pending' ? '#0ff' :
+                               trimStrategy === 'batch-trim' ? '#f0f' : '#888'
+                    }}>{trimStrategy}</span>
+                </div>
+                <div>sliceOffset: <span style={{ color: '#fff' }}>{sliceOffset.toLocaleString()}</span></div>
+                <div>cumulative: <span style={{ color: '#fff' }}>{cumulativeTrimCount.toLocaleString()}</span></div>
+                <div>safeToTrim: <span style={{ color: '#888' }}>{safeToTrim.toLocaleString()}</span></div>
+            </DebugSection>
+
+            <DebugSection title="SCROLL">
+                <div>
+                    position: <span style={{ color: isStuckToBottom ? '#0f0' : '#f80' }}>
+                        {isStuckToBottom ? 'bottom (autoscroll)' : `row ${firstVisibleRow}`}
+                    </span>
+                </div>
+                <div>stuckToBottom: <span style={{ color: isStuckToBottom ? '#0f0' : '#f80' }}>{isStuckToBottom ? 'true' : 'false'}</span></div>
+                <div>
+                    mode: <span style={{ color: scrollMode.isAnimating ? '#0ff' : (scrollMode.wouldUseSmooth ? '#0f0' : '#f80') }}>
+                        {scrollMode.isAnimating ? 'SMOOTH (active)' : (scrollMode.wouldUseSmooth ? 'smooth' : 'instant')}
+                    </span>
+                    <span style={{ color: '#888' }}> ({scrollMode.rate.toFixed(1)}/s)</span>
+                </div>
+            </DebugSection>
+
+            <DebugSection title="DISPLAY">
+                <div>target: <span style={{ color: '#fff' }}>{targetLen.toLocaleString()}</span></div>
+                <div>showing: <span style={{ color: '#fff' }}>{displayCount.toLocaleString()}</span></div>
+                <div>
+                    lag: <span style={{ color: displayLag > 10 ? '#ff0' : displayLag > 0 ? '#0f0' : '#888' }}>
+                        {displayLag > 0 ? `+${displayLag}` : '0'}
+                    </span>
+                </div>
+            </DebugSection>
+
+            <DebugSection title="CONTENT">
+                <div>lastId: <span style={{ color: '#fff' }}>{lastEntryId ?? 'null'}</span></div>
+                <div>version: <span style={{ color: '#fff' }}>{entriesVersion}</span></div>
+            </DebugSection>
+
+            <div style={{ marginTop: 6, color: '#555', fontSize: 8 }}>Ctrl+Shift+G to toggle</div>
+        </div>
+    );
+}
 
 // Track stuckToBottom per view
 
@@ -240,6 +408,7 @@ export function ViewGrid({
         entriesVersion,
         theme,
         setViewStuckToBottom,
+        getViewStuckToBottom,
         limits
     } = useLogStore();
 
@@ -248,6 +417,56 @@ export function ViewGrid({
 
     // Cell selection state (multi-selection support)
     const [selection, setSelection] = useState<MultiSelection | null>(null);
+
+    // Debug overlay state
+    const [showDebug, setShowDebug] = useState(false);
+    const [rowsPerSec, setRowsPerSec] = useState(0);
+    const lastRowCountRef = useRef(0);
+    const lastRateTimeRef = useRef(Date.now());
+    // Scroll mode info from VirtualLogGrid
+    const [scrollModeInfo, setScrollModeInfo] = useState({ isAnimating: false, wouldUseSmooth: true, rate: 0 });
+
+    // Mouse-freeze logic for scroll stability during drag
+    // Freezes entries/displayCount during mouse down to prevent scrollHeight changes
+    const isMouseDownRef = useRef(false);
+    const frozenEntriesRef = useRef<LogEntry[] | null>(null);
+    const frozenSliceOffsetRef = useRef(0);
+    const frozenDisplayCountRef = useRef<number | null>(null);
+    const [, forceUpdate] = useState(0);
+    const displayCountRefForFreeze = useRef<React.MutableRefObject<number> | null>(null);
+    useEffect(() => {
+        const handleMouseDown = () => {
+            isMouseDownRef.current = true;
+            if (displayCountRefForFreeze.current) {
+                frozenDisplayCountRef.current = displayCountRefForFreeze.current.current;
+            }
+        };
+        const handleMouseUp = () => {
+            isMouseDownRef.current = false;
+            frozenEntriesRef.current = null;
+            frozenSliceOffsetRef.current = 0;
+            frozenDisplayCountRef.current = null;
+            forceUpdate(n => n + 1);
+        };
+        document.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            document.removeEventListener('mousedown', handleMouseDown);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+    // Keyboard handler for Ctrl+Shift+G
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'g') {
+                e.preventDefault();
+                setShowDebug(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
 
     // Column state - use view's column state or defaults
     const [columns, setColumns] = useState<ColumnConfig[]>(() => {
@@ -283,30 +502,128 @@ export function ViewGrid({
         return filterEntriesForView(entries, view.filter);
     }, [entries, view.filter, entriesVersion]);
 
-    // Apply maxGridRows cap - keep newest entries (from end)
+    // Track first visible row from VirtualLogGrid for safe trimming
+    const firstVisibleRowRef = useRef(0);
+    const handleFirstVisibleRowChange = useCallback((row: number) => {
+        firstVisibleRowRef.current = row;
+    }, []);
+
+    // Track cumulative trim count for scroll compensation
+    const cumulativeTrimCountRef = useRef(0);
+    const prevSliceOffsetRef = useRef(0);
+
+    // Check if view is stuck to bottom (for aggressive vs safe trimming)
+    const isStuckToBottom = getViewStuckToBottom(view.id);
+
+    // Apply maxGridRows cap with BATCH TRIMMING
+    // Instead of continuous trimming, let buffer grow and trim in batches
     const maxGridRows = limits.maxGridRows;
-    const { cappedEntries, trimCount } = useMemo(() => {
+    const batchTrimThreshold = maxGridRows + BATCH_TRIM_BUFFER; // e.g., 15K for 10K limit
+
+    const { cappedEntries, sliceOffset, debugTrim } = useMemo(() => {
+        const excessRows = Math.max(0, filteredEntries.length - maxGridRows);
+        const safeToTrim = Math.max(0, firstVisibleRowRef.current - 50);
+
+        // Case 1: Under maxGridRows - no trimming needed
         if (filteredEntries.length <= maxGridRows) {
-            return { cappedEntries: filteredEntries, trimCount: 0 };
+            return {
+                cappedEntries: filteredEntries,
+                sliceOffset: 0,
+                debugTrim: { excessRows: 0, safeToTrim, mustTrim: 0, actualTrim: 0, batchPending: false }
+            };
         }
-        // Trim from the beginning (old entries), keep newest
-        const trimmed = filteredEntries.length - maxGridRows;
+
+        // Case 2: When stuck to bottom - trim aggressively (user doesn't care about old rows)
+        if (isStuckToBottom) {
+            return {
+                cappedEntries: filteredEntries.slice(-maxGridRows),
+                sliceOffset: excessRows,
+                debugTrim: { excessRows, safeToTrim, mustTrim: 0, actualTrim: excessRows, batchPending: false }
+            };
+        }
+
+        // Case 3: Scrolled up - use BATCH TRIMMING
+        // Display always capped at maxGridRows
+        // Store accumulates until batchTrimThreshold, then batch trim happens
+
+        // Track cumulative offset for scroll compensation
+        // Only apply scroll compensation when batch trim happens (excess >= BATCH_TRIM_BUFFER)
+        const shouldBatchTrim = excessRows >= BATCH_TRIM_BUFFER;
+
+        if (shouldBatchTrim) {
+            // Batch trim time - trim back to maxGridRows and apply scroll compensation
+            const trimAmount = excessRows;
+            const firstVisibleRow = firstVisibleRowRef.current;
+
+            return {
+                cappedEntries: filteredEntries.slice(-maxGridRows),
+                sliceOffset: trimAmount,
+                debugTrim: {
+                    excessRows,
+                    safeToTrim,
+                    mustTrim: trimAmount,
+                    actualTrim: trimAmount,
+                    batchPending: false,
+                    firstVisibleRow,
+                    viewportCase: firstVisibleRow >= trimAmount + 50 ? 'safe' :
+                                  firstVisibleRow >= trimAmount ? 'partial' : 'full-overlap'
+                }
+            };
+        }
+
+        // Under threshold - cap display to maxGridRows, no scroll compensation yet
+        // Store accumulates but display stays at 10K (batch-pending state)
         return {
             cappedEntries: filteredEntries.slice(-maxGridRows),
-            trimCount: trimmed
+            sliceOffset: 0,
+            debugTrim: { excessRows, safeToTrim, mustTrim: 0, actualTrim: 0, batchPending: true }
         };
-    }, [filteredEntries, maxGridRows]);
+    }, [filteredEntries, maxGridRows, batchTrimThreshold, isStuckToBottom]);
 
-    // Track cumulative trim count for virtual padding
-    const cumulativeTrimCountRef = useRef(0);
-    const prevTrimCountRef = useRef(0);
-
-    // Update cumulative count when trimCount increases
-    if (trimCount > prevTrimCountRef.current) {
-        const delta = trimCount - prevTrimCountRef.current;
-        cumulativeTrimCountRef.current += delta;
+    // Track cumulative trim count by monitoring slice offset changes
+    if (sliceOffset > prevSliceOffsetRef.current) {
+        const trimmed = sliceOffset - prevSliceOffsetRef.current;
+        cumulativeTrimCountRef.current += trimmed;
     }
-    prevTrimCountRef.current = trimCount;
+    prevSliceOffsetRef.current = sliceOffset;
+
+    // Calculate trim strategy for debug display
+    const trimStrategy: 'aggressive' | 'batch-pending' | 'batch-trim' | 'none' = useMemo(() => {
+        if (filteredEntries.length <= maxGridRows) return 'none';
+        if (isStuckToBottom) return 'aggressive';
+        if (debugTrim.batchPending) return 'batch-pending';
+        return 'batch-trim';
+    }, [filteredEntries.length, maxGridRows, isStuckToBottom, debugTrim.batchPending]);
+
+    // Track filtered entries length in ref for rate calculation
+    const filteredLenRef = useRef(filteredEntries.length);
+    filteredLenRef.current = filteredEntries.length;
+
+    // Rate calculation effect (only when debug is shown)
+    useEffect(() => {
+        if (!showDebug) return;
+
+        // Initialize on first show
+        lastRowCountRef.current = filteredLenRef.current;
+        lastRateTimeRef.current = Date.now();
+
+        const interval = setInterval(() => {
+            const now = Date.now();
+            const elapsed = (now - lastRateTimeRef.current) / 1000;
+            const currentCount = filteredLenRef.current;
+            const delta = currentCount - lastRowCountRef.current;
+
+            if (elapsed > 0 && delta >= 0) {
+                // Smooth the rate with exponential moving average
+                setRowsPerSec(prev => prev * 0.3 + (delta / elapsed) * 0.7);
+            }
+
+            lastRowCountRef.current = currentCount;
+            lastRateTimeRef.current = now;
+        }, 500);
+
+        return () => clearInterval(interval);
+    }, [showDebug]);
 
     const lastTrimCount = cumulativeTrimCountRef.current;
 
@@ -338,6 +655,9 @@ export function ViewGrid({
     const needsStateSyncRef = useRef(false); // Track when render-time snap needs state sync
     const [displayCount, setDisplayCount] = useState(targetLen);
 
+    // Link displayCountRef for freeze mechanism
+    displayCountRefForFreeze.current = displayCountRef;
+
     flickerLog('displayCount state', {
         displayCount,
         displayCountRef: displayCountRef.current,
@@ -368,6 +688,9 @@ export function ViewGrid({
     }
 
     useEffect(() => {
+        // Mouse drag check - pause progressive display during drag
+        if (isMouseDownRef.current) return;
+
         // If render-time snap occurred, sync state immediately
         if (needsStateSyncRef.current) {
             needsStateSyncRef.current = false;
@@ -396,6 +719,12 @@ export function ViewGrid({
         // If we have new entries to animate and no animation running
         if (delta > 0 && rafIdRef.current === null) {
             const animate = () => {
+                // Mouse drag pause - keep animation alive but don't increment
+                if (isMouseDownRef.current) {
+                    rafIdRef.current = requestAnimationFrame(animate);
+                    return;
+                }
+
                 const currentTarget = targetLenRef.current;
                 const currentDisplay = displayCountRef.current;
                 if (currentDisplay >= currentTarget) {
@@ -427,8 +756,10 @@ export function ViewGrid({
     // Displayed entries: use ref for immediate accurate count, state for re-render trigger
     // This prevents flicker when state update is async
     const displayedEntries = useMemo(() => {
-        // Use the ref value which is always in sync, but depend on displayCount to trigger updates
-        const count = displayCountRef.current;
+        // Use frozen count during mouse drag to prevent scrollHeight changes
+        const count = frozenDisplayCountRef.current !== null
+            ? frozenDisplayCountRef.current
+            : displayCountRef.current;
         return targetEntries.slice(0, count);
     }, [targetEntries, displayCount]);
 
@@ -452,6 +783,9 @@ export function ViewGrid({
 
     // Effective autoscroll - NOT affected by pause (pause freezes entries, not scroll)
     const effectiveAutoScroll = view.autoScroll;
+
+    // How many entries are pending display (progressive display lag)
+    const displayLag = Math.max(0, targetLen - displayCount);
 
     return (
         <div
@@ -480,7 +814,33 @@ export function ViewGrid({
                 onStuckToBottomChange={handleStuckToBottomChange}
                 actualEntryCount={targetLen}
                 lastTrimCount={lastTrimCount}
+                onFirstVisibleRowChange={handleFirstVisibleRowChange}
+                onScrollModeChange={setScrollModeInfo}
             />
+            {showDebug && isActive && (
+                <GridDebugOverlay
+                    storeRowCount={entries.length}
+                    filteredCount={filteredEntries.length}
+                    rowsPerSec={rowsPerSec}
+                    cappedCount={cappedEntries.length}
+                    maxGridRows={maxGridRows}
+                    hardMaxRows={batchTrimThreshold}
+                    trimStrategy={trimStrategy}
+                    sliceOffset={sliceOffset}
+                    cumulativeTrimCount={cumulativeTrimCountRef.current}
+                    safeToTrim={debugTrim.safeToTrim}
+                    excessRows={debugTrim.excessRows}
+                    isStuckToBottom={isStuckToBottom}
+                    firstVisibleRow={firstVisibleRowRef.current}
+                    scrollMode={scrollModeInfo}
+                    displayLag={displayLag}
+                    targetLen={targetLen}
+                    displayCount={displayCount}
+                    lastEntryId={displayedEntries.length > 0 ? displayedEntries[displayedEntries.length - 1]?.id : null}
+                    entriesVersion={entriesVersion}
+                    onClose={() => setShowDebug(false)}
+                />
+            )}
         </div>
     );
 }

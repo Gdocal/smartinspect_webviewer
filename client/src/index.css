@@ -332,6 +332,11 @@ html, body, #root {
     flex-direction: column;
 }
 
+/* Remove browser focus outline when grid is focused (for keyboard events) */
+.virtual-log-grid:focus {
+    outline: none;
+}
+
 /* Dark theme variables */
 .virtual-log-grid.dark {
     --vlg-border: #475569;

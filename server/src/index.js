@@ -354,11 +354,81 @@ app.get('/api/logs', (req, res) => {
 
     const offset = parseInt(req.query.offset) || 0;
     const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    const order = req.query.order || 'desc'; // Default to newest first
 
-    const result = room.logBuffer.query(filter, offset, limit);
+    // Get all entries and apply filters
+    let allEntries = room.logBuffer.getAll();
+
+    // Apply session filter
+    if (filter.sessions && filter.sessions.length > 0) {
+        const sessionSet = new Set(filter.sessions);
+        allEntries = allEntries.filter(e => sessionSet.has(e.sessionName));
+    }
+
+    // Apply level filter
+    if (filter.levels && filter.levels.length > 0) {
+        const levelSet = new Set(filter.levels);
+        allEntries = allEntries.filter(e => levelSet.has(e.level));
+    }
+
+    // Apply time filters
+    if (filter.from && !isNaN(filter.from.getTime())) {
+        const fromTime = filter.from.getTime();
+        allEntries = allEntries.filter(e => e.timestamp.getTime() >= fromTime);
+    }
+    if (filter.to && !isNaN(filter.to.getTime())) {
+        const toTime = filter.to.getTime();
+        allEntries = allEntries.filter(e => e.timestamp.getTime() < toTime);
+    }
+
+    // Apply title/message pattern filters
+    if (filter.titlePattern) {
+        try {
+            const regex = new RegExp(filter.titlePattern, 'i');
+            const matches = e => regex.test(e.title || '');
+            allEntries = allEntries.filter(e =>
+                filter.inverseMatch ? !matches(e) : matches(e)
+            );
+        } catch (err) {
+            // Invalid regex, ignore
+        }
+    }
+    if (filter.messagePattern) {
+        try {
+            const regex = new RegExp(filter.messagePattern, 'i');
+            const matches = e => {
+                if (regex.test(e.title || '')) return true;
+                if (e.data) {
+                    const dataStr = e.data.toString('utf8');
+                    if (regex.test(dataStr)) return true;
+                }
+                return false;
+            };
+            allEntries = allEntries.filter(e =>
+                filter.inverseMatch ? !matches(e) : matches(e)
+            );
+        } catch (err) {
+            // Invalid regex, ignore
+        }
+    }
+
+    const total = allEntries.length;
+
+    // Sort entries: 'desc' = newest first (default), 'asc' = oldest first
+    if (order === 'desc') {
+        allEntries.sort((a, b) => b.id - a.id);
+    } else {
+        allEntries.sort((a, b) => a.id - b.id);
+    }
+
+    // Apply pagination
+    const paginatedEntries = allEntries.slice(offset, offset + limit);
+
+    // For display, always sort ascending (chronological order)
+    paginatedEntries.sort((a, b) => a.id - b.id);
 
     // Serialize entries for JSON
-    result.entries = result.entries.map(entry => {
+    const serializedEntries = paginatedEntries.map(entry => {
         const serialized = { ...entry };
         if (entry.data && Buffer.isBuffer(entry.data)) {
             serialized.data = entry.data.toString('base64');
@@ -367,7 +437,13 @@ app.get('/api/logs', (req, res) => {
         return serialized;
     });
 
-    res.json({ ...result, room: roomId });
+    res.json({
+        entries: serializedEntries,
+        total,
+        offset,
+        limit,
+        room: roomId
+    });
 });
 
 /**
