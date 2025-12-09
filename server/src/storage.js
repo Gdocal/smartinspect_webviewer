@@ -297,7 +297,7 @@ class LogRingBuffer {
  */
 class WatchStore {
     constructor(historyLimit = 100) {
-        this.values = new Map();   // name -> { value, timestamp, session, watchType }
+        this.values = new Map();   // name -> { value, timestamp, session, watchType, group }
         this.history = new Map();  // name -> Array of { value, timestamp }
         this.historyLimit = historyLimit;
     }
@@ -305,8 +305,8 @@ class WatchStore {
     /**
      * Update a watch value
      */
-    set(name, value, timestamp, session = null, watchType = null) {
-        const entry = { value, timestamp, session, watchType };
+    set(name, value, timestamp, session = null, watchType = null, group = '') {
+        const entry = { value, timestamp, session, watchType, group };
         this.values.set(name, entry);
 
         // Add to history

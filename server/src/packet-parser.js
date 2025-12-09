@@ -307,6 +307,8 @@ class PacketParser {
 
     /**
      * Parse Watch packet
+     * Format v2 (with group): [nameLen(4)] [valueLen(4)] [watchType(4)] [timestamp(8)] [groupLen(4)] [name] [value] [group]
+     * Format v1 (legacy): [nameLen(4)] [valueLen(4)] [watchType(4)] [timestamp(8)] [name] [value]
      */
     parseWatch(data) {
         if (data.length < 20) return null;
@@ -318,10 +320,38 @@ class PacketParser {
         const watchType = data.readInt32LE(offset); offset += 4;
         const timestamp = data.readDoubleLE(offset); offset += 8;
 
+        // v1 header size = 20, v2 header size = 24 (adds groupLen)
+        const v1HeaderSize = 20;
+        const v2HeaderSize = 24;
+
+        // Detect v2 format: check if there's a groupLen field and packet size matches v2
+        let group = '';
+        let groupLen = 0;
+
+        // Check if we have v2 format by looking at packet size
+        const v2ExpectedSize = v2HeaderSize + nameLen + valueLen;
+        if (data.length >= v2ExpectedSize) {
+            // Read potential groupLen
+            groupLen = data.readInt32LE(offset);
+            // Validate: v2 format if total size matches
+            const v2TotalExpected = v2HeaderSize + nameLen + valueLen + groupLen;
+            if (data.length >= v2TotalExpected && groupLen >= 0 && groupLen < 1000) {
+                offset += 4; // skip groupLen, it's v2 format
+            } else {
+                // It's v1 format, no groupLen field
+                groupLen = 0;
+            }
+        }
+
         const name = nameLen > 0 ? data.slice(offset, offset + nameLen).toString('utf8') : '';
         offset += nameLen;
 
         const value = valueLen > 0 ? data.slice(offset, offset + valueLen).toString('utf8') : '';
+        offset += valueLen;
+
+        if (groupLen > 0) {
+            group = data.slice(offset, offset + groupLen).toString('utf8');
+        }
 
         return {
             packetType: PacketType.Watch,
@@ -329,7 +359,8 @@ class PacketParser {
             name,
             value,
             watchType,
-            timestamp: timestampToDate(timestamp)
+            timestamp: timestampToDate(timestamp),
+            group
         };
     }
 
@@ -388,6 +419,7 @@ class PacketParser {
 
     /**
      * Parse Stream packet
+     * Format v3 (with group): [channelLen(4)] [dataLen(4)] [typeLen(4)] [timestamp(8)] [groupLen(4)] [channel] [data] [type] [group]
      * Format v2 (with type): [channelLen(4)] [dataLen(4)] [typeLen(4)] [timestamp(8)] [channel] [data] [type]
      * Format v1 (legacy): [channelLen(4)] [dataLen(4)] [timestamp(8)] [channel] [data]
      */
@@ -399,34 +431,55 @@ class PacketParser {
         const channelLen = data.readInt32LE(offset); offset += 4;
         const dataLen = data.readInt32LE(offset); offset += 4;
 
-        // Check if this is v2 format (with type field) by checking minimum size
-        // v2: 4 + 4 + 4 + 8 = 20 bytes header, v1: 4 + 4 + 8 = 16 bytes header
-        // We detect v2 by checking if the total data size matches v2 format
+        // Check format version by reading potential typeLen
         const potentialTypeLen = data.readInt32LE(offset);
-        const v2HeaderSize = 20;
         const v1HeaderSize = 16;
+        const v2HeaderSize = 20;
+        const v3HeaderSize = 24;
 
-        // Calculate expected sizes for both formats
-        const v2ExpectedSize = v2HeaderSize + channelLen + dataLen + potentialTypeLen;
+        // Calculate expected sizes for each format
         const v1ExpectedSize = v1HeaderSize + channelLen + dataLen;
+        const v2ExpectedSize = v2HeaderSize + channelLen + dataLen + potentialTypeLen;
 
         let streamType = '';
+        let group = '';
         let timestamp;
         let channel;
         let streamData;
 
-        if (data.length >= v2ExpectedSize && potentialTypeLen >= 0 && potentialTypeLen < 1000) {
-            // v2 format with type
-            offset += 4; // skip typeLen (already read as potentialTypeLen)
+        // Try v3 first (has groupLen after timestamp)
+        if (data.length >= v2HeaderSize + 4 && potentialTypeLen >= 0 && potentialTypeLen < 1000) {
+            offset += 4; // skip typeLen
             timestamp = data.readDoubleLE(offset); offset += 8;
 
-            channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
-            offset += channelLen;
+            // Check for v3 format (groupLen field after timestamp)
+            const potentialGroupLen = data.readInt32LE(offset);
+            const v3ExpectedSize = v3HeaderSize + channelLen + dataLen + potentialTypeLen + potentialGroupLen;
 
-            streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
-            offset += dataLen;
+            if (data.length >= v3ExpectedSize && potentialGroupLen >= 0 && potentialGroupLen < 1000) {
+                // v3 format with group
+                offset += 4; // skip groupLen
 
-            streamType = potentialTypeLen > 0 ? data.slice(offset, offset + potentialTypeLen).toString('utf8') : '';
+                channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
+                offset += channelLen;
+
+                streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+                offset += dataLen;
+
+                streamType = potentialTypeLen > 0 ? data.slice(offset, offset + potentialTypeLen).toString('utf8') : '';
+                offset += potentialTypeLen;
+
+                group = potentialGroupLen > 0 ? data.slice(offset, offset + potentialGroupLen).toString('utf8') : '';
+            } else {
+                // v2 format with type but no group
+                channel = channelLen > 0 ? data.slice(offset, offset + channelLen).toString('utf8') : '';
+                offset += channelLen;
+
+                streamData = dataLen > 0 ? data.slice(offset, offset + dataLen).toString('utf8') : '';
+                offset += dataLen;
+
+                streamType = potentialTypeLen > 0 ? data.slice(offset, offset + potentialTypeLen).toString('utf8') : '';
+            }
         } else {
             // v1 format without type (legacy)
             timestamp = data.readDoubleLE(offset); offset += 8;
@@ -443,7 +496,8 @@ class PacketParser {
             channel,
             data: streamData,
             streamType,
-            timestamp: timestampToDate(timestamp)
+            timestamp: timestampToDate(timestamp),
+            group
         };
     }
 }

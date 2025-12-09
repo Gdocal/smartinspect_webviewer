@@ -60,7 +60,20 @@ echo -e "${GREEN}[HTTP] With session=WebSocket${RESET}"
 curl -s -X POST "http://${SI_HOST}/api/log?level=info&app=test-script&session=WebSocket" -d "HTTP Test: WebSocket session"
 sleep $sleep_time
 
-# Test 5: All log levels
+# Test 5: With room
+echo -e "${GREEN}[HTTP] With room=testroom${RESET}"
+curl -s -X POST "http://${SI_HOST}/api/log?level=info&app=test-script&room=testroom" -d "HTTP Test: testroom via param"
+sleep $sleep_time
+
+echo -e "${GREEN}[HTTP] With room=testroom and session=Database${RESET}"
+curl -s -X POST "http://${SI_HOST}/api/log?level=info&app=test-script&room=testroom&session=Database" -d "HTTP Test: testroom with Database session"
+sleep $sleep_time
+
+echo -e "${GREEN}[HTTP] With room=testroom and session=API${RESET}"
+curl -s -X POST "http://${SI_HOST}/api/log?level=warning&app=test-script&room=testroom&session=API" -d "HTTP Test: testroom with API session"
+sleep $sleep_time
+
+# Test 6: All log levels
 echo -e "${CYAN}[HTTP] Testing all levels${RESET}"
 for level in debug verbose info warning error fatal; do
     curl -s -X POST "http://${SI_HOST}/api/log?level=${level}&app=level-test&session=Levels" -d "HTTP Test: ${level} level"
@@ -108,6 +121,17 @@ else
     sleep $sleep_time
 
     echo '{"level":"error","message":"Pipe Test: JSON with WebSocket session","app":"json-test","room":"default","session":"WebSocket"}' > "$SI_PIPE"
+    sleep $sleep_time
+
+    # Test 5: JSON format with testroom
+    echo -e "${GREEN}[PIPE] JSON format with testroom${RESET}"
+    echo '{"level":"info","message":"Pipe Test: JSON testroom","app":"json-test","room":"testroom","session":"Main"}' > "$SI_PIPE"
+    sleep $sleep_time
+
+    echo '{"level":"info","message":"Pipe Test: JSON testroom with Database","app":"json-test","room":"testroom","session":"Database"}' > "$SI_PIPE"
+    sleep $sleep_time
+
+    echo '{"level":"warning","message":"Pipe Test: JSON testroom with API","app":"json-test","room":"testroom","session":"API"}' > "$SI_PIPE"
     sleep $sleep_time
 
     # Test 5: All levels via pipe

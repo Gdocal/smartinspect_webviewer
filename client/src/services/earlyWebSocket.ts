@@ -87,13 +87,14 @@ function processMessageBatch(): void {
             // Handle watch messages specially - batch them
             const msg = queued.message as { type?: string; data?: unknown };
             if (msg.type === 'watch') {
-                const watch = msg.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
+                const watch = msg.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string; group?: string };
                 if (watch?.name) {
                     watchUpdates[watch.name] = {
                         value: watch.value,
                         timestamp: watch.timestamp,
                         watchType: watch.watchType,
-                        session: watch.session
+                        session: watch.session,
+                        group: watch.group
                     };
                 }
             } else {
@@ -391,13 +392,14 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             if (!useLogStore.getState().connected && !pendingAuth) {
                 completeConnection();
             }
-            const watch = message.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string };
+            const watch = message.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string; group?: string };
             if (watch && watch.name) {
                 store.updateWatch(watch.name, {
                     value: watch.value,
                     timestamp: watch.timestamp,
                     watchType: watch.watchType,
-                    session: watch.session
+                    session: watch.session,
+                    group: watch.group
                 });
             }
             break;
@@ -406,7 +408,7 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             if (!useLogStore.getState().connected && !pendingAuth) {
                 completeConnection();
             }
-            const watches = message.watches as Array<{ name: string; value: string; timestamp: string; watchType?: number; session?: string }>;
+            const watches = message.watches as Array<{ name: string; value: string; timestamp: string; watchType?: number; session?: string; group?: string }>;
             if (watches) {
                 const watchMap: Record<string, WatchValue> = {};
                 for (const w of watches) {
@@ -414,7 +416,8 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
                         value: w.value,
                         timestamp: w.timestamp,
                         watchType: w.watchType,
-                        session: w.session
+                        session: w.session,
+                        group: w.group
                     };
                 }
                 store.updateWatchBatch(watchMap);
