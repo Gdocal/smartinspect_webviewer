@@ -18,6 +18,11 @@ let reconnectCountdown: ReturnType<typeof setInterval> | null = null;
 let pendingAuth = false;  // Track if we're waiting for auth response
 const RECONNECT_DELAY = 3000;
 
+// Throughput and latency tracking
+let bytesReceived = 0;
+let throughputInterval: ReturnType<typeof setInterval> | null = null;
+let pingInterval: ReturnType<typeof setInterval> | null = null;
+
 // ==================== Client-side Message Batching ====================
 // Batches incoming messages and processes them in requestAnimationFrame
 // to prevent UI jank and allow monitoring of backlog
@@ -133,6 +138,38 @@ function clearReconnectTimers(): void {
     }
 }
 
+function clearMetricsIntervals(): void {
+    if (throughputInterval) {
+        clearInterval(throughputInterval);
+        throughputInterval = null;
+    }
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+    bytesReceived = 0;
+}
+
+function startMetricsTracking(): void {
+    // Start throughput calculation interval (every 1 second)
+    throughputInterval = setInterval(() => {
+        useLogStore.getState().setWsThroughput(bytesReceived);
+        bytesReceived = 0;
+    }, 1000);
+
+    // Start ping interval for latency measurement (every 2 seconds)
+    pingInterval = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
+        }
+    }, 2000);
+
+    // Send initial ping immediately
+    if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping', timestamp: performance.now() }));
+    }
+}
+
 function connect(): void {
     const store = useLogStore.getState();
 
@@ -192,6 +229,11 @@ function connect(): void {
             store.setConnecting(false);
             ws = null;
 
+            // Clear metrics intervals and reset throughput
+            clearMetricsIntervals();
+            store.setWsThroughput(0);
+            store.setWsLatency(null);
+
             // Check for auth failure (close code 4001)
             if (event.code === 4001) {
                 store.setAuthRequired(true);
@@ -233,10 +275,25 @@ function connect(): void {
 
         ws.onmessage = (event) => {
             try {
+                // Track bytes received for throughput calculation
+                const dataSize = typeof event.data === 'string' ? event.data.length : event.data.size;
+                bytesReceived += dataSize;
+
                 const message = JSON.parse(event.data);
                 // Auth and control messages are processed immediately (critical path)
                 // Data messages (watch, stream, entries) are queued for batched processing
                 const msgType = message.type;
+
+                // Handle pong for latency measurement
+                if (msgType === 'pong') {
+                    const pongData = message as { timestamp: number };
+                    if (pongData.timestamp) {
+                        const latency = Math.round(performance.now() - pongData.timestamp);
+                        useLogStore.getState().setWsLatency(latency);
+                    }
+                    return;
+                }
+
                 if (msgType === 'auth_required' || msgType === 'auth_success' || msgType === 'connected' ||
                     msgType === 'init' || msgType === 'control' || msgType === 'clientConnect' ||
                     msgType === 'clientDisconnect' || msgType === 'session' || msgType === 'roomCreated') {
@@ -290,6 +347,9 @@ async function completeConnection(): Promise<void> {
     store.setConnecting(false);
     store.setError(null);
     store.setLoadingInitialData(true);
+
+    // Start metrics tracking (throughput & latency)
+    startMetricsTracking();
 
     const settings = getSettings();
     const headers: Record<string, string> = {};
@@ -518,6 +578,9 @@ export function reconnect(): void {
 
     // Clear any pending reconnect timers
     clearReconnectTimers();
+
+    // Clear metrics tracking
+    clearMetricsIntervals();
 
     // Clear message queue to prevent old room's messages from being processed
     messageQueue.length = 0;
