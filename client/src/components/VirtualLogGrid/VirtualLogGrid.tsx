@@ -66,6 +66,8 @@ export interface VirtualLogGridProps {
   onStuckToBottomChange?: (stuckToBottom: boolean) => void;
   /** Actual entry count for rate tracking (when using progressive display) */
   actualEntryCount?: number;
+  /** Cumulative count of trimmed entries for virtual padding scroll stability */
+  lastTrimCount?: number;
 }
 
 // Get normalized range (start <= end)
@@ -141,6 +143,7 @@ export function VirtualLogGrid({
   selectedRowId,
   onStuckToBottomChange,
   actualEntryCount,
+  lastTrimCount = 0,
 }: VirtualLogGridProps) {
   flickerLog('RENDER', { entriesCount: entries.length, autoScroll });
 
@@ -148,10 +151,9 @@ export function VirtualLogGrid({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get row density, preview filter, and trim count from store
+  // Get row density and preview filter from store
   const rowDensity = useLogStore((state) => state.rowDensity);
   const previewTitleFilter = useLogStore((state) => state.previewTitleFilter);
-  const lastTrimCount = useLogStore((state) => state.lastTrimCount);
   const rowHeight = getRowHeight(rowDensity);
   const fontSize = getFontSize(rowDensity);
   const headerHeight = getHeaderHeight(rowDensity);
@@ -159,9 +161,7 @@ export function VirtualLogGrid({
   // Internal state: is the scrollbar at the bottom?
   const [stuckToBottom, setStuckToBottom] = useState(true);
 
-  // Virtual padding for scroll stability when rows are trimmed
-  // This creates a "mirage" effect - padding shrinks as user scrolls up
-  const [virtualTopPadding, setVirtualTopPadding] = useState(0);
+  // Track trim count for scroll compensation
   const prevTrimCountRef = useRef(lastTrimCount);
 
   // Track number of rows below visible viewport (updated on scroll)
@@ -223,7 +223,6 @@ export function VirtualLogGrid({
   const handleJumpToBottom = useCallback(() => {
     setStuckToBottom(true);
     setRowsBelowViewport(0);
-    setVirtualTopPadding(0); // Clear virtual padding when jumping to bottom
     markStuckToBottom();
     instantScrollToBottom();
   }, [markStuckToBottom, instantScrollToBottom]);
@@ -421,57 +420,27 @@ export function VirtualLogGrid({
     if (entries.length === 0) {
       setStuckToBottom(true);
       setRowsBelowViewport(0);
-      setVirtualTopPadding(0); // Reset virtual padding on clear
       prevTrimCountRef.current = 0;
     }
   }, [entries.length]);
 
-  // Add virtual padding when rows are trimmed (only when not stuck to bottom)
-  // This maintains scroll position by adding "fake" space at top
+  // Scroll compensation when rows are trimmed (only when not stuck to bottom)
+  // Adjusts scroll position to keep the same content visible
   useEffect(() => {
     const trimmedSinceLastCheck = lastTrimCount - prevTrimCountRef.current;
     prevTrimCountRef.current = lastTrimCount;
 
     if (trimmedSinceLastCheck <= 0) return;
-    if (stuckToBottom) return; // No padding needed when at bottom
-
-    // Add virtual padding for trimmed rows
-    const paddingToAdd = trimmedSinceLastCheck * rowHeight;
-    setVirtualTopPadding(prev => prev + paddingToAdd);
-  }, [lastTrimCount, stuckToBottom, rowHeight]);
-
-  // Consume virtual padding as user scrolls toward top (the "mirage" effect)
-  useEffect(() => {
-    if (virtualTopPadding === 0) return;
+    if (stuckToBottom) return; // No compensation needed when at bottom
 
     const container = scrollContainerRef.current;
     if (!container) return;
 
-    const handleScroll = () => {
-      if (virtualTopPadding <= 0) return;
-
-      const scrollTop = container.scrollTop;
-
-      // When user scrolls into the virtual padding zone, consume it
-      if (scrollTop < virtualTopPadding) {
-        // Calculate how much to consume based on how deep into the padding zone
-        // The deeper they scroll, the more we consume (faster shrink as you approach top)
-        const distanceIntoPadding = virtualTopPadding - scrollTop;
-        const consumeRate = Math.max(1, Math.floor(distanceIntoPadding / 10));
-        const consumeAmount = Math.min(virtualTopPadding, consumeRate * rowHeight);
-
-        setVirtualTopPadding(prev => {
-          const newPadding = Math.max(0, prev - consumeAmount);
-          // Adjust scroll to compensate for padding shrink (prevent jump)
-          container.scrollTop = Math.max(0, scrollTop - consumeAmount);
-          return newPadding;
-        });
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll, { passive: false });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [virtualTopPadding, rowHeight]);
+    // Reduce scroll position by the height of trimmed rows
+    const scrollReduction = trimmedSinceLastCheck * rowHeight;
+    const newScrollTop = Math.max(0, container.scrollTop - scrollReduction);
+    container.scrollTop = newScrollTop;
+  }, [lastTrimCount, stuckToBottom, rowHeight]);
 
   // Calculate rows below viewport dynamically on scroll and entries change
   useEffect(() => {
@@ -480,7 +449,7 @@ export function VirtualLogGrid({
 
     const calculateRowsBelow = () => {
       const { scrollTop, clientHeight } = container;
-      const totalHeight = entries.length * rowHeight + virtualTopPadding;
+      const totalHeight = entries.length * rowHeight;
       const visibleBottom = scrollTop + clientHeight;
       const hiddenHeight = totalHeight - visibleBottom;
       const rowsBelow = Math.max(0, Math.floor(hiddenHeight / rowHeight));
@@ -494,7 +463,7 @@ export function VirtualLogGrid({
     container.addEventListener('scroll', calculateRowsBelow, { passive: true });
 
     return () => container.removeEventListener('scroll', calculateRowsBelow);
-  }, [entries.length, rowHeight, virtualTopPadding]);
+  }, [entries.length, rowHeight]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -631,11 +600,9 @@ export function VirtualLogGrid({
 
     const rect = container.getBoundingClientRect();
     const y = clientY - rect.top + container.scrollTop;
-    // Account for virtual padding at the top
-    const adjustedY = Math.max(0, y - virtualTopPadding);
-    const rowIndex = Math.floor(adjustedY / rowHeight);
+    const rowIndex = Math.floor(y / rowHeight);
     return Math.max(0, Math.min(rowIndex, entries.length - 1));
-  }, [entries.length, rowHeight, virtualTopPadding]);
+  }, [entries.length, rowHeight]);
 
   // Auto-scroll during drag
   const startAutoScroll = useCallback((direction: 'up' | 'down') => {
@@ -995,12 +962,12 @@ export function VirtualLogGrid({
 
   const totalSize = virtualizer.getTotalSize();
   const innerStyle = useMemo(() => ({
-    height: totalSize + virtualTopPadding, // Include virtual padding in total height
+    height: totalSize,
     width: '100%',
     position: 'relative' as const,
     // Striped background pattern matching row heights - fallback when rows not yet rendered during fast scroll
     background: `repeating-linear-gradient(to bottom, var(--vlg-row-bg) 0px, var(--vlg-row-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight * 2}px)`,
-  }), [totalSize, rowHeight, virtualTopPadding]);
+  }), [totalSize, rowHeight]);
 
   return (
     <div
@@ -1024,7 +991,7 @@ export function VirtualLogGrid({
               <SkeletonRow
                 key={`skeleton-${i}`}
                 rowIndex={i}
-                style={getRowStyle(i * rowHeight + virtualTopPadding, rowHeight)}
+                style={getRowStyle(i * rowHeight, rowHeight)}
                 columns={visibleColumns}
                 isOdd={alternatingRows && i % 2 === 1}
               />
@@ -1039,8 +1006,8 @@ export function VirtualLogGrid({
                   key={virtualRow.key}
                   entry={entry}
                   rowIndex={virtualRow.index}
-                  style={getRowStyle(virtualRow.start + virtualTopPadding, virtualRow.size)}
-                  isOdd={alternatingRows && virtualRow.index % 2 === 1}
+                  style={getRowStyle(virtualRow.start, virtualRow.size)}
+                  isOdd={alternatingRows && entry.id % 2 === 1}
                   columns={visibleColumns}
                   highlightStyle={highlightStyleMap.get(entry.id)}
                   selection={selection}

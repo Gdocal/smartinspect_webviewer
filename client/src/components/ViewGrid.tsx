@@ -239,7 +239,8 @@ export function ViewGrid({
         globalHighlightRules,
         entriesVersion,
         theme,
-        setViewStuckToBottom
+        setViewStuckToBottom,
+        limits
     } = useLogStore();
 
     // Per-view pause state
@@ -282,6 +283,33 @@ export function ViewGrid({
         return filterEntriesForView(entries, view.filter);
     }, [entries, view.filter, entriesVersion]);
 
+    // Apply maxGridRows cap - keep newest entries (from end)
+    const maxGridRows = limits.maxGridRows;
+    const { cappedEntries, trimCount } = useMemo(() => {
+        if (filteredEntries.length <= maxGridRows) {
+            return { cappedEntries: filteredEntries, trimCount: 0 };
+        }
+        // Trim from the beginning (old entries), keep newest
+        const trimmed = filteredEntries.length - maxGridRows;
+        return {
+            cappedEntries: filteredEntries.slice(-maxGridRows),
+            trimCount: trimmed
+        };
+    }, [filteredEntries, maxGridRows]);
+
+    // Track cumulative trim count for virtual padding
+    const cumulativeTrimCountRef = useRef(0);
+    const prevTrimCountRef = useRef(0);
+
+    // Update cumulative count when trimCount increases
+    if (trimCount > prevTrimCountRef.current) {
+        const delta = trimCount - prevTrimCountRef.current;
+        cumulativeTrimCountRef.current += delta;
+    }
+    prevTrimCountRef.current = trimCount;
+
+    const lastTrimCount = cumulativeTrimCountRef.current;
+
     // Paused entries snapshot - freeze display when paused
     const [pausedEntries, setPausedEntries] = useState<LogEntry[]>([]);
     const wasPausedRef = useRef(false);
@@ -289,14 +317,14 @@ export function ViewGrid({
     // Update paused entries ONLY when transitioning from unpaused to paused
     useEffect(() => {
         if (isPaused && !wasPausedRef.current) {
-            // Just paused - capture current entries
-            setPausedEntries(filteredEntries);
+            // Just paused - capture current capped entries
+            setPausedEntries(cappedEntries);
         }
         wasPausedRef.current = isPaused;
-    }, [isPaused, filteredEntries]);
+    }, [isPaused, cappedEntries]);
 
-    // Get target entries
-    const targetEntries = isPaused ? pausedEntries : filteredEntries;
+    // Get target entries (use capped entries with maxGridRows limit applied)
+    const targetEntries = isPaused ? pausedEntries : cappedEntries;
     const targetLen = targetEntries.length;
 
     flickerLog('targetEntries', { targetLen, entriesLen: entries.length, viewName: view.name });
@@ -451,6 +479,7 @@ export function ViewGrid({
                 selectedRowId={selectedEntryId}
                 onStuckToBottomChange={handleStuckToBottomChange}
                 actualEntryCount={targetLen}
+                lastTrimCount={lastTrimCount}
             />
         </div>
     );
