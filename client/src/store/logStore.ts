@@ -515,6 +515,9 @@ interface LogState {
     previewTitleFilter: { pattern: string; operator: 'contains' | 'starts-with' | 'regex'; caseSensitive: boolean } | null;
     setPreviewTitleFilter: (filter: { pattern: string; operator: 'contains' | 'starts-with' | 'regex'; caseSensitive: boolean } | null) => void;
 
+    // Scroll stability: tracks how many entries were trimmed in last batch
+    lastTrimCount: number;
+
     // Runtime view state (not persisted)
     viewStuckToBottom: Map<string, boolean>;
     setViewStuckToBottom: (viewId: string, stuckToBottom: boolean) => void;
@@ -647,6 +650,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     isStreamsMode: false,
     editingViewId: null,
     previewTitleFilter: null,
+    lastTrimCount: 0,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
     rowDensity: (localStorage.getItem('si-row-density') as 'compact' | 'default' | 'comfortable') || 'compact',
 
@@ -750,6 +754,7 @@ export const useLogStore = create<LogState>((set, get) => ({
         const totalLen = currentLen + newLen;
 
         let result: LogEntry[];
+        let trimCount = 0; // Track how many entries were removed from the top
 
         if (totalLen <= maxLen) {
             // Fast path: just concatenate
@@ -757,10 +762,12 @@ export const useLogStore = create<LogState>((set, get) => ({
         } else if (newLen >= maxLen) {
             // New entries alone exceed max - just take the last maxLen from new
             result = uniqueNewEntries.slice(-maxLen);
+            trimCount = currentLen; // All old entries were trimmed
         } else {
             // Need to trim: keep end of current + all new
             const keepFromCurrent = maxLen - newLen;
             result = state.entries.slice(-keepFromCurrent).concat(uniqueNewEntries);
+            trimCount = currentLen - keepFromCurrent; // Number of old entries trimmed
         }
 
         // Extract unique sessions, appNames and hostNames from new entries
@@ -796,6 +803,8 @@ export const useLogStore = create<LogState>((set, get) => ({
             entries: result,
             lastEntryId: uniqueNewEntries[uniqueNewEntries.length - 1].id,
             entriesVersion: state.entriesVersion + 1,
+            // Update lastTrimCount - increment by trimCount so VirtualLogGrid can detect changes
+            lastTrimCount: state.lastTrimCount + trimCount,
             stats: {
                 ...state.stats,
                 size: result.length,
@@ -815,6 +824,7 @@ export const useLogStore = create<LogState>((set, get) => ({
 
     clearEntries: () => set((state) => ({
         entries: [],
+        lastTrimCount: 0, // Reset on clear
         lastEntryId: 0,
         entriesVersion: state.entriesVersion + 1,
         // Also clear tracking dictionaries to prevent memory leaks

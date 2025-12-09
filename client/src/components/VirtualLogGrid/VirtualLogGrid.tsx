@@ -148,15 +148,21 @@ export function VirtualLogGrid({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Get row density and preview filter from store
+  // Get row density, preview filter, and trim count from store
   const rowDensity = useLogStore((state) => state.rowDensity);
   const previewTitleFilter = useLogStore((state) => state.previewTitleFilter);
+  const lastTrimCount = useLogStore((state) => state.lastTrimCount);
   const rowHeight = getRowHeight(rowDensity);
   const fontSize = getFontSize(rowDensity);
   const headerHeight = getHeaderHeight(rowDensity);
 
   // Internal state: is the scrollbar at the bottom?
   const [stuckToBottom, setStuckToBottom] = useState(true);
+
+  // Virtual padding for scroll stability when rows are trimmed
+  // This creates a "mirage" effect - padding shrinks as user scrolls up
+  const [virtualTopPadding, setVirtualTopPadding] = useState(0);
+  const prevTrimCountRef = useRef(lastTrimCount);
 
   // Track number of rows below visible viewport (updated on scroll)
   const [rowsBelowViewport, setRowsBelowViewport] = useState(0);
@@ -217,6 +223,7 @@ export function VirtualLogGrid({
   const handleJumpToBottom = useCallback(() => {
     setStuckToBottom(true);
     setRowsBelowViewport(0);
+    setVirtualTopPadding(0); // Clear virtual padding when jumping to bottom
     markStuckToBottom();
     instantScrollToBottom();
   }, [markStuckToBottom, instantScrollToBottom]);
@@ -414,8 +421,57 @@ export function VirtualLogGrid({
     if (entries.length === 0) {
       setStuckToBottom(true);
       setRowsBelowViewport(0);
+      setVirtualTopPadding(0); // Reset virtual padding on clear
+      prevTrimCountRef.current = 0;
     }
   }, [entries.length]);
+
+  // Add virtual padding when rows are trimmed (only when not stuck to bottom)
+  // This maintains scroll position by adding "fake" space at top
+  useEffect(() => {
+    const trimmedSinceLastCheck = lastTrimCount - prevTrimCountRef.current;
+    prevTrimCountRef.current = lastTrimCount;
+
+    if (trimmedSinceLastCheck <= 0) return;
+    if (stuckToBottom) return; // No padding needed when at bottom
+
+    // Add virtual padding for trimmed rows
+    const paddingToAdd = trimmedSinceLastCheck * rowHeight;
+    setVirtualTopPadding(prev => prev + paddingToAdd);
+  }, [lastTrimCount, stuckToBottom, rowHeight]);
+
+  // Consume virtual padding as user scrolls toward top (the "mirage" effect)
+  useEffect(() => {
+    if (virtualTopPadding === 0) return;
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      if (virtualTopPadding <= 0) return;
+
+      const scrollTop = container.scrollTop;
+
+      // When user scrolls into the virtual padding zone, consume it
+      if (scrollTop < virtualTopPadding) {
+        // Calculate how much to consume based on how deep into the padding zone
+        // The deeper they scroll, the more we consume (faster shrink as you approach top)
+        const distanceIntoPadding = virtualTopPadding - scrollTop;
+        const consumeRate = Math.max(1, Math.floor(distanceIntoPadding / 10));
+        const consumeAmount = Math.min(virtualTopPadding, consumeRate * rowHeight);
+
+        setVirtualTopPadding(prev => {
+          const newPadding = Math.max(0, prev - consumeAmount);
+          // Adjust scroll to compensate for padding shrink (prevent jump)
+          container.scrollTop = Math.max(0, scrollTop - consumeAmount);
+          return newPadding;
+        });
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: false });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [virtualTopPadding, rowHeight]);
 
   // Calculate rows below viewport dynamically on scroll and entries change
   useEffect(() => {
@@ -424,7 +480,7 @@ export function VirtualLogGrid({
 
     const calculateRowsBelow = () => {
       const { scrollTop, clientHeight } = container;
-      const totalHeight = entries.length * rowHeight;
+      const totalHeight = entries.length * rowHeight + virtualTopPadding;
       const visibleBottom = scrollTop + clientHeight;
       const hiddenHeight = totalHeight - visibleBottom;
       const rowsBelow = Math.max(0, Math.floor(hiddenHeight / rowHeight));
@@ -438,7 +494,7 @@ export function VirtualLogGrid({
     container.addEventListener('scroll', calculateRowsBelow, { passive: true });
 
     return () => container.removeEventListener('scroll', calculateRowsBelow);
-  }, [entries.length, rowHeight]);
+  }, [entries.length, rowHeight, virtualTopPadding]);
 
   // Pre-sort highlight rules once when they change
   const sortedHighlightRules = useMemo(
@@ -575,9 +631,11 @@ export function VirtualLogGrid({
 
     const rect = container.getBoundingClientRect();
     const y = clientY - rect.top + container.scrollTop;
-    const rowIndex = Math.floor(y / rowHeight);
+    // Account for virtual padding at the top
+    const adjustedY = Math.max(0, y - virtualTopPadding);
+    const rowIndex = Math.floor(adjustedY / rowHeight);
     return Math.max(0, Math.min(rowIndex, entries.length - 1));
-  }, [entries.length, rowHeight]);
+  }, [entries.length, rowHeight, virtualTopPadding]);
 
   // Auto-scroll during drag
   const startAutoScroll = useCallback((direction: 'up' | 'down') => {
@@ -937,12 +995,12 @@ export function VirtualLogGrid({
 
   const totalSize = virtualizer.getTotalSize();
   const innerStyle = useMemo(() => ({
-    height: totalSize,
+    height: totalSize + virtualTopPadding, // Include virtual padding in total height
     width: '100%',
     position: 'relative' as const,
     // Striped background pattern matching row heights - fallback when rows not yet rendered during fast scroll
     background: `repeating-linear-gradient(to bottom, var(--vlg-row-bg) 0px, var(--vlg-row-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight}px, var(--vlg-odd-bg) ${rowHeight * 2}px)`,
-  }), [totalSize, rowHeight]);
+  }), [totalSize, rowHeight, virtualTopPadding]);
 
   return (
     <div
@@ -966,7 +1024,7 @@ export function VirtualLogGrid({
               <SkeletonRow
                 key={`skeleton-${i}`}
                 rowIndex={i}
-                style={getRowStyle(i * rowHeight, rowHeight)}
+                style={getRowStyle(i * rowHeight + virtualTopPadding, rowHeight)}
                 columns={visibleColumns}
                 isOdd={alternatingRows && i % 2 === 1}
               />
@@ -981,7 +1039,7 @@ export function VirtualLogGrid({
                   key={virtualRow.key}
                   entry={entry}
                   rowIndex={virtualRow.index}
-                  style={getRowStyle(virtualRow.start, virtualRow.size)}
+                  style={getRowStyle(virtualRow.start + virtualTopPadding, virtualRow.size)}
                   isOdd={alternatingRows && virtualRow.index % 2 === 1}
                   columns={visibleColumns}
                   highlightStyle={highlightStyleMap.get(entry.id)}
