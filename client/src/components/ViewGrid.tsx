@@ -9,7 +9,7 @@
  */
 
 import { useMemo, useRef, useCallback, useState, useEffect } from 'react';
-import { useLogStore, LogEntry, View, Filter, ListTextFilter, TextFilter, VlgColumnConfig } from '../store/logStore';
+import { useLogStore, LogEntry, View, Filter, FilterV2, ListTextFilter, TextFilter, VlgColumnConfig, passesFilterRules, hasActiveFilterRules } from '../store/logStore';
 import { VirtualLogGrid, MultiSelection } from './VirtualLogGrid/VirtualLogGrid';
 import { ColumnConfig, DEFAULT_COLUMNS } from './VirtualLogGrid/types';
 
@@ -386,6 +386,77 @@ function filterEntriesForView(entries: LogEntry[], filter: Filter): LogEntry[] {
     });
 }
 
+// Apply FilterV2 (new rules-based filter) to entries
+function filterEntriesForViewV2(entries: LogEntry[], filter: FilterV2): LogEntry[] {
+    // Check if any filters are active
+    const hasSessionFilter = hasActiveFilterRules(filter.sessions);
+    const hasLevelFilter = hasActiveFilterRules(filter.levels);
+    const hasAppNameFilter = hasActiveFilterRules(filter.appNames);
+    const hasHostNameFilter = hasActiveFilterRules(filter.hostNames);
+    const hasTitleFilter = hasActiveFilterRules(filter.titles);
+    const hasEntryTypeFilter = hasActiveFilterRules(filter.entryTypes);
+    const hasMessageFilter = !!filter.messagePattern;
+
+    // Fast path: no filters active
+    if (!hasSessionFilter && !hasLevelFilter && !hasAppNameFilter &&
+        !hasHostNameFilter && !hasTitleFilter && !hasEntryTypeFilter && !hasMessageFilter) {
+        return entries;
+    }
+
+    // Pre-compile message regex if needed
+    let messageRegex: RegExp | null = null;
+    if (hasMessageFilter) {
+        try {
+            messageRegex = new RegExp(filter.messagePattern, 'i');
+        } catch {
+            // Invalid regex
+        }
+    }
+
+    return entries.filter(e => {
+        // Session filter
+        if (hasSessionFilter && !passesFilterRules(filter.sessions, e.sessionName)) {
+            return false;
+        }
+
+        // Level filter (convert level number to string for matching)
+        if (hasLevelFilter && !passesFilterRules(filter.levels, e.level !== undefined ? String(e.level) : undefined)) {
+            return false;
+        }
+
+        // App name filter
+        if (hasAppNameFilter && !passesFilterRules(filter.appNames, e.appName)) {
+            return false;
+        }
+
+        // Host name filter
+        if (hasHostNameFilter && !passesFilterRules(filter.hostNames, e.hostName)) {
+            return false;
+        }
+
+        // Title filter
+        if (hasTitleFilter && !passesFilterRules(filter.titles, e.title)) {
+            return false;
+        }
+
+        // Entry type filter (convert type number to string for matching)
+        if (hasEntryTypeFilter && !passesFilterRules(filter.entryTypes, e.logEntryType !== undefined ? String(e.logEntryType) : undefined)) {
+            return false;
+        }
+
+        // Message pattern filter (searches title and data)
+        if (messageRegex) {
+            const titleMatch = messageRegex.test(e.title || '');
+            const dataMatch = messageRegex.test(e.data || '');
+            if (!titleMatch && !dataMatch) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+}
+
 interface ViewGridProps {
     view: View;
     isActive: boolean;
@@ -498,9 +569,13 @@ export function ViewGrid({
     }, [view.highlightRules, view.useGlobalHighlights, globalHighlightRules]);
 
     // Filter entries based on view filter
+    // Use filterV2 (new rules-based filter) if available, otherwise fall back to legacy filter
     const filteredEntries = useMemo(() => {
+        if (view.filterV2) {
+            return filterEntriesForViewV2(entries, view.filterV2);
+        }
         return filterEntriesForView(entries, view.filter);
-    }, [entries, view.filter, entriesVersion]);
+    }, [entries, view.filter, view.filterV2, entriesVersion]);
 
     // Track first visible row from VirtualLogGrid for safe trimming
     const firstVisibleRowRef = useRef(0);

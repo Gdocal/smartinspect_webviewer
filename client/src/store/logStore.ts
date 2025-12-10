@@ -135,6 +135,321 @@ export const defaultListTextFilter: ListTextFilter = {
     inverse: false
 };
 
+// ============================================================================
+// NEW FILTER RULES SYSTEM (v2)
+// Supports multiple rules per field, each with enable/disable and include/exclude
+// ============================================================================
+
+// Operators for filter matching
+export type FilterOperator = 'list' | 'contains' | 'starts' | 'ends' | 'regex' | 'equals';
+
+// A single filter rule - can be enabled/disabled, include/exclude
+export interface FilterRule {
+    id: string;
+    enabled: boolean;           // Can be temporarily disabled without deleting
+    include: boolean;           // true = show matching (include), false = hide matching (exclude)
+    operator: FilterOperator;   // How to match the value
+    value: string;              // Pattern for text operators (contains, starts, ends, regex, equals)
+    values: string[];           // Selected items for 'list' operator
+    caseSensitive?: boolean;    // For text operators (default: false)
+}
+
+// Create a new filter rule with defaults
+export function createFilterRule(partial: Partial<FilterRule> = {}): FilterRule {
+    return {
+        id: Math.random().toString(36).substring(2, 9),
+        enabled: true,
+        include: true,
+        operator: 'list',
+        value: '',
+        values: [],
+        caseSensitive: false,
+        ...partial
+    };
+}
+
+// Collection of filter rules for a field
+export interface FilterRules {
+    rules: FilterRule[];
+}
+
+// Default empty filter rules
+export const defaultFilterRules: FilterRules = {
+    rules: []
+};
+
+// Create empty filter rules
+export function createFilterRules(): FilterRules {
+    return { rules: [] };
+}
+
+// Helper to check if filter rules have any active rules
+export function hasActiveFilterRules(filterRules: FilterRules): boolean {
+    return filterRules.rules.some(r => r.enabled && (r.values.length > 0 || r.value.trim() !== ''));
+}
+
+// Helper to count active rules
+export function countActiveRules(filterRules: FilterRules): { includes: number; excludes: number } {
+    const activeRules = filterRules.rules.filter(r => r.enabled && (r.values.length > 0 || r.value.trim() !== ''));
+    return {
+        includes: activeRules.filter(r => r.include).length,
+        excludes: activeRules.filter(r => !r.include).length
+    };
+}
+
+// The new v2 filter structure with multiple rules per field
+export interface FilterV2 {
+    version: 2;
+    sessions: FilterRules;
+    levels: FilterRules;        // values are string representations of level numbers ('0', '1', etc.)
+    appNames: FilterRules;
+    hostNames: FilterRules;
+    titles: FilterRules;
+    entryTypes: FilterRules;    // values are string representations of entry type numbers
+    // Quick search pattern (searches title and data)
+    messagePattern: string;
+    // Time range
+    from: Date | null;
+    to: Date | null;
+}
+
+// Create default empty v2 filter
+export function createDefaultFilterV2(): FilterV2 {
+    return {
+        version: 2,
+        sessions: createFilterRules(),
+        levels: createFilterRules(),
+        appNames: createFilterRules(),
+        hostNames: createFilterRules(),
+        titles: createFilterRules(),
+        entryTypes: createFilterRules(),
+        messagePattern: '',
+        from: null,
+        to: null
+    };
+}
+
+// Check if entry matches a single rule
+export function matchesFilterRule(rule: FilterRule, value: string | undefined | null): boolean {
+    if (!rule.enabled) return false;
+    if (!value) value = '';
+
+    const testValue = rule.caseSensitive ? value : value.toLowerCase();
+
+    switch (rule.operator) {
+        case 'list':
+            if (rule.values.length === 0) return false;
+            const valuesToMatch = rule.caseSensitive
+                ? rule.values
+                : rule.values.map(v => v.toLowerCase());
+            return valuesToMatch.includes(testValue);
+
+        case 'contains': {
+            if (!rule.value) return false;
+            const pattern = rule.caseSensitive ? rule.value : rule.value.toLowerCase();
+            return testValue.includes(pattern);
+        }
+
+        case 'starts': {
+            if (!rule.value) return false;
+            const pattern = rule.caseSensitive ? rule.value : rule.value.toLowerCase();
+            return testValue.startsWith(pattern);
+        }
+
+        case 'ends': {
+            if (!rule.value) return false;
+            const pattern = rule.caseSensitive ? rule.value : rule.value.toLowerCase();
+            return testValue.endsWith(pattern);
+        }
+
+        case 'equals': {
+            if (!rule.value) return false;
+            const pattern = rule.caseSensitive ? rule.value : rule.value.toLowerCase();
+            return testValue === pattern;
+        }
+
+        case 'regex': {
+            if (!rule.value) return false;
+            try {
+                const flags = rule.caseSensitive ? '' : 'i';
+                const regex = new RegExp(rule.value, flags);
+                return regex.test(value); // Use original value for regex
+            } catch {
+                return false; // Invalid regex
+            }
+        }
+
+        default:
+            return false;
+    }
+}
+
+// Check if entry passes a FilterRules collection (all rules for one field)
+// Logic:
+// - If no include rules active: entry passes (show all by default)
+// - If include rules exist: entry must match at least one include rule
+// - If exclude rules match: entry is filtered out (excludes override includes)
+export function passesFilterRules(filterRules: FilterRules, value: string | undefined | null): boolean {
+    if (!filterRules.rules || filterRules.rules.length === 0) {
+        return true; // No rules = show all
+    }
+
+    const activeRules = filterRules.rules.filter(r =>
+        r.enabled && (r.values.length > 0 || r.value.trim() !== '')
+    );
+
+    if (activeRules.length === 0) {
+        return true; // No active rules = show all
+    }
+
+    const includeRules = activeRules.filter(r => r.include);
+    const excludeRules = activeRules.filter(r => !r.include);
+
+    // Check excludes first - if any exclude matches, filter out
+    for (const rule of excludeRules) {
+        if (matchesFilterRule(rule, value)) {
+            return false; // Excluded
+        }
+    }
+
+    // If no include rules, entry passes (wasn't excluded)
+    if (includeRules.length === 0) {
+        return true;
+    }
+
+    // Must match at least one include rule
+    for (const rule of includeRules) {
+        if (matchesFilterRule(rule, value)) {
+            return true;
+        }
+    }
+
+    return false; // Has include rules but didn't match any
+}
+
+// Migrate old Filter to new FilterV2 format
+export function migrateFilterToV2(oldFilter: Filter): FilterV2 {
+    const v2: FilterV2 = createDefaultFilterV2();
+
+    // Migrate sessions
+    if (oldFilter.sessionFilter) {
+        const sf = oldFilter.sessionFilter;
+        if (sf.mode === 'list' && sf.values.length > 0) {
+            v2.sessions.rules.push(createFilterRule({
+                include: !sf.inverse,
+                operator: 'list',
+                values: [...sf.values]
+            }));
+        } else if (sf.mode === 'text' && sf.textValue) {
+            v2.sessions.rules.push(createFilterRule({
+                include: !sf.inverse,
+                operator: sf.textOperator === 'contains' ? 'contains' : sf.textOperator === 'equals' ? 'equals' : 'regex',
+                value: sf.textValue
+            }));
+        }
+    } else if (oldFilter.sessions && oldFilter.sessions.length > 0) {
+        v2.sessions.rules.push(createFilterRule({
+            include: true,
+            operator: 'list',
+            values: [...oldFilter.sessions]
+        }));
+    }
+
+    // Migrate levels
+    if (oldFilter.levels && oldFilter.levels.length > 0) {
+        v2.levels.rules.push(createFilterRule({
+            include: !oldFilter.levelsInverse,
+            operator: 'list',
+            values: oldFilter.levels.map(l => String(l))
+        }));
+    }
+
+    // Migrate app names
+    if (oldFilter.appNameFilter) {
+        const af = oldFilter.appNameFilter;
+        if (af.mode === 'list' && af.values.length > 0) {
+            v2.appNames.rules.push(createFilterRule({
+                include: !af.inverse,
+                operator: 'list',
+                values: [...af.values]
+            }));
+        } else if (af.mode === 'text' && af.textValue) {
+            v2.appNames.rules.push(createFilterRule({
+                include: !af.inverse,
+                operator: af.textOperator === 'contains' ? 'contains' : af.textOperator === 'equals' ? 'equals' : 'regex',
+                value: af.textValue
+            }));
+        }
+    } else if (oldFilter.appNames && oldFilter.appNames.length > 0) {
+        v2.appNames.rules.push(createFilterRule({
+            include: true,
+            operator: 'list',
+            values: [...oldFilter.appNames]
+        }));
+    }
+
+    // Migrate host names
+    if (oldFilter.hostNameFilter) {
+        const hf = oldFilter.hostNameFilter;
+        if (hf.mode === 'list' && hf.values.length > 0) {
+            v2.hostNames.rules.push(createFilterRule({
+                include: !hf.inverse,
+                operator: 'list',
+                values: [...hf.values]
+            }));
+        } else if (hf.mode === 'text' && hf.textValue) {
+            v2.hostNames.rules.push(createFilterRule({
+                include: !hf.inverse,
+                operator: hf.textOperator === 'contains' ? 'contains' : hf.textOperator === 'equals' ? 'equals' : 'regex',
+                value: hf.textValue
+            }));
+        }
+    } else if (oldFilter.hostNames && oldFilter.hostNames.length > 0) {
+        v2.hostNames.rules.push(createFilterRule({
+            include: true,
+            operator: 'list',
+            values: [...oldFilter.hostNames]
+        }));
+    }
+
+    // Migrate title pattern
+    if (oldFilter.titleFilter && oldFilter.titleFilter.value) {
+        const tf = oldFilter.titleFilter;
+        v2.titles.rules.push(createFilterRule({
+            include: !tf.inverse,
+            operator: tf.operator === 'contains' ? 'contains' : tf.operator === 'equals' ? 'equals' : 'regex',
+            value: tf.value,
+            caseSensitive: tf.caseSensitive
+        }));
+    } else if (oldFilter.titlePattern) {
+        v2.titles.rules.push(createFilterRule({
+            include: !oldFilter.inverseMatch,
+            operator: 'regex',
+            value: oldFilter.titlePattern
+        }));
+    }
+
+    // Migrate entry types
+    if (oldFilter.entryTypes && oldFilter.entryTypes.length > 0) {
+        v2.entryTypes.rules.push(createFilterRule({
+            include: !oldFilter.entryTypesInverse,
+            operator: 'list',
+            values: oldFilter.entryTypes.map(t => String(t))
+        }));
+    }
+
+    // Migrate simple fields
+    v2.messagePattern = oldFilter.messagePattern || '';
+    v2.from = oldFilter.from;
+    v2.to = oldFilter.to;
+
+    return v2;
+}
+
+// ============================================================================
+// END NEW FILTER RULES SYSTEM
+// ============================================================================
+
 // Highlight filter - same structure as view filter but for highlighting
 export interface HighlightFilter {
     // String fields with dual mode (list + text)
@@ -218,6 +533,7 @@ export interface View {
     icon?: string;
     tabColor?: string; // Background color for tab header (CSS color value)
     filter: Filter;
+    filterV2?: FilterV2; // New rules-based filter (takes precedence over 'filter' when present)
     highlightRules: HighlightRule[];
     useGlobalHighlights: boolean; // Whether to also apply global highlight rules
     columnState?: ColumnState[]; // Legacy AG Grid column state (kept for backwards compatibility)

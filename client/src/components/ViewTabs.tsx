@@ -4,12 +4,14 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useLogStore, View, Filter, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter, VlgColumnConfig } from '../store/logStore';
+import { useLogStore, View, Filter, FilterV2, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter, VlgColumnConfig, createDefaultFilterV2 } from '../store/logStore';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
 import { ViewGrid } from './ViewGrid';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
+import { FilterPanel } from './FilterPanel';
+import { DEFAULT_COLUMNS } from './VirtualLogGrid';
 
 // Tab header color palette - darker, muted colors for better text contrast
 const tabColorPalette = [
@@ -838,12 +840,14 @@ export function ViewTabs() {
         setActiveView(viewId);
     };
 
-    // Clone a view with all its settings
+    // Clone a view with all its settings (including filterV2 deep copy)
     const handleCloneView = useCallback((view: View) => {
         const clonedViewData: Omit<View, 'id'> = {
             name: `${view.name} (Copy)`,
             tabColor: view.tabColor,
             filter: { ...view.filter },
+            // Deep clone filterV2 so each view has independent filter state
+            filterV2: view.filterV2 ? JSON.parse(JSON.stringify(view.filterV2)) : undefined,
             highlightRules: view.highlightRules.map(r => ({ ...r, id: Math.random().toString(36).substring(2, 9) })),
             useGlobalHighlights: view.useGlobalHighlights,
             autoScroll: view.autoScroll,
@@ -1121,12 +1125,158 @@ export function ViewTabs() {
 }
 
 /**
+ * GridFilterPanel - Filter panel integrated into the grid area (AG Grid style)
+ */
+interface GridFilterPanelProps {
+    view: View;
+    onFilterChange: (filter: FilterV2) => void;
+    onClose: () => void;
+}
+
+function GridFilterPanel({ view, onFilterChange, onClose }: GridFilterPanelProps) {
+    // Get or create filterV2
+    const filterV2 = view.filterV2 ?? createDefaultFilterV2();
+
+    return (
+        <FilterPanel
+            filter={filterV2}
+            onChange={onFilterChange}
+            onClose={onClose}
+        />
+    );
+}
+
+/**
+ * ColumnChooserPanel - Column visibility panel (AG Grid style)
+ */
+// Density config for column chooser panel
+const COLUMN_PANEL_DENSITY = {
+    compact: {
+        headerHeight: 'h-[28px]',
+        headerPx: 'px-2',
+        headerText: 'text-[11px]',
+        iconSize: 'w-3 h-3',
+        rowPy: 'py-1',
+        rowPx: 'px-2',
+        rowText: 'text-xs',
+        checkboxSize: 'w-3.5 h-3.5',
+        buttonPadding: 'px-2 py-1',
+        buttonText: 'text-[10px]',
+        panelWidth: 'w-44',  // 176px
+    },
+    default: {
+        headerHeight: 'h-[32px]',
+        headerPx: 'px-3',
+        headerText: 'text-xs',
+        iconSize: 'w-3.5 h-3.5',
+        rowPy: 'py-1.5',
+        rowPx: 'px-3',
+        rowText: 'text-sm',
+        checkboxSize: 'w-4 h-4',
+        buttonPadding: 'px-3 py-1.5',
+        buttonText: 'text-xs',
+        panelWidth: 'w-48',  // 192px
+    },
+    comfortable: {
+        headerHeight: 'h-[38px]',
+        headerPx: 'px-4',
+        headerText: 'text-sm',
+        iconSize: 'w-4 h-4',
+        rowPy: 'py-2',
+        rowPx: 'px-4',
+        rowText: 'text-sm',
+        checkboxSize: 'w-4 h-4',
+        buttonPadding: 'px-4 py-2',
+        buttonText: 'text-sm',
+        panelWidth: 'w-56',  // 224px
+    },
+};
+
+interface ColumnChooserPanelProps {
+    view: View;
+    onColumnChange: (columns: VlgColumnConfig[]) => void;
+    onClose: () => void;
+    density: 'compact' | 'default' | 'comfortable';
+}
+
+function ColumnChooserPanel({ view, onColumnChange, onClose, density }: ColumnChooserPanelProps) {
+    const d = COLUMN_PANEL_DENSITY[density];
+
+    // Get columns from view or use defaults
+    const columns = view.columnConfig && view.columnConfig.length > 0
+        ? view.columnConfig
+        : DEFAULT_COLUMNS;
+
+    const toggleColumn = (columnId: string) => {
+        const newColumns = columns.map(col =>
+            col.id === columnId ? { ...col, hidden: !col.hidden } : col
+        );
+        onColumnChange(newColumns);
+    };
+
+    const resetToDefaults = () => {
+        onColumnChange(DEFAULT_COLUMNS.map(col => ({ ...col })));
+    };
+
+    // Columns that can be toggled (exclude icon which is always visible)
+    const toggleableColumns = columns.filter(c => c.id !== 'icon');
+
+    return (
+        <div className="h-full flex flex-col">
+            {/* Header */}
+            <div className={`${d.headerHeight} ${d.headerPx} flex items-center justify-between border-b border-slate-200 dark:border-slate-700 flex-shrink-0`}>
+                <span className={`${d.headerText} font-medium text-slate-700 dark:text-slate-200`}>Columns</span>
+                <button
+                    onClick={onClose}
+                    className={`${d.iconSize} text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors`}
+                >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            {/* Column list */}
+            <div className="flex-1 overflow-y-auto">
+                {toggleableColumns.map(column => (
+                    <label
+                        key={column.id}
+                        className={`flex items-center ${d.rowPx} ${d.rowPy} hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors`}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={!column.hidden}
+                            onChange={() => toggleColumn(column.id)}
+                            className={`${d.checkboxSize} rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-700`}
+                        />
+                        <span className={`ml-2 ${d.rowText} text-slate-700 dark:text-slate-300`}>
+                            {column.header}
+                        </span>
+                    </label>
+                ))}
+            </div>
+
+            {/* Footer with reset button */}
+            <div className="border-t border-slate-200 dark:border-slate-700 p-2 flex-shrink-0">
+                <button
+                    onClick={resetToDefaults}
+                    className={`w-full ${d.buttonPadding} ${d.buttonText} bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors`}
+                >
+                    Reset to Default
+                </button>
+            </div>
+        </div>
+    );
+}
+
+/**
  * ViewGridContainer - Renders all view grids, each in its own tab panel
  *
  * Each view gets its own ViewGrid component that:
  * - Stays mounted but hidden when not active (CSS visibility)
  * - Maintains its own column state
  * - Preserves scroll position when switching tabs
+ * - Has an integrated filter panel (AG Grid style) on the right
  */
 interface ViewGridContainerProps {
     onColumnStateChange?: (viewId: string, columns: VlgColumnConfig[]) => void;
@@ -1135,8 +1285,9 @@ interface ViewGridContainerProps {
 export function ViewGridContainer({
     onColumnStateChange
 }: ViewGridContainerProps) {
-    const { views, activeViewId, isStreamsMode } = useLogStore();
+    const { views, activeViewId, isStreamsMode, updateView, rowDensity } = useLogStore();
     const [mountedViews, setMountedViews] = useState<Set<string>>(new Set());
+    const [activePanel, setActivePanel] = useState<'none' | 'filters' | 'columns'>('none');
 
     // Track which views have been mounted (lazy mounting)
     useEffect(() => {
@@ -1144,6 +1295,9 @@ export function ViewGridContainer({
             setMountedViews(prev => new Set([...prev, activeViewId]));
         }
     }, [activeViewId, isStreamsMode, mountedViews]);
+
+    // Get active view for filter panel
+    const activeView = views.find(v => v.id === activeViewId);
 
     // When in streams mode, don't render any grids as active
     if (isStreamsMode) {
@@ -1163,23 +1317,96 @@ export function ViewGridContainer({
     }
 
     return (
-        <div className="relative h-full w-full">
-            {views.map(view => {
-                const isMounted = mountedViews.has(view.id);
-                const isActive = view.id === activeViewId;
+        <div className="relative h-full w-full flex">
+            {/* Grid area */}
+            <div className="flex-1 relative min-w-0">
+                {views.map(view => {
+                    const isMounted = mountedViews.has(view.id);
+                    const isActive = view.id === activeViewId;
 
-                // Only render if mounted (lazy loading)
-                if (!isMounted) return null;
+                    // Only render if mounted (lazy loading)
+                    if (!isMounted) return null;
 
-                return (
-                    <ViewGrid
-                        key={view.id}
-                        view={view}
-                        isActive={isActive}
-                        onColumnStateChange={onColumnStateChange}
+                    return (
+                        <ViewGrid
+                            key={view.id}
+                            view={view}
+                            isActive={isActive}
+                            onColumnStateChange={onColumnStateChange}
+                        />
+                    );
+                })}
+            </div>
+
+            {/* Right side tool panel tabs (AG Grid style) */}
+            <div className="flex flex-col bg-slate-100 dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700">
+                {/* Filters tab button */}
+                <button
+                    onClick={() => setActivePanel(activePanel === 'filters' ? 'none' : 'filters')}
+                    className={`px-1 py-3 text-[10px] font-medium uppercase tracking-wider transition-colors ${
+                        activePanel === 'filters'
+                            ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 border-l-2 border-blue-500'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border-l-2 border-transparent'
+                    }`}
+                    style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                    title="Toggle Filters Panel"
+                >
+                    <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Filters
+                    </span>
+                </button>
+
+                {/* Columns tab button */}
+                <button
+                    onClick={() => setActivePanel(activePanel === 'columns' ? 'none' : 'columns')}
+                    className={`px-1 py-3 text-[10px] font-medium uppercase tracking-wider transition-colors ${
+                        activePanel === 'columns'
+                            ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 border-l-2 border-blue-500'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border-l-2 border-transparent'
+                    }`}
+                    style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                    title="Toggle Columns Panel"
+                >
+                    <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                        </svg>
+                        Columns
+                    </span>
+                </button>
+            </div>
+
+            {/* Side panels - absolute overlay on top of grid */}
+            {activePanel === 'filters' && activeView && (
+                <div className="absolute top-0 right-[24px] bottom-0 w-72 z-40 shadow-xl bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700">
+                    <GridFilterPanel
+                        view={activeView}
+                        onFilterChange={(filterV2) => {
+                            if (activeViewId) {
+                                updateView(activeViewId, { filterV2 });
+                            }
+                        }}
+                        onClose={() => setActivePanel('none')}
                     />
-                );
-            })}
+                </div>
+            )}
+            {activePanel === 'columns' && activeView && (
+                <div className={`absolute top-0 right-[24px] bottom-0 ${COLUMN_PANEL_DENSITY[rowDensity].panelWidth} z-40 shadow-xl bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700`}>
+                    <ColumnChooserPanel
+                        view={activeView}
+                        onColumnChange={(columns) => {
+                            if (activeViewId) {
+                                updateView(activeViewId, { columnConfig: columns });
+                            }
+                        }}
+                        onClose={() => setActivePanel('none')}
+                        density={rowDensity}
+                    />
+                </div>
+            )}
         </div>
     );
 }
