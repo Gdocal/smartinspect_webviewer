@@ -211,6 +211,7 @@ export interface FilterV2 {
     hostNames: FilterRules;
     titles: FilterRules;
     entryTypes: FilterRules;    // values are string representations of entry type numbers
+    correlations: FilterRules;  // Filter by correlationId for async flow grouping
     // Quick search pattern (searches title and data)
     messagePattern: string;
     // Time range
@@ -228,6 +229,7 @@ export function createDefaultFilterV2(): FilterV2 {
         hostNames: createFilterRules(),
         titles: createFilterRules(),
         entryTypes: createFilterRules(),
+        correlations: createFilterRules(),
         messagePattern: '',
         from: null,
         to: null
@@ -672,6 +674,9 @@ interface LogState {
     appNames: Record<string, number>;
     hostNames: Record<string, number>;
 
+    // Correlation IDs (for async flow filtering)
+    correlations: Record<string, number>;
+
     // Stats
     stats: {
         size: number;
@@ -784,6 +789,7 @@ interface LogState {
     setLimits: (limits: Partial<ProjectLimits>) => void;
     setAppNames: (appNames: Record<string, number>) => void;
     setHostNames: (hostNames: Record<string, number>) => void;
+    setCorrelations: (correlations: Record<string, number>) => void;
     setFilter: (filter: Partial<Filter>) => void;
     setPaused: (paused: boolean) => void;
     setAutoScroll: (autoScroll: boolean) => void;
@@ -940,6 +946,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     sessions: {},
     appNames: {},
     hostNames: {},
+    correlations: {},
     stats: { size: 0, maxEntries: 100000, lastEntryId: 0 },
     tcpClientCount: 0,
     backlogged: false,
@@ -1039,6 +1046,7 @@ export const useLogStore = create<LogState>((set, get) => ({
             sessions: {},
             appNames: {},
             hostNames: {},
+            correlations: {},
             streams: {},
             selectedEntryId: null,
             selectedStreamEntryId: null
@@ -1094,13 +1102,15 @@ export const useLogStore = create<LogState>((set, get) => ({
             trimCount = currentLen - keepFromCurrent; // Number of old entries trimmed
         }
 
-        // Extract unique sessions, appNames and hostNames from new entries
+        // Extract unique sessions, appNames, hostNames and correlations from new entries
         const newSessions = { ...state.sessions };
         const newAppNames = { ...state.appNames };
         const newHostNames = { ...state.hostNames };
+        const newCorrelations = { ...state.correlations };
         let sessionsChanged = false;
         let appNamesChanged = false;
         let hostNamesChanged = false;
+        let correlationsChanged = false;
 
         for (const entry of uniqueNewEntries) {
             if (entry.sessionName && !(entry.sessionName in newSessions)) {
@@ -1121,6 +1131,12 @@ export const useLogStore = create<LogState>((set, get) => ({
             } else if (entry.hostName) {
                 newHostNames[entry.hostName]++;
             }
+            if (entry.correlationId && !(entry.correlationId in newCorrelations)) {
+                newCorrelations[entry.correlationId] = 1;
+                correlationsChanged = true;
+            } else if (entry.correlationId) {
+                newCorrelations[entry.correlationId]++;
+            }
         }
 
         return {
@@ -1136,7 +1152,8 @@ export const useLogStore = create<LogState>((set, get) => ({
             },
             ...(sessionsChanged ? { sessions: newSessions } : {}),
             ...(appNamesChanged ? { appNames: newAppNames } : {}),
-            ...(hostNamesChanged ? { hostNames: newHostNames } : {})
+            ...(hostNamesChanged ? { hostNames: newHostNames } : {}),
+            ...(correlationsChanged ? { correlations: newCorrelations } : {})
         };
     }),
 
@@ -1154,7 +1171,8 @@ export const useLogStore = create<LogState>((set, get) => ({
         // Also clear tracking dictionaries to prevent memory leaks
         sessions: {},
         appNames: {},
-        hostNames: {}
+        hostNames: {},
+        correlations: {}
     })),
 
     // Legacy single watch update
@@ -1180,6 +1198,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     })),
     setAppNames: (appNames) => set({ appNames }),
     setHostNames: (hostNames) => set({ hostNames }),
+    setCorrelations: (correlations) => set({ correlations }),
 
     setFilter: (filterUpdate) => set((state) => {
         const newFilter = { ...state.filter, ...filterUpdate };

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { LogEntry, LogEntryType, useLogStore, defaultListTextFilter, defaultHighlightFilter, HighlightRule } from '../../store/logStore';
+import { LogEntry, LogEntryType, useLogStore, defaultListTextFilter, defaultHighlightFilter, HighlightRule, createFilterRule, createDefaultFilterV2 } from '../../store/logStore';
 import type { ColumnConfig } from './types';
 import { format } from 'date-fns';
 import { TitleFilterModal } from '../TitleFilterModal';
@@ -688,6 +688,44 @@ export const RowContextMenu = memo(function RowContextMenu({
     onClose();
   };
 
+  // Create view from Correlation ID (Show Related async operations)
+  const handleShowRelatedCorrelation = () => {
+    if (!clickedEntry?.correlationId) return;
+    const shortId = clickedEntry.correlationId.substring(0, 8);
+
+    // Create filter with correlations rule using FilterV2
+    const filterV2 = createDefaultFilterV2();
+    filterV2.correlations.rules.push(createFilterRule({
+      include: true,
+      operator: 'equals',
+      value: clickedEntry.correlationId,
+    }));
+
+    addView({
+      name: `Corr:${shortId}...`,
+      filter: {
+        sessions: [],
+        levels: [],
+        titlePattern: '',
+        messagePattern: '',
+        inverseMatch: false,
+        from: null,
+        to: null,
+        appNames: [],
+        hostNames: [],
+        entryTypes: [],
+        sessionFilter: { ...defaultListTextFilter },
+        appNameFilter: { ...defaultListTextFilter },
+        hostNameFilter: { ...defaultListTextFilter },
+      },
+      filterV2,  // Use FilterV2 with correlation filter
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
   const handleCloseTitleModal = () => {
     setShowTitleModal(false);
     onClose();
@@ -1131,6 +1169,21 @@ export const RowContextMenu = memo(function RowContextMenu({
             </div>
           )}
         </div>
+      )}
+
+      {/* Show Related - filter by correlation ID (async flow grouping) */}
+      {clickedEntry?.correlationId && (
+        <button
+          className="vlg-menu-item"
+          onClick={handleShowRelatedCorrelation}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M6 3.5a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 0-1 0v2A1.5 1.5 0 0 0 6.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-8A1.5 1.5 0 0 0 5 3.5v2a.5.5 0 0 0 1 0v-2z"/>
+            <path d="M11.354 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L9.793 7.5H1.5a.5.5 0 0 0 0 1h8.293l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
+          </svg>
+          <span>Show Related (Async Flow)</span>
+          <span className="vlg-menu-value">{clickedEntry.correlationId.substring(0, 8)}...</span>
+        </button>
       )}
 
       <div className="vlg-menu-divider" />

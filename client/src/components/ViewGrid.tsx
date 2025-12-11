@@ -395,11 +395,13 @@ function filterEntriesForViewV2(entries: LogEntry[], filter: FilterV2): LogEntry
     const hasHostNameFilter = hasActiveFilterRules(filter.hostNames);
     const hasTitleFilter = hasActiveFilterRules(filter.titles);
     const hasEntryTypeFilter = hasActiveFilterRules(filter.entryTypes);
+    const hasCorrelationFilter = filter.correlations && hasActiveFilterRules(filter.correlations);
     const hasMessageFilter = !!filter.messagePattern;
 
     // Fast path: no filters active
     if (!hasSessionFilter && !hasLevelFilter && !hasAppNameFilter &&
-        !hasHostNameFilter && !hasTitleFilter && !hasEntryTypeFilter && !hasMessageFilter) {
+        !hasHostNameFilter && !hasTitleFilter && !hasEntryTypeFilter &&
+        !hasCorrelationFilter && !hasMessageFilter) {
         return entries;
     }
 
@@ -441,6 +443,11 @@ function filterEntriesForViewV2(entries: LogEntry[], filter: FilterV2): LogEntry
 
         // Entry type filter (convert type number to string for matching)
         if (hasEntryTypeFilter && !passesFilterRules(filter.entryTypes, e.logEntryType !== undefined ? String(e.logEntryType) : undefined)) {
+            return false;
+        }
+
+        // Correlation ID filter (for async flow grouping)
+        if (hasCorrelationFilter && !passesFilterRules(filter.correlations, e.correlationId)) {
             return false;
         }
 

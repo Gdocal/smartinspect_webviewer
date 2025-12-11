@@ -910,7 +910,7 @@ interface FilterPanelProps {
 }
 
 export function FilterPanel({ filter, onChange, onClose }: FilterPanelProps) {
-    const { sessions, appNames, hostNames, rowDensity } = useLogStore();
+    const { sessions, appNames, hostNames, correlations, rowDensity } = useLogStore();
     const d = FILTER_DENSITY_CONFIG[rowDensity];
 
     // Convert store data to options format
@@ -927,6 +927,18 @@ export function FilterPanel({ filter, onChange, onClose }: FilterPanelProps) {
     const hostNameOptions = useMemo(() =>
         Object.keys(hostNames).sort().map(name => ({ value: name, label: name })),
         [hostNames]
+    );
+
+    // Format correlation IDs - show short version (first 8 chars) with count
+    const correlationOptions = useMemo(() =>
+        Object.entries(correlations)
+            .sort((a, b) => b[1] - a[1])  // Sort by count descending
+            .slice(0, 50)  // Limit to top 50 correlations
+            .map(([id, count]) => ({
+                value: id,
+                label: `${id.substring(0, 8)}... (${count})`
+            })),
+        [correlations]
     );
 
     const levelOptions = useMemo(() =>
@@ -955,7 +967,11 @@ export function FilterPanel({ filter, onChange, onClose }: FilterPanelProps) {
     // Count total active rules
     const totalActiveRules = useMemo(() => {
         let total = 0;
-        [filter.sessions, filter.levels, filter.appNames, filter.hostNames, filter.titles, filter.entryTypes].forEach(fr => {
+        const filterRulesArrays = [
+            filter.sessions, filter.levels, filter.appNames, filter.hostNames,
+            filter.titles, filter.entryTypes, filter.correlations
+        ].filter(Boolean);  // Filter out undefined for backwards compatibility
+        filterRulesArrays.forEach(fr => {
             const count = countActiveRules(fr);
             total += count.includes + count.excludes;
         });
@@ -1045,6 +1061,19 @@ export function FilterPanel({ filter, onChange, onClose }: FilterPanelProps) {
                     defaultExpanded={false}
                     density={rowDensity}
                 />
+
+                {/* Correlation filter - only show if correlations exist */}
+                {Object.keys(correlations).length > 0 && (
+                    <FilterSection
+                        title="Correlation"
+                        filterRules={filter.correlations || { enabled: true, rules: [] }}
+                        onChange={(rules) => onChange({ ...filter, correlations: rules })}
+                        availableOptions={correlationOptions}
+                        showTextFilter={true}
+                        defaultExpanded={false}
+                        density={rowDensity}
+                    />
+                )}
             </div>
 
             {/* Footer */}
