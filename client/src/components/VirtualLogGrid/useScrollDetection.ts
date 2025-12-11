@@ -38,7 +38,7 @@ export function useScrollDetection({
   useEffect(() => {
     if (!scrollElement) return;
 
-    // Track wheel scrolling UP (user wants to see history)
+    // Track wheel scrolling - UP disables autoscroll, DOWN to bottom re-enables
     const handleWheel = (e: WheelEvent) => {
       // Only trigger if there's actually content to scroll (scrollbar exists)
       const hasScrollbar = scrollElement.scrollHeight > scrollElement.clientHeight;
@@ -48,6 +48,18 @@ export function useScrollDetection({
         // Scrolling UP = negative deltaY
         userScrolledUpRef.current = true;
         onUserScrollUp();
+      } else if (e.deltaY > 0) {
+        // Scrolling DOWN - check if we'll reach bottom after this scroll
+        // Use requestAnimationFrame to check position after scroll is applied
+        requestAnimationFrame(() => {
+          const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+          const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+          const withinGracePeriod = performance.now() - userStopTimeRef.current < GRACE_PERIOD_MS;
+          if (distanceFromBottom < bottomThreshold && userScrolledUpRef.current && !withinGracePeriod) {
+            userScrolledUpRef.current = false;
+            onScrollToBottom();
+          }
+        });
       }
     };
 

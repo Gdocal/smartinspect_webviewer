@@ -108,7 +108,7 @@ export interface Filter {
 // Text filter with operator and inverse support
 export interface TextFilter {
     value: string;
-    operator: 'contains' | 'equals' | 'regex';
+    operator: 'contains' | 'equals' | 'starts' | 'ends' | 'regex';
     inverse: boolean;
     caseSensitive: boolean;
 }
@@ -121,7 +121,8 @@ export interface ListTextFilter {
     values: string[];
     // Text mode
     textValue: string;
-    textOperator: 'contains' | 'equals' | 'regex';
+    textOperator: 'contains' | 'equals' | 'starts' | 'ends' | 'regex';
+    caseSensitive?: boolean;  // For text mode
     // Common
     inverse: boolean;
 }
@@ -718,6 +719,7 @@ interface LogState {
     showDetailPanel: boolean;
     showWatchPanel: boolean;
     showStreamPanel: boolean;
+    highlightsPanelOpen: boolean; // True when highlights panel is open
     isStreamsMode: boolean; // True when Streams tab is active
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
@@ -793,7 +795,7 @@ interface LogState {
     setViews: (views: View[]) => void; // Replace all views (for server sync)
 
     // Highlight rule actions
-    addHighlightRule: (rule: Omit<HighlightRule, 'id'>) => void;
+    addHighlightRule: (rule: Omit<HighlightRule, 'id'>) => string;
     updateHighlightRule: (id: string, updates: Partial<HighlightRule>) => void;
     deleteHighlightRule: (id: string) => void;
     setGlobalHighlightRules: (rules: HighlightRule[]) => void; // Replace all rules (for server sync)
@@ -823,6 +825,7 @@ interface LogState {
     setShowDetailPanel: (show: boolean) => void;
     setShowWatchPanel: (show: boolean) => void;
     setShowStreamPanel: (show: boolean) => void;
+    setHighlightsPanelOpen: (open: boolean) => void;
 
     // View editing
     setEditingViewId: (id: string | null) => void;
@@ -963,6 +966,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     showDetailPanel: true,
     showWatchPanel: true,
     showStreamPanel: false,
+    highlightsPanelOpen: false,
     isStreamsMode: false,
     editingViewId: null,
     previewTitleFilter: null,
@@ -1240,9 +1244,13 @@ export const useLogStore = create<LogState>((set, get) => ({
     setViews: (views) => set({ views }),
 
     // Highlight rule actions
-    addHighlightRule: (rule) => set((state) => ({
-        globalHighlightRules: [...state.globalHighlightRules, { ...rule, id: generateId() }]
-    })),
+    addHighlightRule: (rule) => {
+        const newId = generateId();
+        set((state) => ({
+            globalHighlightRules: [...state.globalHighlightRules, { ...rule, id: newId }]
+        }));
+        return newId;
+    },
 
     updateHighlightRule: (id, updates) => set((state) => ({
         globalHighlightRules: state.globalHighlightRules.map(r =>
@@ -1377,6 +1385,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     setShowDetailPanel: (show) => set({ showDetailPanel: show }),
     setShowWatchPanel: (show) => set({ showWatchPanel: show }),
     setShowStreamPanel: (show) => set({ showStreamPanel: show }),
+    setHighlightsPanelOpen: (open) => set({ highlightsPanelOpen: open }),
 
     // View editing
     setEditingViewId: (id) => set({ editingViewId: id }),
@@ -1530,6 +1539,16 @@ function matchText(value: string | undefined, filter: TextFilter): boolean {
                 ? text.includes(filter.value)
                 : text.toLowerCase().includes(filter.value.toLowerCase());
             break;
+        case 'starts':
+            matches = filter.caseSensitive
+                ? text.startsWith(filter.value)
+                : text.toLowerCase().startsWith(filter.value.toLowerCase());
+            break;
+        case 'ends':
+            matches = filter.caseSensitive
+                ? text.endsWith(filter.value)
+                : text.toLowerCase().endsWith(filter.value.toLowerCase());
+            break;
         case 'regex': {
             const regex = getCachedRegex(filter.value, filter.caseSensitive);
             matches = regex ? regex.test(text) : false;
@@ -1553,16 +1572,26 @@ function matchListTextFilter(value: string | undefined, filter: ListTextFilter):
         // Text mode - use text matching with operator
         if (!filter.textValue) return true; // Empty text matches everything
 
+        const caseSensitive = filter.caseSensitive || false;
+        const compareText = caseSensitive ? text : text.toLowerCase();
+        const compareValue = caseSensitive ? filter.textValue : filter.textValue.toLowerCase();
+
         let matches = false;
         switch (filter.textOperator) {
             case 'equals':
-                matches = text.toLowerCase() === filter.textValue.toLowerCase();
+                matches = compareText === compareValue;
                 break;
             case 'contains':
-                matches = text.toLowerCase().includes(filter.textValue.toLowerCase());
+                matches = compareText.includes(compareValue);
+                break;
+            case 'starts':
+                matches = compareText.startsWith(compareValue);
+                break;
+            case 'ends':
+                matches = compareText.endsWith(compareValue);
                 break;
             case 'regex': {
-                const regex = getCachedRegex(filter.textValue);
+                const regex = getCachedRegex(filter.textValue, caseSensitive);
                 matches = regex ? regex.test(text) : false;
                 break;
             }
@@ -1571,9 +1600,39 @@ function matchListTextFilter(value: string | undefined, filter: ListTextFilter):
     }
 }
 
+// Helper to check if a ListTextFilter has any actual filter criteria
+function isListTextFilterEmpty(filter: ListTextFilter | undefined): boolean {
+    if (!filter) return true;
+    if (filter.mode === 'list') {
+        return filter.values.length === 0;
+    } else {
+        return filter.textValue.trim() === '';
+    }
+}
+
+// Helper to check if a TextFilter has any actual filter criteria
+function isTextFilterEmpty(filter: TextFilter | undefined): boolean {
+    if (!filter) return true;
+    return filter.value.trim() === '';
+}
+
+// Helper to check if a highlight filter is completely empty (matches everything)
+export function isHighlightFilterEmpty(filter: HighlightFilter): boolean {
+    return isListTextFilterEmpty(filter.sessionFilter) &&
+           isListTextFilterEmpty(filter.appNameFilter) &&
+           isListTextFilterEmpty(filter.hostNameFilter) &&
+           filter.levels.length === 0 &&
+           filter.entryTypes.length === 0 &&
+           filter.processId === null &&
+           isTextFilterEmpty(filter.titleFilter);
+}
+
 // Helper to check if entry matches a highlight rule using new filter structure
 export function matchesHighlightRule(entry: LogEntry, rule: HighlightRule): boolean {
     if (!rule.enabled) return false;
+
+    // If filter is completely empty, don't match anything
+    if (isHighlightFilterEmpty(rule.filter)) return false;
 
     const f = rule.filter;
 

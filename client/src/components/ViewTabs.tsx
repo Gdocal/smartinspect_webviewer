@@ -11,6 +11,7 @@ import { ViewGrid } from './ViewGrid';
 import { ContextMenu, ContextMenuItem, useContextMenu } from './ContextMenu';
 import { ConfirmDialog, useConfirmDialog } from './ConfirmDialog';
 import { FilterPanel } from './FilterPanel';
+import { HighlightsPanel } from './HighlightsPanel';
 import { DEFAULT_COLUMNS } from './VirtualLogGrid';
 
 // Tab header color palette - darker, muted colors for better text contrast
@@ -1287,7 +1288,7 @@ export function ViewGridContainer({
 }: ViewGridContainerProps) {
     const { views, activeViewId, isStreamsMode, updateView, rowDensity } = useLogStore();
     const [mountedViews, setMountedViews] = useState<Set<string>>(new Set());
-    const [activePanel, setActivePanel] = useState<'none' | 'filters' | 'columns'>('none');
+    const [activePanel, setActivePanel] = useState<'none' | 'filters' | 'columns' | 'highlights'>('none');
 
     // Track which views have been mounted (lazy mounting)
     useEffect(() => {
@@ -1377,6 +1378,25 @@ export function ViewGridContainer({
                         Columns
                     </span>
                 </button>
+
+                {/* Highlights tab button */}
+                <button
+                    onClick={() => setActivePanel(activePanel === 'highlights' ? 'none' : 'highlights')}
+                    className={`px-1 py-3 text-[10px] font-medium uppercase tracking-wider transition-colors ${
+                        activePanel === 'highlights'
+                            ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 border-l-2 border-amber-500'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border-l-2 border-transparent'
+                    }`}
+                    style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                    title="Toggle Highlights Panel"
+                >
+                    <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                        </svg>
+                        Highlights
+                    </span>
+                </button>
             </div>
 
             {/* Side panels - absolute overlay on top of grid */}
@@ -1404,6 +1424,13 @@ export function ViewGridContainer({
                         }}
                         onClose={() => setActivePanel('none')}
                         density={rowDensity}
+                    />
+                </div>
+            )}
+            {activePanel === 'highlights' && (
+                <div className="absolute top-0 right-[24px] bottom-0 w-72 z-40 shadow-xl">
+                    <HighlightsPanel
+                        onClose={() => setActivePanel('none')}
                     />
                 </div>
             )}

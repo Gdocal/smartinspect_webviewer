@@ -4,6 +4,7 @@ import { LogEntry, HighlightRule, matchesHighlightRule, matchesPreviewTitleFilte
 import { VirtualLogGridRow, SkeletonRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
+import { TitleHighlightModal } from '../TitleHighlightModal';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
 import { OVERSCAN, OVERSCAN_FAST, OVERSCAN_DRAG, getRowHeight, getFontSize, getHeaderHeight } from './constants';
@@ -198,7 +199,11 @@ export function VirtualLogGrid({
     isOpen: boolean;
     position: { x: number; y: number };
     clickedEntry: LogEntry | null;
-  }>({ isOpen: false, position: { x: 0, y: 0 }, clickedEntry: null });
+    clickedColIndex: number;
+  }>({ isOpen: false, position: { x: 0, y: 0 }, clickedEntry: null, clickedColIndex: 0 });
+
+  // Title modal state (supports both highlight and view modes)
+  const [titleModalState, setTitleModalState] = useState<{ entry: LogEntry; mode: 'highlight' | 'view' } | null>(null);
 
   // Drag selection state
   const [isDragging, setIsDragging] = useState(false);
@@ -565,12 +570,44 @@ export function VirtualLogGrid({
 
   // Scroll compensation when rows are trimmed (only when not stuck to bottom)
   // Adjusts scroll position to keep the same content visible
+  // Also adjusts selection indices to stay on the same rows
   useEffect(() => {
     const trimmedSinceLastCheck = lastTrimCount - prevTrimCountRef.current;
     prevTrimCountRef.current = lastTrimCount;
 
     if (trimmedSinceLastCheck <= 0) return;
-    if (stuckToBottom) return; // No compensation needed when at bottom
+
+    // Adjust selection indices to compensate for trimmed rows
+    if (selection && selection.ranges.length > 0 && onSelectionChange) {
+      const adjustedRanges = selection.ranges
+        .map(range => ({
+          startRow: range.startRow - trimmedSinceLastCheck,
+          endRow: range.endRow - trimmedSinceLastCheck,
+          startCol: range.startCol,
+          endCol: range.endCol,
+        }))
+        // Filter out ranges that are completely above the visible area
+        .filter(range => range.endRow >= 0);
+
+      // Clamp startRow to 0 if it went negative
+      const clampedRanges = adjustedRanges.map(range => ({
+        ...range,
+        startRow: Math.max(0, range.startRow),
+      }));
+
+      if (clampedRanges.length !== selection.ranges.length ||
+          clampedRanges.some((r, i) => r.startRow !== selection.ranges[i].startRow || r.endRow !== selection.ranges[i].endRow)) {
+        onSelectionChange(clampedRanges.length > 0 ? {
+          ranges: clampedRanges,
+          anchor: selection.anchor ? {
+            row: Math.max(0, selection.anchor.row - trimmedSinceLastCheck),
+            col: selection.anchor.col,
+          } : undefined,
+        } : null);
+      }
+    }
+
+    if (stuckToBottom) return; // No scroll compensation needed when at bottom
     if (isMouseDownRef.current) return; // Don't compensate during mouse drag
 
     const container = scrollContainerRef.current;
@@ -580,7 +617,7 @@ export function VirtualLogGrid({
     const scrollReduction = trimmedSinceLastCheck * rowHeight;
     const newScrollTop = Math.max(0, container.scrollTop - scrollReduction);
     container.scrollTop = newScrollTop;
-  }, [lastTrimCount, stuckToBottom, rowHeight]);
+  }, [lastTrimCount, stuckToBottom, rowHeight, selection, onSelectionChange]);
 
   // Calculate rows below viewport dynamically on scroll and entries change
   // Also report first visible row for safe trimming
@@ -623,7 +660,8 @@ export function VirtualLogGrid({
 
   // Get or create cached highlight style for a rule
   const getRuleStyle = useCallback((rule: HighlightRule): CSSProperties => {
-    const cacheKey = rule.id;
+    // Include style properties in cache key so changes are detected
+    const cacheKey = `${rule.id}-${rule.style.backgroundColor || ''}-${rule.style.textColor || ''}-${rule.style.fontWeight || ''}-${rule.style.fontStyle || ''}`;
     let style = highlightStyleCache.get(cacheKey);
     if (!style) {
       style = {};
@@ -1093,13 +1131,15 @@ export function VirtualLogGrid({
     markUserScroll();
 
     const rowIndex = getRowIndexFromY(e.clientY);
+    const colIndex = getColumnIndexFromX(e.clientX);
     const clickedEntry = entries[rowIndex] || null;
     setContextMenu({
       isOpen: true,
       position: { x: e.clientX, y: e.clientY },
       clickedEntry,
+      clickedColIndex: colIndex,
     });
-  }, [getRowIndexFromY, entries, markUserScroll]);
+  }, [getRowIndexFromY, getColumnIndexFromX, entries, markUserScroll]);
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
@@ -1209,8 +1249,22 @@ export function VirtualLogGrid({
           selectedEntries={selectedEntries}
           entries={entries}
           columns={selectedColumns}
+          allColumns={visibleColumns}
+          clickedColIndex={contextMenu.clickedColIndex}
           onClose={handleCloseContextMenu}
           clickedEntry={contextMenu.clickedEntry}
+          onOpenTitleHighlightModal={(entry) => setTitleModalState({ entry, mode: 'highlight' })}
+          onOpenTitleViewModal={(entry) => setTitleModalState({ entry, mode: 'view' })}
+        />
+      )}
+
+      {/* Title Modal (for highlight or view creation) */}
+      {titleModalState && (
+        <TitleHighlightModal
+          entry={titleModalState.entry}
+          entries={entries}
+          onClose={() => setTitleModalState(null)}
+          mode={titleModalState.mode}
         />
       )}
 

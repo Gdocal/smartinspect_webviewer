@@ -1,16 +1,74 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { LogEntry, LogEntryType, useLogStore, defaultListTextFilter } from '../../store/logStore';
+import { LogEntry, LogEntryType, useLogStore, defaultListTextFilter, defaultHighlightFilter, HighlightRule } from '../../store/logStore';
 import type { ColumnConfig } from './types';
 import { format } from 'date-fns';
 import { TitleFilterModal } from '../TitleFilterModal';
+
+// Color palette for random highlight colors (from HighlightsPanel)
+const HIGHLIGHT_COLORS = [
+  { bg: '#fef2f2', text: '#991b1b' }, { bg: '#fecaca', text: '#991b1b' }, { bg: '#dc2626', text: '#ffffff' },
+  { bg: '#fff7ed', text: '#9a3412' }, { bg: '#fed7aa', text: '#9a3412' }, { bg: '#ea580c', text: '#ffffff' },
+  { bg: '#fffbeb', text: '#92400e' }, { bg: '#fde68a', text: '#78350f' }, { bg: '#d97706', text: '#ffffff' },
+  { bg: '#ecfdf5', text: '#065f46' }, { bg: '#a7f3d0', text: '#065f46' }, { bg: '#16a34a', text: '#ffffff' },
+  { bg: '#eff6ff', text: '#1e40af' }, { bg: '#bfdbfe', text: '#1e40af' }, { bg: '#2563eb', text: '#ffffff' },
+  { bg: '#f5f3ff', text: '#5b21b6' }, { bg: '#ddd6fe', text: '#5b21b6' }, { bg: '#7c3aed', text: '#ffffff' },
+  { bg: '#f8fafc', text: '#334155' }, { bg: '#e2e8f0', text: '#1e293b' }, { bg: '#475569', text: '#ffffff' },
+];
+
+// Get a random unique color not used by existing rules
+function getRandomUniqueColor(existingRules: HighlightRule[]): { backgroundColor: string; textColor: string } {
+  const usedColors = new Set(existingRules.map(r => r.style.backgroundColor).filter(Boolean));
+  const availableColors = HIGHLIGHT_COLORS.filter(c => !usedColors.has(c.bg));
+  const colorPool = availableColors.length > 0 ? availableColors : HIGHLIGHT_COLORS;
+  const randomColor = colorPool[Math.floor(Math.random() * colorPool.length)];
+  return { backgroundColor: randomColor.bg, textColor: randomColor.text };
+}
+
+// Helper to get column info from clicked column index
+function getColumnInfo(colIndex: number, columns: ColumnConfig[], entry: LogEntry): { field: string; value: string | number | undefined; label: string } | null {
+  const col = columns[colIndex];
+  if (!col) return null;
+
+  const fieldMap: Record<string, { label: string; getValue: (e: LogEntry) => string | number | undefined }> = {
+    sessionName: { label: 'Session', getValue: e => e.sessionName },
+    appName: { label: 'App', getValue: e => e.appName },
+    hostName: { label: 'Host', getValue: e => e.hostName },
+    level: { label: 'Level', getValue: e => e.level },
+    logEntryType: { label: 'Type', getValue: e => e.logEntryType },
+    processId: { label: 'Process', getValue: e => e.processId },
+    title: { label: 'Title', getValue: e => e.title },
+  };
+
+  const mapping = fieldMap[col.field];
+  if (!mapping) return null;
+
+  return {
+    field: col.field,
+    value: mapping.getValue(entry),
+    label: mapping.label,
+  };
+}
+
+// Format value for display in menu
+function formatColumnValue(value: string | number | undefined, field: string): string {
+  if (value === undefined || value === null || value === '') return '(none)';
+  if (field === 'level') return getLevelText(value as number);
+  if (field === 'logEntryType') return getEntryTypeName(value as number);
+  const strValue = String(value);
+  return strValue.length > 25 ? strValue.slice(0, 25) + '...' : strValue;
+}
 
 interface RowContextMenuProps {
   position: { x: number; y: number };
   selectedEntries: LogEntry[];
   entries: LogEntry[];
   columns: ColumnConfig[];
+  allColumns: ColumnConfig[];  // Full visible columns list for column index lookup
+  clickedColIndex: number;     // Which column was clicked
   onClose: () => void;
   clickedEntry: LogEntry | null;
+  onOpenTitleHighlightModal?: (entry: LogEntry) => void;
+  onOpenTitleViewModal?: (entry: LogEntry) => void;  // For "Create View by Title..."
 }
 
 // Get entry type name for display
@@ -370,17 +428,28 @@ export const RowContextMenu = memo(function RowContextMenu({
   selectedEntries,
   entries,
   columns,
+  allColumns,
+  clickedColIndex,
   onClose,
   clickedEntry,
+  onOpenTitleHighlightModal,
+  onOpenTitleViewModal,
 }: RowContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [showSubmenu, setShowSubmenu] = useState(false);
   const [showCopySubmenu, setShowCopySubmenu] = useState(false);
+  const [showHighlightSubmenu, setShowHighlightSubmenu] = useState(false);
   const [showTitleModal, setShowTitleModal] = useState(false);
   const submenuRef = useRef<HTMLDivElement>(null);
   const copySubmenuRef = useRef<HTMLDivElement>(null);
+  const highlightSubmenuRef = useRef<HTMLDivElement>(null);
 
   const addView = useLogStore(state => state.addView);
+  const addHighlightRule = useLogStore(state => state.addHighlightRule);
+  const globalHighlightRules = useLogStore(state => state.globalHighlightRules);
+
+  // Get info about clicked column
+  const clickedColInfo = clickedEntry ? getColumnInfo(clickedColIndex, allColumns, clickedEntry) : null;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -619,14 +688,185 @@ export const RowContextMenu = memo(function RowContextMenu({
     onClose();
   };
 
-  // Open title filter modal
-  const handleOpenTitleModal = () => {
-    setShowTitleModal(true);
-  };
-
   const handleCloseTitleModal = () => {
     setShowTitleModal(false);
     onClose();
+  };
+
+  // Create highlight rule from clicked column (smart action)
+  const handleCreateHighlightFromColumn = () => {
+    if (!clickedColInfo || clickedColInfo.field === 'title' || clickedColInfo.value === undefined) return;
+
+    const randomColor = getRandomUniqueColor(globalHighlightRules);
+    const filter = { ...defaultHighlightFilter };
+    const displayValue = formatColumnValue(clickedColInfo.value, clickedColInfo.field);
+
+    // Set the appropriate filter based on column type
+    switch (clickedColInfo.field) {
+      case 'sessionName':
+        filter.sessionFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'appName':
+        filter.appNameFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'hostName':
+        filter.hostNameFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'level':
+        filter.levels = [clickedColInfo.value as number];
+        break;
+      case 'logEntryType':
+        filter.entryTypes = [clickedColInfo.value as number];
+        break;
+      case 'processId':
+        filter.processId = clickedColInfo.value as number;
+        break;
+    }
+
+    addHighlightRule({
+      name: `${clickedColInfo.label}: ${displayValue}`,
+      enabled: true,
+      priority: globalHighlightRules.length + 1,
+      filter,
+      style: { backgroundColor: randomColor.backgroundColor, textColor: randomColor.textColor, fontWeight: 'normal' }
+    });
+    onClose();
+  };
+
+  // Create highlight from Session (submenu)
+  const handleCreateHighlightFromSession = () => {
+    if (!clickedEntry?.sessionName) return;
+    const randomColor = getRandomUniqueColor(globalHighlightRules);
+    addHighlightRule({
+      name: `Session: ${clickedEntry.sessionName}`,
+      enabled: true,
+      priority: globalHighlightRules.length + 1,
+      filter: {
+        ...defaultHighlightFilter,
+        sessionFilter: { mode: 'list', values: [clickedEntry.sessionName], textValue: '', textOperator: 'contains', inverse: false },
+      },
+      style: { backgroundColor: randomColor.backgroundColor, textColor: randomColor.textColor, fontWeight: 'normal' }
+    });
+    onClose();
+  };
+
+  // Create highlight from Application (submenu)
+  const handleCreateHighlightFromApp = () => {
+    if (!clickedEntry?.appName) return;
+    const randomColor = getRandomUniqueColor(globalHighlightRules);
+    addHighlightRule({
+      name: `App: ${clickedEntry.appName}`,
+      enabled: true,
+      priority: globalHighlightRules.length + 1,
+      filter: {
+        ...defaultHighlightFilter,
+        appNameFilter: { mode: 'list', values: [clickedEntry.appName], textValue: '', textOperator: 'contains', inverse: false },
+      },
+      style: { backgroundColor: randomColor.backgroundColor, textColor: randomColor.textColor, fontWeight: 'normal' }
+    });
+    onClose();
+  };
+
+  // Create highlight from Level (submenu)
+  const handleCreateHighlightFromLevel = () => {
+    if (clickedEntry?.level === undefined) return;
+    const randomColor = getRandomUniqueColor(globalHighlightRules);
+    addHighlightRule({
+      name: `Level: ${getLevelText(clickedEntry.level)}`,
+      enabled: true,
+      priority: globalHighlightRules.length + 1,
+      filter: {
+        ...defaultHighlightFilter,
+        levels: [clickedEntry.level],
+      },
+      style: { backgroundColor: randomColor.backgroundColor, textColor: randomColor.textColor, fontWeight: 'normal' }
+    });
+    onClose();
+  };
+
+  // Create highlight from Entry Type (submenu)
+  const handleCreateHighlightFromType = () => {
+    if (clickedEntry?.logEntryType === undefined) return;
+    const randomColor = getRandomUniqueColor(globalHighlightRules);
+    addHighlightRule({
+      name: `Type: ${getEntryTypeName(clickedEntry.logEntryType)}`,
+      enabled: true,
+      priority: globalHighlightRules.length + 1,
+      filter: {
+        ...defaultHighlightFilter,
+        entryTypes: [clickedEntry.logEntryType],
+      },
+      style: { backgroundColor: randomColor.backgroundColor, textColor: randomColor.textColor, fontWeight: 'normal' }
+    });
+    onClose();
+  };
+
+  // Open title highlight modal
+  const handleOpenTitleHighlightModal = () => {
+    if (clickedEntry && onOpenTitleHighlightModal) {
+      onOpenTitleHighlightModal(clickedEntry);
+      onClose();
+    }
+  };
+
+  // Create view from clicked column (smart action)
+  const handleCreateViewFromColumn = () => {
+    if (!clickedColInfo || clickedColInfo.field === 'title' || clickedColInfo.value === undefined) return;
+
+    const displayValue = formatColumnValue(clickedColInfo.value, clickedColInfo.field);
+    const viewName = `${clickedColInfo.label}: ${displayValue}`;
+
+    // Build filter based on column type
+    const baseFilter = {
+      sessions: [],
+      levels: [] as number[],
+      titlePattern: '',
+      messagePattern: '',
+      inverseMatch: false,
+      from: null,
+      to: null,
+      appNames: [],
+      hostNames: [],
+      entryTypes: [] as number[],
+      sessionFilter: { ...defaultListTextFilter },
+      appNameFilter: { ...defaultListTextFilter },
+      hostNameFilter: { ...defaultListTextFilter },
+    };
+
+    switch (clickedColInfo.field) {
+      case 'sessionName':
+        baseFilter.sessionFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'appName':
+        baseFilter.appNameFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'hostName':
+        baseFilter.hostNameFilter = { mode: 'list', values: [String(clickedColInfo.value)], textValue: '', textOperator: 'contains', inverse: false };
+        break;
+      case 'level':
+        baseFilter.levels = [clickedColInfo.value as number];
+        break;
+      case 'logEntryType':
+        baseFilter.entryTypes = [clickedColInfo.value as number];
+        break;
+    }
+
+    addView({
+      name: viewName,
+      filter: baseFilter,
+      highlightRules: [],
+      useGlobalHighlights: true,
+      autoScroll: true,
+    }, true);
+    onClose();
+  };
+
+  // Open title view modal
+  const handleOpenTitleViewModal = () => {
+    if (clickedEntry && onOpenTitleViewModal) {
+      onOpenTitleViewModal(clickedEntry);
+      onClose();
+    }
   };
 
   const selectionCount = selectedEntries.length;
@@ -709,6 +949,125 @@ export const RowContextMenu = memo(function RowContextMenu({
       </div>
       <div className="vlg-menu-divider" />
 
+      {/* Smart highlight action based on clicked column */}
+      {clickedEntry && clickedColInfo && clickedColInfo.field !== 'title' && clickedColInfo.value !== undefined && clickedColInfo.value !== '' && (
+        <button
+          className="vlg-menu-item"
+          onClick={handleCreateHighlightFromColumn}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5.5.5A.5.5 0 0 1 6 0h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1-.5-.5zm2.5 2a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H8zm-2 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H6zm-3 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H3z"/>
+          </svg>
+          <span>Highlight {clickedColInfo.label}: {formatColumnValue(clickedColInfo.value, clickedColInfo.field)}</span>
+        </button>
+      )}
+
+      {/* Highlight by Title... (opens modal) */}
+      {clickedEntry && clickedColInfo?.field === 'title' && clickedEntry.title && (
+        <button
+          className="vlg-menu-item"
+          onClick={handleOpenTitleHighlightModal}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5.5.5A.5.5 0 0 1 6 0h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1-.5-.5zm2.5 2a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H8zm-2 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H6zm-3 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H3z"/>
+          </svg>
+          <span>Highlight by Title...</span>
+        </button>
+      )}
+
+      {/* Highlight Rule from... submenu */}
+      {clickedEntry && (
+        <div
+          className="vlg-menu-item vlg-submenu-trigger"
+          onMouseEnter={() => setShowHighlightSubmenu(true)}
+          onMouseLeave={() => setShowHighlightSubmenu(false)}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M5.5.5A.5.5 0 0 1 6 0h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1-.5-.5zm2.5 2a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H8zm-2 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H6zm-3 3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H3z"/>
+          </svg>
+          <span>Highlight Rule from...</span>
+          <svg className="vlg-submenu-arrow" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M6 12.796V3.204L11.481 8 6 12.796zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753z"/>
+          </svg>
+
+          {showHighlightSubmenu && (
+            <div ref={highlightSubmenuRef} className="vlg-submenu">
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateHighlightFromSession}
+                disabled={!clickedEntry.sessionName}
+              >
+                <span>Session</span>
+                <span className="vlg-menu-value">{clickedEntry.sessionName || '(none)'}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateHighlightFromApp}
+                disabled={!clickedEntry.appName}
+              >
+                <span>Application</span>
+                <span className="vlg-menu-value">{clickedEntry.appName || '(none)'}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateHighlightFromLevel}
+                disabled={clickedEntry.level === undefined}
+              >
+                <span>Level</span>
+                <span className="vlg-menu-value">{getLevelText(clickedEntry.level)}</span>
+              </button>
+              <button
+                className="vlg-menu-item"
+                onClick={handleCreateHighlightFromType}
+                disabled={clickedEntry.logEntryType === undefined}
+              >
+                <span>Entry Type</span>
+                <span className="vlg-menu-value">{getEntryTypeName(clickedEntry.logEntryType)}</span>
+              </button>
+              <div className="vlg-menu-divider" />
+              <button
+                className="vlg-menu-item"
+                onClick={handleOpenTitleHighlightModal}
+                disabled={!clickedEntry.title}
+              >
+                <span>Title...</span>
+                <span className="vlg-menu-value vlg-menu-value-truncate">{clickedEntry.title ? clickedEntry.title.substring(0, 20) + (clickedEntry.title.length > 20 ? '...' : '') : '(none)'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="vlg-menu-divider" />
+
+      {/* Smart view action based on clicked column */}
+      {clickedEntry && clickedColInfo && clickedColInfo.field !== 'title' && clickedColInfo.value !== undefined && clickedColInfo.value !== '' && (
+        <button
+          className="vlg-menu-item"
+          onClick={handleCreateViewFromColumn}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+          </svg>
+          <span>Create View: {clickedColInfo.label} = {formatColumnValue(clickedColInfo.value, clickedColInfo.field)}</span>
+        </button>
+      )}
+
+      {/* Create View by Title... (opens modal) */}
+      {clickedEntry && clickedColInfo?.field === 'title' && clickedEntry.title && (
+        <button
+          className="vlg-menu-item"
+          onClick={handleOpenTitleViewModal}
+        >
+          <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/>
+            <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+          </svg>
+          <span>Create View by Title...</span>
+        </button>
+      )}
+
       {/* Create View from... submenu */}
       {clickedEntry && (
         <div
@@ -763,7 +1122,7 @@ export const RowContextMenu = memo(function RowContextMenu({
               <div className="vlg-menu-divider" />
               <button
                 className="vlg-menu-item"
-                onClick={handleOpenTitleModal}
+                onClick={handleOpenTitleViewModal}
                 disabled={!clickedEntry.title}
               >
                 <span>Title...</span>
