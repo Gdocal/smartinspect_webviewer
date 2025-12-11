@@ -75,6 +75,10 @@ export interface LogEntry {
     parentId?: number | null;
     context?: string[];
     matchingEnterId?: number | null;
+    // Async context fields (v2 protocol)
+    correlationId?: string;      // Groups related async operations
+    operationName?: string;      // Current operation name within async flow
+    operationDepth?: number;     // Async nesting level
 }
 
 export interface WatchValue {

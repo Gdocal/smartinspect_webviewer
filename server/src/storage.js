@@ -23,6 +23,7 @@ class LogRingBuffer {
         // Indexes for fast filtering
         this.sessionIndex = new Map();  // session -> Set<index>
         this.levelIndex = new Map();    // level -> Set<index>
+        this.correlationIndex = new Map();  // correlationId -> Set<index> - for async flow grouping
     }
 
     /**
@@ -74,6 +75,14 @@ class LogRingBuffer {
             }
             this.levelIndex.get(entry.level).add(index);
         }
+
+        // CorrelationId index (for async flow grouping)
+        if (entry.correlationId) {
+            if (!this.correlationIndex.has(entry.correlationId)) {
+                this.correlationIndex.set(entry.correlationId, new Set());
+            }
+            this.correlationIndex.get(entry.correlationId).add(index);
+        }
     }
 
     /**
@@ -85,6 +94,9 @@ class LogRingBuffer {
         }
         if (entry.level !== undefined && this.levelIndex.has(entry.level)) {
             this.levelIndex.get(entry.level).delete(index);
+        }
+        if (entry.correlationId && this.correlationIndex.has(entry.correlationId)) {
+            this.correlationIndex.get(entry.correlationId).delete(index);
         }
     }
 
@@ -231,6 +243,39 @@ class LogRingBuffer {
     }
 
     /**
+     * Get list of all correlation IDs with counts
+     * Returns top N correlations by entry count for filtering UI
+     */
+    getCorrelations(limit = 100) {
+        const correlations = [];
+        for (const [correlationId, indexes] of this.correlationIndex) {
+            correlations.push({ id: correlationId, count: indexes.size });
+        }
+        // Sort by count descending, return top N
+        correlations.sort((a, b) => b.count - a.count);
+        return correlations.slice(0, limit);
+    }
+
+    /**
+     * Get all entries with a specific correlation ID
+     */
+    getByCorrelation(correlationId) {
+        const indexes = this.correlationIndex.get(correlationId);
+        if (!indexes || indexes.size === 0) {
+            return [];
+        }
+        const entries = [];
+        for (const index of indexes) {
+            if (this.buffer[index]) {
+                entries.push(this.buffer[index]);
+            }
+        }
+        // Sort by timestamp
+        entries.sort((a, b) => a.timestamp - b.timestamp);
+        return entries;
+    }
+
+    /**
      * Clear all entries
      */
     clear() {
@@ -239,6 +284,7 @@ class LogRingBuffer {
         this.size = 0;
         this.sessionIndex.clear();
         this.levelIndex.clear();
+        this.correlationIndex.clear();
         // Global entryId is not reset - maintains uniqueness across rooms
     }
 
@@ -255,6 +301,7 @@ class LogRingBuffer {
         // Clear indexes
         this.sessionIndex.clear();
         this.levelIndex.clear();
+        this.correlationIndex.clear();
 
         // If shrinking, keep only the newest entries
         const entriesToKeep = entries.length > newMaxEntries

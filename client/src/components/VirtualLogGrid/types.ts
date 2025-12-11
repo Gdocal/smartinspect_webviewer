@@ -119,6 +119,35 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
     width: 110,
     minWidth: 90,
   },
+  // Async context columns (v2 protocol)
+  {
+    id: 'correlationId',
+    field: 'correlationId',
+    header: 'Correlation',
+    type: 'text',
+    width: 120,
+    minWidth: 80,
+    hidden: true,  // Hidden by default, enable for async debugging
+  },
+  {
+    id: 'operationName',
+    field: 'operationName',
+    header: 'Operation',
+    type: 'text',
+    width: 140,
+    minWidth: 100,
+    hidden: true,
+  },
+  {
+    id: 'operationDepth',
+    field: 'operationDepth',
+    header: 'Depth',
+    type: 'number',
+    width: 60,
+    minWidth: 50,
+    hidden: true,
+    align: 'center',
+  },
 ];
 
 export interface RowHighlightStyle {

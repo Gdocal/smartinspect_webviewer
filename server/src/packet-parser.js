@@ -253,24 +253,68 @@ class PacketParser {
 
     /**
      * Parse LogEntry packet
+     * Format v2 (with async context): header includes correlationIdLen, operationNameLen, operationDepth
+     * Format v1 (legacy): no async context fields
      */
     parseLogEntry(data) {
         if (data.length < 48) return null;
 
         let offset = 0;
 
-        // Fixed fields
+        // Fixed fields (common to both versions)
         const logEntryType = data.readInt32LE(offset); offset += 4;
         const viewerId = data.readInt32LE(offset); offset += 4;
         const appNameLen = data.readInt32LE(offset); offset += 4;
         const sessionNameLen = data.readInt32LE(offset); offset += 4;
         const titleLen = data.readInt32LE(offset); offset += 4;
         const hostNameLen = data.readInt32LE(offset); offset += 4;
-        const dataLen = data.readInt32LE(offset); offset += 4;
-        const processId = data.readInt32LE(offset); offset += 4;
-        const threadId = data.readInt32LE(offset); offset += 4;
-        const timestamp = data.readDoubleLE(offset); offset += 8;
-        const colorInt = data.readUInt32LE(offset); offset += 4;
+
+        // v1 header: 48 bytes (0x30) - no correlation fields
+        // v2 header: 56 bytes (0x38) - includes correlationIdLen(4), operationNameLen(4), operationDepth(4)
+        // Detect version by checking expected sizes
+        const v1HeaderSize = 48;
+        const v2HeaderSize = 56;
+
+        let correlationIdLen = 0;
+        let operationNameLen = 0;
+        let correlationId = '';
+        let operationName = '';
+        let operationDepth = 0;
+
+        // Try to detect v2 format by checking if we have enough bytes for v2 header
+        // v2 adds: correlationIdLen(4) + operationNameLen(4) before dataLen
+        const potentialCorrelationIdLen = data.readInt32LE(offset);
+        const potentialOperationNameLen = data.readInt32LE(offset + 4);
+
+        // Calculate expected v1 data position (offset 24 = after hostNameLen)
+        // v1: dataLen at offset 24, followed by processId, threadId, timestamp, color
+        // v2: correlationIdLen at offset 24, operationNameLen at 28, dataLen at 32
+
+        // Check if data looks like v2 (reasonable string lengths for correlation/operation)
+        const looksLikeV2 = potentialCorrelationIdLen >= 0 && potentialCorrelationIdLen < 100 &&
+                           potentialOperationNameLen >= 0 && potentialOperationNameLen < 500 &&
+                           data.length >= v2HeaderSize;
+
+        let dataLen, processId, threadId, timestamp, colorInt;
+
+        if (looksLikeV2) {
+            // v2 format with async context
+            correlationIdLen = potentialCorrelationIdLen; offset += 4;
+            operationNameLen = potentialOperationNameLen; offset += 4;
+            dataLen = data.readInt32LE(offset); offset += 4;
+            processId = data.readInt32LE(offset); offset += 4;
+            threadId = data.readInt32LE(offset); offset += 4;
+            timestamp = data.readDoubleLE(offset); offset += 8;
+            colorInt = data.readUInt32LE(offset); offset += 4;
+            operationDepth = data.readInt32LE(offset); offset += 4;
+        } else {
+            // v1 format (legacy)
+            dataLen = data.readInt32LE(offset); offset += 4;
+            processId = data.readInt32LE(offset); offset += 4;
+            threadId = data.readInt32LE(offset); offset += 4;
+            timestamp = data.readDoubleLE(offset); offset += 8;
+            colorInt = data.readUInt32LE(offset); offset += 4;
+        }
 
         // Variable length fields
         const appName = appNameLen > 0 ? data.slice(offset, offset + appNameLen).toString('utf8') : '';
@@ -284,6 +328,15 @@ class PacketParser {
 
         const hostName = hostNameLen > 0 ? data.slice(offset, offset + hostNameLen).toString('utf8') : '';
         offset += hostNameLen;
+
+        // v2 async context strings (only if v2 format detected)
+        if (looksLikeV2) {
+            correlationId = correlationIdLen > 0 ? data.slice(offset, offset + correlationIdLen).toString('utf8') : '';
+            offset += correlationIdLen;
+
+            operationName = operationNameLen > 0 ? data.slice(offset, offset + operationNameLen).toString('utf8') : '';
+            offset += operationNameLen;
+        }
 
         const entryData = dataLen > 0 ? data.slice(offset, offset + dataLen) : null;
 
@@ -301,7 +354,11 @@ class PacketParser {
             timestamp: timestampToDate(timestamp),
             color: intToColor(colorInt),
             data: entryData,
-            level: getLevelFromEntryType(logEntryType)
+            level: getLevelFromEntryType(logEntryType),
+            // Async context (v2)
+            correlationId,
+            operationName,
+            operationDepth
         };
     }
 
@@ -366,6 +423,8 @@ class PacketParser {
 
     /**
      * Parse ProcessFlow packet
+     * Format v2 (with correlationId): header includes correlationIdLen
+     * Format v1 (legacy): no correlationId field
      */
     parseProcessFlow(data) {
         if (data.length < 28) return null;
@@ -375,14 +434,47 @@ class PacketParser {
         const processFlowType = data.readInt32LE(offset); offset += 4;
         const titleLen = data.readInt32LE(offset); offset += 4;
         const hostNameLen = data.readInt32LE(offset); offset += 4;
-        const processId = data.readInt32LE(offset); offset += 4;
-        const threadId = data.readInt32LE(offset); offset += 4;
-        const timestamp = data.readDoubleLE(offset); offset += 8;
+
+        // v1 header: 28 bytes (0x1c) - no correlation field
+        // v2 header: 36 bytes (0x24) - includes correlationIdLen(4) after hostNameLen
+        const v1HeaderSize = 28;
+        const v2HeaderSize = 36;
+
+        let correlationIdLen = 0;
+        let correlationId = '';
+        let processId, threadId, timestamp;
+
+        // Try to detect v2 format
+        const potentialCorrelationIdLen = data.readInt32LE(offset);
+
+        // Check if data looks like v2 (reasonable string length for correlation)
+        // v2 adds correlationIdLen before processId
+        const looksLikeV2 = potentialCorrelationIdLen >= 0 && potentialCorrelationIdLen < 100 &&
+                           data.length >= v2HeaderSize;
+
+        if (looksLikeV2) {
+            // v2 format with correlationId
+            correlationIdLen = potentialCorrelationIdLen; offset += 4;
+            processId = data.readInt32LE(offset); offset += 4;
+            threadId = data.readInt32LE(offset); offset += 4;
+            timestamp = data.readDoubleLE(offset); offset += 8;
+        } else {
+            // v1 format (legacy)
+            processId = data.readInt32LE(offset); offset += 4;
+            threadId = data.readInt32LE(offset); offset += 4;
+            timestamp = data.readDoubleLE(offset); offset += 8;
+        }
 
         const title = titleLen > 0 ? data.slice(offset, offset + titleLen).toString('utf8') : '';
         offset += titleLen;
 
         const hostName = hostNameLen > 0 ? data.slice(offset, offset + hostNameLen).toString('utf8') : '';
+        offset += hostNameLen;
+
+        // v2 correlationId string
+        if (looksLikeV2 && correlationIdLen > 0) {
+            correlationId = data.slice(offset, offset + correlationIdLen).toString('utf8');
+        }
 
         return {
             packetType: PacketType.ProcessFlow,
@@ -392,7 +484,8 @@ class PacketParser {
             hostName,
             processId,
             threadId,
-            timestamp: timestampToDate(timestamp)
+            timestamp: timestampToDate(timestamp),
+            correlationId
         };
     }
 
