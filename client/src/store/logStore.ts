@@ -733,6 +733,7 @@ interface LogState {
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
     rowDensity: 'compact' | 'default' | 'comfortable'; // Row density for grids
+    correlationHighlighting: boolean; // Auto-highlight entries by correlationId
 
     // Project tracking (shared state for dirty indicator)
     loadedProjectId: string | null; // Which server project is loaded (null = fresh)
@@ -864,6 +865,9 @@ interface LogState {
     // Row density
     setRowDensity: (density: 'compact' | 'default' | 'comfortable') => void;
 
+    // Correlation highlighting
+    setCorrelationHighlighting: (enabled: boolean) => void;
+
     // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
     setWatchPanelWidthPercent: (percent: number) => void;
@@ -984,6 +988,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     lastTrimCount: 0,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
     rowDensity: (localStorage.getItem('si-row-density') as 'compact' | 'default' | 'comfortable') || 'compact',
+    correlationHighlighting: localStorage.getItem('si-correlation-highlighting') === 'true',
 
     // Runtime view state (not persisted - tracks stuckToBottom per view)
     viewStuckToBottom: new Map<string, boolean>(),
@@ -1451,6 +1456,12 @@ export const useLogStore = create<LogState>((set, get) => ({
     setRowDensity: (density) => {
         localStorage.setItem('si-row-density', density);
         set({ rowDensity: density });
+    },
+
+    // Correlation highlighting
+    setCorrelationHighlighting: (enabled) => {
+        localStorage.setItem('si-correlation-highlighting', enabled ? 'true' : 'false');
+        set({ correlationHighlighting: enabled });
     },
 
     // Layout size actions

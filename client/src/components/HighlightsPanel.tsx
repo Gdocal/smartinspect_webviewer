@@ -1065,7 +1065,10 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
         rowDensity,
         sessions,
         appNames,
-        hostNames
+        hostNames,
+        correlations,
+        correlationHighlighting,
+        setCorrelationHighlighting
     } = useLogStore();
 
     // Convert to arrays for dropdown suggestions
@@ -1144,6 +1147,37 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
                     </svg>
                 </button>
             </div>
+
+            {/* Correlation Highlighting Section - only show when correlations exist */}
+            {Object.keys(correlations).length > 0 && (
+                <div className={`${density.rowPx} ${density.rowPy} border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50`}>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                            checked={correlationHighlighting}
+                            onChange={setCorrelationHighlighting}
+                            size={density.checkboxSize}
+                        />
+                        <div className="flex-1 min-w-0">
+                            <div className={`${density.rowText} text-slate-700 dark:text-slate-200`}>
+                                Auto-highlight correlations
+                            </div>
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                Color-code entries by correlationId (async flow grouping)
+                            </div>
+                        </div>
+                        {/* Color preview strip showing sample correlation colors */}
+                        <div className="flex gap-0.5">
+                            {[0, 60, 120, 180, 240, 300].map(hue => (
+                                <div
+                                    key={hue}
+                                    className="w-2 h-4 rounded-sm"
+                                    style={{ backgroundColor: `hsla(${hue}, 60%, 90%, 0.5)` }}
+                                />
+                            ))}
+                        </div>
+                    </label>
+                </div>
+            )}
 
             {/* Rules list */}
             <div className="flex-1 overflow-auto">

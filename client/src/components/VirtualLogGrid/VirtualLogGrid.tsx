@@ -678,6 +678,27 @@ export function VirtualLogGrid({
     return style;
   }, []);
 
+  // Get correlation highlighting setting from store
+  const correlationHighlighting = useLogStore((state) => state.correlationHighlighting);
+
+  // Generate a consistent pastel color from correlationId for visual grouping
+  // Uses a simple hash to map correlationId to one of many pastel colors
+  const getCorrelationColor = useCallback((correlationId: string): CSSProperties => {
+    // Simple hash function
+    let hash = 0;
+    for (let i = 0; i < correlationId.length; i++) {
+      hash = ((hash << 5) - hash) + correlationId.charCodeAt(i);
+      hash = hash & hash;
+    }
+
+    // Generate pastel color using HSL
+    // Hue: spread across color wheel (0-360), Saturation: 60% (soft), Lightness: 90% (very light)
+    const hue = Math.abs(hash % 360);
+    return {
+      backgroundColor: `hsla(${hue}, 60%, 90%, 0.5)`,
+    };
+  }, []);
+
   // Pre-compute highlight styles for visible entries (computed once per render, not per row)
   const virtualItems = virtualizer.getVirtualItems();
   const highlightStyleMap = useMemo(() => {
@@ -697,15 +718,22 @@ export function VirtualLogGrid({
       }
 
       // Then check regular highlight rules
+      let hasHighlightRule = false;
       for (const rule of sortedHighlightRules) {
         if (matchesHighlightRule(entry, rule)) {
           map.set(entry.id, getRuleStyle(rule));
+          hasHighlightRule = true;
           break; // First matching rule wins
         }
       }
+
+      // If no highlight rule and correlation highlighting is enabled, apply correlation color
+      if (!hasHighlightRule && correlationHighlighting && entry.correlationId) {
+        map.set(entry.id, getCorrelationColor(entry.correlationId));
+      }
     }
     return map;
-  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle, previewTitleFilter]);
+  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle, previewTitleFilter, correlationHighlighting, getCorrelationColor]);
 
   // Get visible columns
   const visibleColumns = useMemo(
