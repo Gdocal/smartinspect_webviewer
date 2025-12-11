@@ -1268,17 +1268,17 @@ export function VirtualLogGrid({
         />
       )}
 
-      {/* Floating "Go to bottom" button - shows when autoscroll is enabled but user scrolled up */}
+      {/* Floating button - shows when autoscroll is paused (user clicked row or scrolled up) */}
       {autoScroll && !stuckToBottom && hasScrollbar && entries.length > 0 && (
         <button
           onClick={handleJumpToBottom}
           className="vlg-jump-to-bottom"
-          title="Go to bottom and resume auto-scroll"
+          title="Resume auto-scroll"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
           </svg>
-          <span>Go to bottom</span>
+          <span>{rowsBelowViewport > 0 ? 'Resume' : 'Resume auto-scroll'}</span>
           {rowsBelowViewport > 0 && (
             <span className="vlg-new-entries-badge">
               {rowsBelowViewport > 999 ? '999+' : rowsBelowViewport}
