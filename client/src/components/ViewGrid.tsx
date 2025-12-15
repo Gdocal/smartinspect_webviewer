@@ -13,6 +13,16 @@ import { useLogStore, LogEntry, View, Filter, FilterV2, ListTextFilter, TextFilt
 import { VirtualLogGrid, MultiSelection } from './VirtualLogGrid/VirtualLogGrid';
 import { ColumnConfig, DEFAULT_COLUMNS } from './VirtualLogGrid/types';
 
+// Debug logging for scroll issues
+const DEBUG_SCROLL = true; // Enable scroll debugging
+const scrollLog = {
+  debug: (msg: string) => DEBUG_SCROLL && console.debug(`[ViewGrid:Scroll] ${msg}`),
+  info: (msg: string) => DEBUG_SCROLL && console.log(`[ViewGrid:Scroll] ${msg}`),
+  warn: (msg: string) => DEBUG_SCROLL && console.warn(`[ViewGrid:Scroll] ${msg}`),
+  enter: (method: string) => DEBUG_SCROLL && console.group(`[ViewGrid:Scroll] >>> ${method}`),
+  leave: () => DEBUG_SCROLL && console.groupEnd(),
+};
+
 // Debug flicker logging
 const DEBUG_FLICKER = false;
 
@@ -446,8 +456,8 @@ function filterEntriesForViewV2(entries: LogEntry[], filter: FilterV2): LogEntry
             return false;
         }
 
-        // Correlation ID filter (for async flow grouping)
-        if (hasCorrelationFilter && !passesFilterRules(filter.correlations, e.correlationId)) {
+        // Trace ID filter (for trace grouping)
+        if (hasCorrelationFilter && !passesFilterRules(filter.correlations, e.ctx?._traceId)) {
             return false;
         }
 
@@ -510,21 +520,39 @@ export function ViewGrid({
     const frozenEntriesRef = useRef<LogEntry[] | null>(null);
     const frozenSliceOffsetRef = useRef(0);
     const frozenDisplayCountRef = useRef<number | null>(null);
-    const [, forceUpdate] = useState(0);
+    const [freezeKey, setFreezeKey] = useState(0); // Trigger re-render on freeze/unfreeze
     const displayCountRefForFreeze = useRef<React.MutableRefObject<number> | null>(null);
+    // Ref to access current targetEntries in mouseDown handler (updated later after targetEntries is defined)
+    const targetEntriesRef = useRef<LogEntry[]>([]);
+
     useEffect(() => {
         const handleMouseDown = () => {
             isMouseDownRef.current = true;
+            // IMPORTANT: Set global flag FIRST, before any React state updates
+            // This ensures VirtualLogGrid's React.memo can block re-renders
+            // We use window to share state with VirtualLogGrid
+            (window as unknown as { __vlgMouseDown?: boolean }).__vlgMouseDown = true;
+
             if (displayCountRefForFreeze.current) {
                 frozenDisplayCountRef.current = displayCountRefForFreeze.current.current;
+                // CRITICAL: Also freeze the entries array to prevent re-renders during drag
+                frozenEntriesRef.current = targetEntriesRef.current.slice(0, frozenDisplayCountRef.current);
+                scrollLog.enter('MouseFreeze');
+                scrollLog.info(`FREEZE: count=${frozenDisplayCountRef.current}, entries=${frozenEntriesRef.current.length}`);
+                setFreezeKey(k => k + 1); // Trigger re-render to use frozen entries
             }
         };
         const handleMouseUp = () => {
+            if (isMouseDownRef.current && frozenDisplayCountRef.current !== null) {
+                scrollLog.info(`UNFREEZE: was count=${frozenDisplayCountRef.current}, entries=${frozenEntriesRef.current?.length}`);
+                scrollLog.leave();
+            }
             isMouseDownRef.current = false;
             frozenEntriesRef.current = null;
             frozenSliceOffsetRef.current = 0;
             frozenDisplayCountRef.current = null;
-            forceUpdate(n => n + 1);
+            (window as unknown as { __vlgMouseDown?: boolean }).__vlgMouseDown = false;
+            setFreezeKey(k => k + 1); // Trigger re-render to use live entries
         };
         document.addEventListener('mousedown', handleMouseDown);
         document.addEventListener('mouseup', handleMouseUp);
@@ -546,25 +574,29 @@ export function ViewGrid({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Column state - use view's column state or defaults
-    const [columns, setColumns] = useState<ColumnConfig[]>(() => {
-        // If view has saved column config, use it
-        if (view.columnConfig && view.columnConfig.length > 0) {
-            return view.columnConfig.map(toColumnConfig);
+    // Merge saved column config with DEFAULT_COLUMNS to pick up new columns
+    const mergeColumns = useCallback((savedConfig: VlgColumnConfig[] | undefined): ColumnConfig[] => {
+        if (!savedConfig || savedConfig.length === 0) {
+            return DEFAULT_COLUMNS;
         }
-        return DEFAULT_COLUMNS;
-    });
+        const converted = savedConfig.map(toColumnConfig);
+        // Add any new columns from DEFAULT_COLUMNS that aren't in saved config
+        const savedIds = new Set(converted.map(c => c.id));
+        const newColumns = DEFAULT_COLUMNS.filter(c => !savedIds.has(c.id));
+        return [...converted, ...newColumns];
+    }, []);
+
+    // Column state - use view's column state merged with defaults
+    const [columns, setColumns] = useState<ColumnConfig[]>(() => mergeColumns(view.columnConfig));
 
     // Update columns when view.columnConfig changes (e.g., when switching views)
     const viewColumnConfigRef = useRef(view.columnConfig);
     useEffect(() => {
         if (view.columnConfig !== viewColumnConfigRef.current) {
             viewColumnConfigRef.current = view.columnConfig;
-            if (view.columnConfig && view.columnConfig.length > 0) {
-                setColumns(view.columnConfig.map(toColumnConfig));
-            }
+            setColumns(mergeColumns(view.columnConfig));
         }
-    }, [view.columnConfig]);
+    }, [view.columnConfig, mergeColumns]);
 
     // Get combined highlight rules for this view
     const highlightRules = useMemo(() => {
@@ -636,6 +668,8 @@ export function ViewGrid({
             // Batch trim time - trim back to maxGridRows and apply scroll compensation
             const trimAmount = excessRows;
             const firstVisibleRow = firstVisibleRowRef.current;
+
+            scrollLog.warn(`BATCH TRIM: removing ${trimAmount} rows, excess=${excessRows}, firstVisible=${firstVisibleRow}`);
 
             return {
                 cappedEntries: filteredEntries.slice(-maxGridRows),
@@ -725,6 +759,9 @@ export function ViewGrid({
     // Get target entries (use capped entries with maxGridRows limit applied)
     const targetEntries = isPaused ? pausedEntries : cappedEntries;
     const targetLen = targetEntries.length;
+
+    // Update ref for mouse freeze handler to access current entries
+    targetEntriesRef.current = targetEntries;
 
     flickerLog('targetEntries', { targetLen, entriesLen: entries.length, viewName: view.name });
 
@@ -837,13 +874,27 @@ export function ViewGrid({
 
     // Displayed entries: use ref for immediate accurate count, state for re-render trigger
     // This prevents flicker when state update is async
+    // CRITICAL: Also freeze entries during mouse drag to prevent scroll jumps
+    // Using a ref to store the frozen entries array reference to maintain identity
+    const displayedEntriesRef = useRef<LogEntry[]>([]);
+
     const displayedEntries = useMemo(() => {
-        // Use frozen count during mouse drag to prevent scrollHeight changes
-        const count = frozenDisplayCountRef.current !== null
-            ? frozenDisplayCountRef.current
-            : displayCountRef.current;
-        return targetEntries.slice(0, count);
-    }, [targetEntries, displayCount]);
+        // During freeze, return the SAME frozen array reference to prevent re-renders
+        if (frozenEntriesRef.current !== null) {
+            // Only update ref if it's a different freeze
+            if (displayedEntriesRef.current !== frozenEntriesRef.current) {
+                displayedEntriesRef.current = frozenEntriesRef.current;
+            }
+            return displayedEntriesRef.current;
+        }
+
+        // Normal case: slice from target entries
+        const count = displayCountRef.current;
+        const newEntries = targetEntries.slice(0, count);
+        displayedEntriesRef.current = newEntries;
+        return newEntries;
+    }, [targetEntries, displayCount, freezeKey]); // freezeKey triggers update on freeze/unfreeze
+
 
     // Handle column changes
     const handleColumnsChange = useCallback((newColumns: ColumnConfig[]) => {

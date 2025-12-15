@@ -1,8 +1,36 @@
 import { memo, CSSProperties } from 'react';
-import { format } from 'date-fns';
 import { LogEntry, Level, LogEntryType } from '../../store/logStore';
 import type { ColumnConfig } from './types';
 import type { MultiSelection } from './VirtualLogGrid';
+
+// Pre-computed date formatting - avoid date-fns overhead
+// Format: HH:mm:ss.SSS
+function formatTimestampFast(timestamp: string | undefined): string {
+  if (!timestamp) return '';
+
+  // Check cache first
+  let cached = timestampCache.get(timestamp);
+  if (cached) return cached;
+
+  try {
+    const d = new Date(timestamp);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    const s = d.getSeconds().toString().padStart(2, '0');
+    const ms = d.getMilliseconds().toString().padStart(3, '0');
+    cached = `${h}:${m}:${s}.${ms}`;
+  } catch {
+    cached = '';
+  }
+
+  // LRU eviction
+  if (timestampCache.size > CACHE_MAX_SIZE) {
+    const firstKey = timestampCache.keys().next().value;
+    if (firstKey) timestampCache.delete(firstKey);
+  }
+  timestampCache.set(timestamp, cached);
+  return cached;
+}
 
 export interface VirtualLogGridRowProps {
   entry: LogEntry;
@@ -24,6 +52,14 @@ export interface VirtualLogGridRowProps {
   };
   /** Whether this row is selected (for detail panel indication) */
   isRowSelected?: boolean;
+  /** Whether to show depth indentation for async operations */
+  depthIndentation?: boolean;
+  /** Whether this row should be faded (context filter not matching) */
+  isFaded?: boolean;
+  /** Color for context ribbon (HSL hue value, or null for no ribbon) */
+  ribbonHue?: number | null;
+  /** Callback when trace ID is clicked (for navigation to Traces tab) */
+  onTraceClick?: (traceId: string) => void;
 }
 
 // Separator row component - renders a horizontal line with optional color
@@ -109,6 +145,31 @@ const DECODED_CACHE_MAX_SIZE = 1000;
 const mergedStyleCache = new Map<string, CSSProperties>();
 const MERGED_STYLE_CACHE_MAX_SIZE = 500;
 
+// Cell style cache - avoids creating style objects per cell
+// Key: `${columnId}_${width}_${flex}_${minWidth}_${align}`
+const cellStyleCache = new Map<string, CSSProperties>();
+const CELL_STYLE_CACHE_MAX_SIZE = 200;
+
+function getCellStyle(column: { id: string; width?: number; flex?: number; minWidth?: number; align?: string }): CSSProperties {
+  const cacheKey = `${column.id}_${column.width ?? ''}_${column.flex ?? ''}_${column.minWidth ?? ''}_${column.align ?? ''}`;
+  let cached = cellStyleCache.get(cacheKey);
+  if (cached) return cached;
+
+  cached = {
+    width: column.width,
+    flex: column.flex,
+    minWidth: column.minWidth,
+    textAlign: column.align as CSSProperties['textAlign'],
+  };
+
+  if (cellStyleCache.size >= CELL_STYLE_CACHE_MAX_SIZE) {
+    const firstKey = cellStyleCache.keys().next().value;
+    if (firstKey) cellStyleCache.delete(firstKey);
+  }
+  cellStyleCache.set(cacheKey, cached);
+  return cached;
+}
+
 // Entry color type for convenience
 type EntryColor = { r: number; g: number; b: number; a: number };
 
@@ -169,25 +230,6 @@ function getMergedRowStyle(
   return cached;
 }
 
-function formatTimestamp(timestamp: string | undefined): string {
-  if (!timestamp) return '';
-
-  let cached = timestampCache.get(timestamp);
-  if (cached) return cached;
-
-  try {
-    cached = format(new Date(timestamp), 'HH:mm:ss.SSS');
-  } catch {
-    cached = '';
-  }
-
-  if (timestampCache.size > CACHE_MAX_SIZE) {
-    const firstKey = timestampCache.keys().next().value;
-    if (firstKey) timestampCache.delete(firstKey);
-  }
-  timestampCache.set(timestamp, cached);
-  return cached;
-}
 
 // Decode base64 data with caching to avoid atob() in render
 function decodeBase64Data(data: string, maxLength: number): string {
@@ -225,24 +267,34 @@ function decodeBase64Data(data: string, maxLength: number): string {
   return cached;
 }
 
+// Pre-cached icon styles to avoid object creation per render
+const iconStyleCache = new Map<number, CSSProperties>();
+
 // Icon cell renderer
 function IconCell({ entry }: { entry: LogEntry }) {
   const entryType = entry.logEntryType ?? LogEntryType.Message;
   const iconInfo = EntryTypeIcons[entryType] || EntryTypeIcons[LogEntryType.Message];
 
+  // Get or create cached style
+  let style = iconStyleCache.get(entryType);
+  if (!style) {
+    style = {
+      color: iconInfo.color,
+      fontWeight: 'bold',
+      fontSize: '14px',
+    };
+    iconStyleCache.set(entryType, style);
+  }
+
   return (
-    <span
-      title={iconInfo.title}
-      style={{
-        color: iconInfo.color,
-        fontWeight: 'bold',
-        fontSize: '14px',
-      }}
-    >
+    <span title={iconInfo.title} style={style}>
       {iconInfo.icon}
     </span>
   );
 }
+
+// Pre-cached level badge styles
+const levelStyleCache = new Map<number, CSSProperties>();
 
 // Level badge cell renderer
 function LevelCell({ level }: { level: number | undefined }) {
@@ -250,17 +302,22 @@ function LevelCell({ level }: { level: number | undefined }) {
 
   const config = levelConfig[level] || levelConfig[Level.Message];
 
+  // Get or create cached style
+  let style = levelStyleCache.get(level);
+  if (!style) {
+    style = {
+      padding: '2px 6px',
+      borderRadius: '3px',
+      fontSize: '10px',
+      fontWeight: 600,
+      backgroundColor: config.bg,
+      color: config.text,
+    };
+    levelStyleCache.set(level, style);
+  }
+
   return (
-    <span
-      style={{
-        padding: '2px 6px',
-        borderRadius: '3px',
-        fontSize: '10px',
-        fontWeight: 600,
-        backgroundColor: config.bg,
-        color: config.text,
-      }}
-    >
+    <span style={style}>
       {config.label}
     </span>
   );
@@ -275,7 +332,7 @@ function getCellValue(entry: LogEntry, field: string): string {
     case 'hostName': return entry.hostName || '';
     case 'processId': return entry.processId?.toString() || '';
     case 'threadId': return entry.threadId?.toString() || '';
-    case 'timestamp': return formatTimestamp(entry.timestamp);
+    case 'timestamp': return formatTimestampFast(entry.timestamp);
     case 'data': {
       if (!entry.data) return '';
       if (entry.dataEncoding === 'base64') {
@@ -301,8 +358,140 @@ function StreamContentCell({ entry }: { entry: LogEntry }) {
   return <span>{content}</span>;
 }
 
+// Title cell with depth indentation for async context visualization
+function TitleCell({ entry }: { entry: LogEntry }) {
+  const depth = entry.operationDepth ?? 0;
+  const indent = depth * 16; // 16px per depth level
+  const title = entry.title || '';
+
+  if (depth === 0) {
+    return <span>{title}</span>;
+  }
+
+  return (
+    <span style={{ paddingLeft: indent }} className="vlg-depth-indent">
+      <span className="vlg-depth-marker" style={{ color: '#6b7280' }}>
+        {'└'.repeat(1)}
+      </span>
+      {' '}{title}
+    </span>
+  );
+}
+
+// Context tags cell renderer - shows key:value pairs compactly
+function ContextTagsCell({ entry }: { entry: LogEntry }) {
+  if (!entry.ctx || Object.keys(entry.ctx).length === 0) {
+    return <span className="vlg-empty-data">-</span>;
+  }
+
+  // Format as "key:value, key2:value2" for compact display
+  const tags = Object.entries(entry.ctx)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(', ');
+
+  return (
+    <span className="vlg-context-tags" title={tags}>
+      {tags}
+    </span>
+  );
+}
+
+// Pre-cached trace ID styles
+const traceIdStyleClickable: CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  color: '#8b5cf6',
+  cursor: 'pointer'
+};
+const traceIdStyleStatic: CSSProperties = {
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  color: '#8b5cf6',
+};
+
+// Trace ID cell - truncated display (click handling moved to parent for performance)
+function TraceIdCell({ entry, onTraceClick }: { entry: LogEntry; onTraceClick?: (traceId: string) => void }) {
+  const traceId = entry.ctx?._traceId;
+
+  if (!traceId) return <span className="vlg-empty-data">-</span>;
+
+  // Show first 8 chars of trace ID (truncated for readability)
+  const truncated = traceId.substring(0, 8);
+
+  const handleClick = onTraceClick ? (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTraceClick(traceId);
+  } : undefined;
+
+  return (
+    <span
+      className="vlg-trace-id"
+      title={`Click to view trace: ${traceId}`}
+      onClick={handleClick}
+      style={onTraceClick ? traceIdStyleClickable : traceIdStyleStatic}
+    >
+      {truncated}
+    </span>
+  );
+}
+
+// Span name cell
+function SpanNameCell({ entry }: { entry: LogEntry }) {
+  const spanName = entry.ctx?._spanName;
+  if (!spanName) return <span className="vlg-empty-data">-</span>;
+
+  return (
+    <span className="vlg-span-name" title={spanName}>
+      {spanName}
+    </span>
+  );
+}
+
+// Span kind cell - shows abbreviation with icon
+const SpanKindIcons: Record<string, { abbrev: string; color: string; title: string }> = {
+  'Internal': { abbrev: 'I', color: '#6b7280', title: 'Internal' },
+  'Server': { abbrev: 'S', color: '#22c55e', title: 'Server' },
+  'Client': { abbrev: 'C', color: '#3b82f6', title: 'Client' },
+  'Producer': { abbrev: 'P', color: '#f59e0b', title: 'Producer' },
+  'Consumer': { abbrev: 'c', color: '#8b5cf6', title: 'Consumer' },
+};
+
+// Pre-cached span kind styles
+const spanKindStyleCache = new Map<string, CSSProperties>();
+
+function SpanKindCell({ entry }: { entry: LogEntry }) {
+  const spanKind = entry.ctx?._spanKind;
+  if (!spanKind) return <span className="vlg-empty-data">-</span>;
+
+  const kindInfo = SpanKindIcons[spanKind] || { abbrev: '?', color: '#6b7280', title: spanKind };
+
+  // Get or create cached style
+  let style = spanKindStyleCache.get(spanKind);
+  if (!style) {
+    style = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '20px',
+      height: '20px',
+      borderRadius: '3px',
+      backgroundColor: `${kindInfo.color}20`,
+      color: kindInfo.color,
+      fontWeight: 600,
+      fontSize: '11px',
+    };
+    spanKindStyleCache.set(spanKind, style);
+  }
+
+  return (
+    <span style={style} title={kindInfo.title}>
+      {kindInfo.abbrev}
+    </span>
+  );
+}
+
 // Render cell content based on column type
-function renderCell(entry: LogEntry, column: ColumnConfig) {
+function renderCell(entry: LogEntry, column: ColumnConfig, depthIndentation?: boolean, onTraceClick?: (traceId: string) => void) {
   switch (column.type) {
     case 'icon':
       return <IconCell entry={entry} />;
@@ -310,7 +499,19 @@ function renderCell(entry: LogEntry, column: ColumnConfig) {
       return <LevelCell level={entry.level} />;
     case 'stream-content':
       return <StreamContentCell entry={entry} />;
+    case 'context-tags':
+      return <ContextTagsCell entry={entry} />;
+    case 'trace-id':
+      return <TraceIdCell entry={entry} onTraceClick={onTraceClick} />;
+    case 'span-name':
+      return <SpanNameCell entry={entry} />;
+    case 'span-kind':
+      return <SpanKindCell entry={entry} />;
     default:
+      // Special handling for title column - show depth indentation when enabled
+      if (depthIndentation && column.field === 'title' && entry.operationDepth !== undefined && entry.operationDepth > 0) {
+        return <TitleCell entry={entry} />;
+      }
       return getCellValue(entry, column.field);
   }
 }
@@ -328,6 +529,10 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   isCellSelected,
   getCellPosition,
   isRowSelected,
+  depthIndentation,
+  isFaded,
+  ribbonHue,
+  onTraceClick,
 }: VirtualLogGridRowProps) {
   void _selectionKey; // Suppress unused warning - used in memo comparison
 
@@ -348,9 +553,19 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   if (isOdd && !hasCustomBackground) className += ' odd';
   if (hasCustomBackground) className += ' highlighted';
   if (isRowSelected) className += ' row-selected';
+  if (isFaded) className += ' faded';
+  if (ribbonHue !== null && ribbonHue !== undefined) className += ' has-ribbon';
+
+  // Build ribbon style if needed
+  const ribbonStyle = ribbonHue !== null && ribbonHue !== undefined
+    ? { '--ribbon-color': `hsl(${ribbonHue}, 70%, 50%)` } as CSSProperties
+    : undefined;
+
+  // Combine row style with ribbon style
+  const finalRowStyle = ribbonStyle ? { ...rowStyle, ...ribbonStyle } : rowStyle;
 
   return (
-    <div className={className} style={rowStyle}>
+    <div className={className} style={finalRowStyle}>
       {columns.map((column, colIndex) => {
         const isSelected = isCellSelected(rowIndex, colIndex, selection ?? null);
         const position = getCellPosition(rowIndex, colIndex, selection ?? null);
@@ -365,12 +580,8 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
           if (position.isRight) cellClassName += ' sel-right';
         }
 
-        const cellStyle: CSSProperties = {
-          width: column.width,
-          flex: column.flex,
-          minWidth: column.minWidth,
-          textAlign: column.align,
-        };
+        // Use cached cell style to avoid object creation
+        const cellStyle = getCellStyle(column);
 
         return (
           <div
@@ -380,7 +591,7 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
             title={column.type === 'text' ? getCellValue(entry, column.field) : undefined}
             onMouseDown={(e) => onCellMouseDown(rowIndex, colIndex, e)}
           >
-            {renderCell(entry, column)}
+            {renderCell(entry, column, depthIndentation, onTraceClick)}
           </div>
         );
       })}
@@ -393,7 +604,10 @@ export const VirtualLogGridRow = memo(function VirtualLogGridRow({
   prev.highlightStyle === next.highlightStyle &&
   prev.columns === next.columns &&
   prev.selectionKey === next.selectionKey && // Compare selectionKey instead of selection object
-  prev.isRowSelected === next.isRowSelected
+  prev.isRowSelected === next.isRowSelected &&
+  prev.depthIndentation === next.depthIndentation &&
+  prev.isFaded === next.isFaded &&
+  prev.ribbonHue === next.ribbonHue
 );
 
 // Skeleton row for loading state - shows placeholder boxes

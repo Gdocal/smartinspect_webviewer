@@ -1,13 +1,14 @@
 import React, { useRef, useCallback, useEffect, useLayoutEffect, useMemo, useState, CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry, HighlightRule, matchesHighlightRule, matchesPreviewTitleFilter, useLogStore } from '../../store/logStore';
-import { VirtualLogGridRow, SkeletonRow } from './VirtualLogGridRow';
+import { useTraceStore, fetchTrace, fetchTraceTree } from '../../store/traceStore';
+import { VirtualLogGridRow } from './VirtualLogGridRow';
 import { VirtualLogGridHeader } from './VirtualLogGridHeader';
 import { RowContextMenu, formatSelectionForCopy, copyToClipboard } from './RowContextMenu';
 import { TitleHighlightModal } from '../TitleHighlightModal';
 import { useAutoScroll } from './useAutoScroll';
 import { useScrollDetection } from './useScrollDetection';
-import { OVERSCAN, OVERSCAN_FAST, OVERSCAN_DRAG, getRowHeight, getFontSize, getHeaderHeight } from './constants';
+import { OVERSCAN_DRAG, getRowHeight, getFontSize, getHeaderHeight } from './constants';
 import { DEFAULT_COLUMNS, ColumnConfig } from './types';
 import { ThreadLinesPanel } from '../ThreadLinesPanel';
 import '../ThreadLinesPanel/ThreadLinesPanel.css';
@@ -19,12 +20,9 @@ const scrollLog = {
   info: (msg: string) => DEBUG_SCROLL && console.log(`[VLG:Scroll] ${msg}`),
   warn: (msg: string) => DEBUG_SCROLL && console.warn(`[VLG:Scroll] ${msg}`),
   enter: (method: string) => DEBUG_SCROLL && console.group(`[VLG:Scroll] >>> ${method}`),
-  leave: (method: string) => DEBUG_SCROLL && console.groupEnd(),
+  leave: (_method: string) => DEBUG_SCROLL && console.groupEnd(),
 };
 
-
-// Scroll velocity tracking for dynamic overscan
-const VELOCITY_THRESHOLD_FAST = 500; // pixels/second for "fast" scrolling
 
 // Debug logging for flicker investigation
 const DEBUG_FLICKER = false;
@@ -234,9 +232,35 @@ function VirtualLogGridInner({
   const contextRibbonKey = useLogStore((state) => state.contextRibbonKey);
   const showThreadLinesPanel = useLogStore((state) => state.showThreadLinesPanel);
   const threadLineColumns = useLogStore((state) => state.threadLineColumns);
+  const setTracesMode = useLogStore((state) => state.setTracesMode);
   const rowHeight = getRowHeight(rowDensity);
   const fontSize = getFontSize(rowDensity);
   const headerHeight = getHeaderHeight(rowDensity);
+
+  // Trace store actions - using refs to avoid re-renders
+  const traceStore = useTraceStore();
+
+  // Handle trace ID click - navigates to Traces tab
+  const handleTraceClick = useCallback(async (traceId: string) => {
+    setTracesMode(true);
+    traceStore.setSelectedTraceId(traceId);
+    traceStore.setLoadingTrace(true);
+    traceStore.setLoadingTree(true);
+
+    try {
+      const [fullTrace, tree] = await Promise.all([
+        fetchTrace(traceId),
+        fetchTraceTree(traceId)
+      ]);
+      traceStore.setSelectedTrace(fullTrace);
+      traceStore.setTraceTree(tree);
+    } catch (err) {
+      traceStore.setError(err instanceof Error ? err.message : 'Failed to load trace');
+    } finally {
+      traceStore.setLoadingTrace(false);
+      traceStore.setLoadingTree(false);
+    }
+  }, [setTracesMode, traceStore]);
 
   // Internal state: is the scrollbar at the bottom?
   const [stuckToBottom, setStuckToBottom] = useState(true);
@@ -258,17 +282,18 @@ function VirtualLogGridInner({
   const [hasScrollbar, setHasScrollbar] = useState(false);
 
   // Track scroll position for ThreadLinesPanel sync
+  // Use ref to avoid re-renders during scroll - only update state via RAF throttle
   const [scrollTop, setScrollTop] = useState(0);
+  const scrollTopRafRef = useRef<number | null>(null);
+  const lastScrollTopStateRef = useRef(0);
 
   // Track if virtualized content is ready (to show skeletons initially)
-  const [isVirtualizerReady, setIsVirtualizerReady] = useState(false);
+  // Note: Skeleton rows removed - striped background shows through gaps during fast scroll instead
 
-  // Scroll velocity tracking for dynamic overscan
-  const [isScrollingFast, setIsScrollingFast] = useState(false);
+  // Scroll velocity tracking for debug logging only (no state updates during scroll)
   const lastScrollTopRef = useRef(0);
   const lastScrollTimeRef = useRef(0);
   const velocityRef = useRef(0);
-  const velocityDecayTimerRef = useRef<number | null>(null);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -393,9 +418,10 @@ function VirtualLogGridInner({
     return offset;
   }, []); // Empty deps - only calculate once on mount
 
-  // Dynamic overscan based on scroll velocity
-  // Higher overscan during mouse drag prevents visual gaps when scrollbar is dragged fast
-  const currentOverscan = isMouseDownRef.current ? OVERSCAN_DRAG : (isScrollingFast ? OVERSCAN_FAST : OVERSCAN);
+  // Use maximum overscan always for smooth scrolling
+  // Dynamic overscan caused jerky scrolling due to re-renders when velocity crossed thresholds
+  // The extra DOM nodes are worth the smooth experience
+  const currentOverscan = OVERSCAN_DRAG;
 
   // Track last scroll offset for throttled updates during drag
   const lastScrollOffsetRef = useRef(0);
@@ -428,9 +454,12 @@ function VirtualLogGridInner({
           return;
         }
 
-        // Normal case: call callback with appropriate sync flag
+        // CRITICAL: Always pass false for isScrolling!
+        // When true, TanStack Virtual uses flushSync which forces synchronous re-renders
+        // and causes jerky scrolling. Passing false uses async updates instead.
         lastScrollOffsetRef.current = offset;
-        cb(offset, event ? true : false);
+        cb(offset, false);
+        void event; // suppress unused warning
       };
 
       handler(); // Initial call
@@ -494,19 +523,8 @@ function VirtualLogGridInner({
         const scrollDelta = Math.abs(scrollTop - lastScrollTopRef.current);
         const velocity = (scrollDelta / timeDelta) * 1000; // pixels per second
 
-        // Smooth velocity with exponential moving average
+        // Smooth velocity with exponential moving average (for debug logging only)
         velocityRef.current = velocityRef.current * 0.3 + velocity * 0.7;
-
-        // Update fast scrolling state (but NOT during ANY mouse drag to prevent re-renders)
-        // Use isMouseDownGlobal() to catch early scroll events before scrollbar detection completes
-        // This is a key optimization: we skip setState during drag to prevent re-renders
-        const isFast = velocityRef.current > VELOCITY_THRESHOLD_FAST;
-        if (isFast !== isScrollingFast && !isMouseDownGlobal()) {
-          setIsScrollingFast(isFast);
-          if (DEBUG_SCROLL) {
-            scrollLog.info(`Scroll speed changed: ${isFast ? 'FAST' : 'NORMAL'}, velocity=${velocityRef.current.toFixed(0)}px/s`);
-          }
-        }
 
         // Throttled scroll position logging
         if (DEBUG_SCROLL && now - lastLogTime > LOG_THROTTLE_MS && !isScrollbarDragRef.current) {
@@ -520,34 +538,30 @@ function VirtualLogGridInner({
       lastScrollTopRef.current = scrollTop;
       lastScrollTimeRef.current = now;
 
-      // Update scrollTop state for ThreadLinesPanel sync (but NOT during ANY mouse drag)
-      if (!isMouseDownGlobal()) {
-        setScrollTop(scrollTop);
+      // Update scrollTop state for ThreadLinesPanel sync via RAF throttle
+      // This prevents re-renders on every scroll tick - only update once per frame
+      // and only if the scroll changed significantly (>10px)
+      if (!isMouseDownGlobal() && scrollTopRafRef.current === null) {
+        scrollTopRafRef.current = requestAnimationFrame(() => {
+          scrollTopRafRef.current = null;
+          const currentScroll = container.scrollTop;
+          // Only trigger state update if scroll changed significantly
+          if (Math.abs(currentScroll - lastScrollTopStateRef.current) > 10) {
+            lastScrollTopStateRef.current = currentScroll;
+            setScrollTop(currentScroll);
+          }
+        });
       }
-
-      // Clear any existing decay timer
-      if (velocityDecayTimerRef.current) {
-        clearTimeout(velocityDecayTimerRef.current);
-      }
-
-      // Start velocity decay after scrolling stops
-      // Don't set state during drag - will be cleaned up on mouseup
-      velocityDecayTimerRef.current = window.setTimeout(() => {
-        velocityRef.current = 0;
-        if (!isMouseDownGlobal()) {
-          setIsScrollingFast(false);
-        }
-      }, 150);
     };
 
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       container.removeEventListener('scroll', handleScroll);
-      if (velocityDecayTimerRef.current) {
-        clearTimeout(velocityDecayTimerRef.current);
+      if (scrollTopRafRef.current !== null) {
+        cancelAnimationFrame(scrollTopRafRef.current);
       }
     };
-  }, [isScrollingFast]);
+  }, []);
 
   // Track if initial scroll has been done (to prevent flicker on mount)
   const hasInitialScrollRef = useRef(false);
@@ -585,12 +599,6 @@ function VirtualLogGridInner({
       mountCount: mountCountRef.current,
     });
 
-    // Mark virtualizer as ready as soon as we have entries (regardless of container/autoscroll state)
-    // This must happen BEFORE early returns to ensure rows render
-    if (entries.length > 0 && !isVirtualizerReady) {
-      setIsVirtualizerReady(true);
-    }
-
     if (!container) {
       flickerLog('useLayoutEffect SKIP - no container');
       return;
@@ -617,7 +625,26 @@ function VirtualLogGridInner({
         effectiveAutoScroll,
       });
     }
-  }, [entries.length, effectiveAutoScroll, isVirtualizerReady]);
+  }, [entries.length, effectiveAutoScroll]);
+
+  // CRITICAL: Synchronous scroll-to-bottom when entries change while autoscroll is active
+  // This runs BEFORE paint (useLayoutEffect) to prevent visual jumping
+  // The useAutoScroll hook handles the smooth animation, but this ensures no jump on first frame
+  const prevEntriesLenForScrollRef = useRef(entries.length);
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const prevLen = prevEntriesLenForScrollRef.current;
+    const currentLen = entries.length;
+    prevEntriesLenForScrollRef.current = currentLen;
+
+    // Only scroll if entries were added (not removed) and autoscroll is active
+    if (currentLen > prevLen && effectiveAutoScroll && stuckToBottom) {
+      // Synchronously scroll to bottom before browser paints
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+    }
+  }, [entries.length, effectiveAutoScroll, stuckToBottom]);
 
   // Detect scrollbar visibility
   useEffect(() => {
@@ -754,15 +781,21 @@ function VirtualLogGridInner({
       globalIsScrollbarDrag = false;
       lastGoodScrollRef.current = null; // Reset for next drag
 
-      // Clean up state that was skipped during drag
-      // Reset scrolling fast state (in case it was left in wrong state)
+      // Reset velocity tracking after drag ends
       velocityRef.current = 0;
-      setIsScrollingFast(false);
 
       // Update scroll position for ThreadLinesPanel sync
       const finalContainer = scrollContainerRef.current;
       if (finalContainer) {
         setScrollTop(finalContainer.scrollTop);
+
+        // CRITICAL: Force virtualizer to recalculate visible items
+        // During drag, we blocked all virtualizer callbacks in observeElementOffset.
+        // Now we need to dispatch a scroll event so the virtualizer updates.
+        // Use requestAnimationFrame to ensure global flags are cleared first.
+        requestAnimationFrame(() => {
+          finalContainer.dispatchEvent(new Event('scroll'));
+        });
       }
     };
 
@@ -881,7 +914,7 @@ function VirtualLogGridInner({
       const items = virtualizer.getVirtualItems();
       const container = scrollContainerRef.current;
       if (container && items.length > 0) {
-        const { scrollTop, scrollHeight, clientHeight } = container;
+        const { scrollTop, clientHeight } = container;
         const firstItem = items[0];
         const lastItem = items[items.length - 1];
         const expectedFirstIndex = Math.floor(scrollTop / rowHeight);
@@ -951,61 +984,44 @@ function VirtualLogGridInner({
     };
   }, []);
 
-  // Pre-compute highlight styles for visible entries (computed once per render, not per row)
+  // Get virtual items for rendering
   const virtualItems = virtualizer.getVirtualItems();
-  const highlightStyleMap = useMemo(() => {
-    const map = new Map<number, CSSProperties>();
 
-    // Preview highlight style (yellow background for title filter preview)
-    const previewStyle: CSSProperties = { backgroundColor: 'rgba(250, 204, 21, 0.3)' };
+  // PERFORMANCE: Compute highlight style inline during render, not in useMemo with virtualItems dependency
+  // Having virtualItems as a dependency caused recomputation on every scroll, blocking the main thread
+  const previewStyle: CSSProperties = useMemo(() => ({ backgroundColor: 'rgba(250, 204, 21, 0.3)' }), []);
 
-    for (const virtualRow of virtualItems) {
-      const entry = entries[virtualRow.index];
-      if (!entry) continue;
-
-      // Check preview filter first (highest priority)
-      if (previewTitleFilter && matchesPreviewTitleFilter(entry, previewTitleFilter)) {
-        map.set(entry.id, previewStyle);
-        continue;
-      }
-
-      // Then check regular highlight rules
-      let hasHighlightRule = false;
-      for (const rule of sortedHighlightRules) {
-        if (matchesHighlightRule(entry, rule)) {
-          map.set(entry.id, getRuleStyle(rule));
-          hasHighlightRule = true;
-          break; // First matching rule wins
-        }
-      }
-
-      // If no highlight rule and trace highlighting is enabled, apply trace color
-      const traceId = entry.ctx?._traceId;
-      if (!hasHighlightRule && traceHighlighting && traceId) {
-        map.set(entry.id, getTraceColor(traceId));
-      }
-    }
-    return map;
-  }, [virtualItems, entries, sortedHighlightRules, getRuleStyle, previewTitleFilter, traceHighlighting, getTraceColor]);
-
-  // Compute fade state for context fade mode
-  const fadeMap = useMemo(() => {
-    if (!contextFadeFilter) {
-      return null;
+  const getHighlightStyle = useCallback((entry: LogEntry): CSSProperties | undefined => {
+    // Check preview filter first (highest priority)
+    if (previewTitleFilter && matchesPreviewTitleFilter(entry, previewTitleFilter)) {
+      return previewStyle;
     }
 
-    const map = new Map<number, boolean>();
-    for (const virtualRow of virtualItems) {
-      const entry = entries[virtualRow.index];
-      if (!entry) continue;
-
-      // Entry matches if it has the context key with the matching value
-      const matches = entry.ctx &&
-        entry.ctx[contextFadeFilter.key] === contextFadeFilter.value;
-      map.set(entry.id, !matches);
+    // Then check regular highlight rules
+    for (const rule of sortedHighlightRules) {
+      if (matchesHighlightRule(entry, rule)) {
+        return getRuleStyle(rule);
+      }
     }
-    return map;
-  }, [virtualItems, entries, contextFadeFilter]);
+
+    // If no highlight rule and trace highlighting is enabled, apply trace color
+    const traceId = entry.ctx?._traceId;
+    if (traceHighlighting && traceId) {
+      return getTraceColor(traceId);
+    }
+
+    return undefined;
+  }, [sortedHighlightRules, getRuleStyle, previewTitleFilter, traceHighlighting, getTraceColor, previewStyle]);
+
+
+  // PERFORMANCE: Compute fade state inline, not in useMemo with virtualItems dependency
+  const getIsFaded = useCallback((entry: LogEntry): boolean => {
+    if (!contextFadeFilter) return false;
+    const matches = entry.ctx &&
+      entry.ctx[contextFadeFilter.key] === contextFadeFilter.value;
+    return !matches;
+  }, [contextFadeFilter]);
+
 
   // Helper function to compute consistent hue from string value
   const getHueFromString = useCallback((str: string): number => {
@@ -1017,27 +1033,13 @@ function VirtualLogGridInner({
     return Math.abs(hash % 360);
   }, []);
 
-  // Compute ribbon hues for context ribbon mode
-  const ribbonMap = useMemo(() => {
-    if (!contextRibbonKey) {
-      return null;
-    }
+  // PERFORMANCE: Compute ribbon hue inline, not in useMemo with virtualItems dependency
+  const getRibbonHue = useCallback((entry: LogEntry): number | undefined => {
+    if (!contextRibbonKey) return undefined;
+    const value = entry.ctx?.[contextRibbonKey];
+    return value ? getHueFromString(value) : undefined;
+  }, [contextRibbonKey, getHueFromString]);
 
-    const map = new Map<number, number | null>();
-    for (const virtualRow of virtualItems) {
-      const entry = entries[virtualRow.index];
-      if (!entry) continue;
-
-      // Get context value for the ribbon key
-      const value = entry.ctx?.[contextRibbonKey];
-      if (value) {
-        map.set(entry.id, getHueFromString(value));
-      } else {
-        map.set(entry.id, null); // No ribbon for entries without this context
-      }
-    }
-    return map;
-  }, [virtualItems, entries, contextRibbonKey, getHueFromString]);
 
   // Get visible columns
   const visibleColumns = useMemo(
@@ -1502,9 +1504,9 @@ function VirtualLogGridInner({
   // Memoize scroll container style
   // Note: DO NOT use scrollBehavior: 'smooth' here - it conflicts with
   // useAutoScroll's programmatic lerp-based smooth scrolling
+  // Note: Use flex: 1 instead of fixed height to fill available space
   const scrollContainerStyle = useMemo(() => ({
     overflow: 'auto' as const,
-    height: 'calc(100% - 32px)',
     overflowAnchor: 'none' as const,
     contain: 'strict' as const,
   }), []);
@@ -1558,20 +1560,8 @@ function VirtualLogGridInner({
           onContextMenu={handleContextMenu}
         >
           <div style={innerStyle}>
-          {/* Show skeleton rows until virtualizer is ready */}
-          {!isVirtualizerReady && entries.length > 0 ? (
-            // Generate skeleton rows to fill estimated viewport (~600px / rowHeight rows)
-            Array.from({ length: Math.ceil(600 / rowHeight) }, (_, i) => (
-              <SkeletonRow
-                key={`skeleton-${i}`}
-                rowIndex={i}
-                style={getRowStyle(i * rowHeight, rowHeight)}
-                columns={visibleColumns}
-                isOdd={alternatingRows && i % 2 === 1}
-              />
-            ))
-          ) : (
-            virtualItems.map((virtualRow) => {
+          {/* Render virtual rows - the striped background shows through gaps during fast scroll */}
+          {virtualItems.map((virtualRow) => {
               const entry = entries[virtualRow.index];
               if (!entry) return null;
               const rowSelectionInfo = rowSelectionMap.get(virtualRow.index);
@@ -1583,7 +1573,7 @@ function VirtualLogGridInner({
                   style={getRowStyle(virtualRow.start, virtualRow.size)}
                   isOdd={alternatingRows && entry.id % 2 === 1}
                   columns={visibleColumns}
-                  highlightStyle={highlightStyleMap.get(entry.id)}
+                  highlightStyle={getHighlightStyle(entry)}
                   selection={selection}
                   selectionKey={rowSelectionInfo?.selectionKey ?? ''}
                   onCellMouseDown={handleCellMouseDown}
@@ -1591,12 +1581,12 @@ function VirtualLogGridInner({
                   getCellPosition={getCellPosition}
                   isRowSelected={entry.id === selectedRowId}
                   depthIndentation={depthIndentation}
-                  isFaded={fadeMap?.get(entry.id) ?? false}
-                  ribbonHue={ribbonMap?.get(entry.id)}
+                  isFaded={getIsFaded(entry)}
+                  ribbonHue={getRibbonHue(entry)}
+                  onTraceClick={handleTraceClick}
                 />
               );
-            })
-          )}
+            })}
         </div>
       </div>
       </div>

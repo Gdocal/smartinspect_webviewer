@@ -15,6 +15,20 @@ export const STREAM_ROW_HEIGHTS: Record<RowDensity, number> = {
   comfortable: 34,
 };
 
+// TracesView row heights by density
+export const TRACE_ROW_HEIGHTS: Record<RowDensity, number> = {
+  compact: 56,
+  default: 72,
+  comfortable: 88,
+};
+
+// TraceWaterfall span row heights by density
+export const WATERFALL_ROW_HEIGHTS: Record<RowDensity, number> = {
+  compact: 24,
+  default: 32,
+  comfortable: 40,
+};
+
 // Font sizes by density (+7% from original)
 export const FONT_SIZES: Record<RowDensity, number> = {
   compact: 12,
@@ -35,9 +49,11 @@ export function getHeaderHeight(density: RowDensity): number {
 
 // Default row height (for backwards compatibility)
 export const ROW_HEIGHT = 28;
-export const OVERSCAN = 40; // Base overscan (increased from 20 for smoother scrolling)
-export const OVERSCAN_FAST = 60; // Higher overscan during fast scrolling
-export const OVERSCAN_DRAG = 150; // Much higher overscan during scrollbar drag to prevent visual jumping
+// Overscan = number of rows to render above/below visible viewport
+// Higher values = smoother scrolling but more DOM nodes
+export const OVERSCAN = 50; // Base overscan for smooth scrolling
+export const OVERSCAN_FAST = 80; // Higher overscan during fast scrolling (mouse wheel)
+export const OVERSCAN_DRAG = 200; // Maximum overscan during scrollbar drag
 export const MAX_ROWS = 50000;
 
 // Helper to get row height by density
@@ -47,6 +63,14 @@ export function getRowHeight(density: RowDensity): number {
 
 export function getStreamRowHeight(density: RowDensity): number {
   return STREAM_ROW_HEIGHTS[density];
+}
+
+export function getTraceRowHeight(density: RowDensity): number {
+  return TRACE_ROW_HEIGHTS[density];
+}
+
+export function getWaterfallRowHeight(density: RowDensity): number {
+  return WATERFALL_ROW_HEIGHTS[density];
 }
 
 export function getFontSize(density: RowDensity): number {
