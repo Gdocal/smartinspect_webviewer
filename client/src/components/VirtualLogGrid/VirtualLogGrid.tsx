@@ -426,9 +426,12 @@ function VirtualLogGridInner({
   // Track last scroll offset for throttled updates during drag
   const lastScrollOffsetRef = useRef(0);
   const pendingScrollUpdateRef = useRef<number | null>(null);
+  const lastDragUpdateTimeRef = useRef(0);
+  const deferredDragUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Custom observeElementOffset that completely skips virtualizer updates during scrollbar drag
-  // This prevents ALL re-renders from the virtualizer during drag, avoiding scroll position fighting
+  // Custom observeElementOffset with throttled updates during scrollbar drag
+  // During drag: defer virtualizer updates until mouse pauses (150ms), then update once
+  // This allows rows to render when user pauses, but prevents fighting during active drag
   const observeElementOffset = useCallback(
     <T extends Element>(
       instance: { scrollElement: T | null; targetWindow: Window | null; options: { horizontal?: boolean } },
@@ -445,19 +448,32 @@ function VirtualLogGridInner({
           ? element.scrollLeft
           : element.scrollTop;
 
-        // During ANY mouse drag, DON'T call the callback at all
-        // This completely prevents virtualizer-driven re-renders during drag
-        // Use isMouseDownGlobal() to catch early scroll events before scrollbar detection completes
-        if (isMouseDownGlobal()) {
-          lastScrollOffsetRef.current = offset;
-          // Don't call cb - virtualizer won't update, no re-renders
+        lastScrollOffsetRef.current = offset;
+
+        // During scrollbar drag: use deferred update strategy
+        // Update only when mouse pauses for 150ms to allow rows to render
+        // without causing scroll position fighting during active drag
+        if (isMouseDownGlobal() && globalIsScrollbarDrag) {
+          // Clear any pending deferred update
+          if (deferredDragUpdateRef.current !== null) {
+            clearTimeout(deferredDragUpdateRef.current);
+          }
+
+          // Schedule a deferred update - will fire when mouse pauses
+          deferredDragUpdateRef.current = setTimeout(() => {
+            // Re-read current scroll position (may have changed)
+            const currentOffset = instance.options.horizontal
+              ? element.scrollLeft
+              : element.scrollTop;
+            cb(currentOffset, false);
+            lastDragUpdateTimeRef.current = performance.now();
+            deferredDragUpdateRef.current = null;
+          }, 150);
+
           return;
         }
 
-        // CRITICAL: Always pass false for isScrolling!
-        // When true, TanStack Virtual uses flushSync which forces synchronous re-renders
-        // and causes jerky scrolling. Passing false uses async updates instead.
-        lastScrollOffsetRef.current = offset;
+        // Normal scrolling: always update immediately (but with isScrolling=false for async)
         cb(offset, false);
         void event; // suppress unused warning
       };
@@ -469,6 +485,9 @@ function VirtualLogGridInner({
       return () => {
         if (pendingScrollUpdateRef.current !== null) {
           cancelAnimationFrame(pendingScrollUpdateRef.current);
+        }
+        if (deferredDragUpdateRef.current !== null) {
+          clearTimeout(deferredDragUpdateRef.current);
         }
         element.removeEventListener('scroll', handler);
       };
@@ -490,6 +509,20 @@ function VirtualLogGridInner({
     initialOffset: initialScrollOffset,
     observeElementOffset,
   });
+
+  // CRITICAL: Force virtualizer to initialize by dispatching a scroll event after mount
+  // This ensures the virtualizer calculates visible items even before user interaction
+  const hasEntries = entries.length > 0;
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container && hasEntries) {
+      // Small delay to ensure container is fully rendered
+      const timer = setTimeout(() => {
+        container.dispatchEvent(new Event('scroll'));
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [hasEntries]); // Only run when we first get entries
 
   // Scroll velocity tracking for dynamic overscan
   useEffect(() => {
@@ -987,6 +1020,22 @@ function VirtualLogGridInner({
   // Get virtual items for rendering
   const virtualItems = virtualizer.getVirtualItems();
 
+  // Debug: Check for index mismatch and empty virtualItems
+  if (virtualItems.length === 0 && entries.length > 0) {
+    console.error(`[VLG] NO VIRTUAL ITEMS! entries.length=${entries.length}, scrollContainer exists=${!!scrollContainerRef.current}`);
+  } else if (virtualItems.length > 0) {
+    const maxIndex = Math.max(...virtualItems.map(v => v.index));
+    if (maxIndex >= entries.length) {
+      console.error(`[VLG] INDEX MISMATCH! virtualizer maxIndex=${maxIndex}, entries.length=${entries.length}, count given=${entries.length}`);
+    }
+  }
+
+  // Debug: Log render every 100 renders
+  if (renderCount % 100 === 0) {
+    const debugTotalSize = virtualizer.getTotalSize();
+    console.log(`[VLG] Render #${renderCount}: entries=${entries.length}, virtualItems=${virtualItems.length}, totalSize=${debugTotalSize}`);
+  }
+
   // PERFORMANCE: Compute highlight style inline during render, not in useMemo with virtualItems dependency
   // Having virtualItems as a dependency caused recomputation on every scroll, blocking the main thread
   const previewStyle: CSSProperties = useMemo(() => ({ backgroundColor: 'rgba(250, 204, 21, 0.3)' }), []);
@@ -1046,6 +1095,11 @@ function VirtualLogGridInner({
     () => columns.filter(col => !col.hidden),
     [columns]
   );
+
+  // Debug: Log setup info
+  useEffect(() => {
+    console.log(`[VLG] Setup: entries=${entries.length}, columns visible=${visibleColumns.length}`, visibleColumns.map(c => c.id));
+  }, [entries.length, visibleColumns]);
 
   // Pre-compute selection info per row for visible entries
   // This creates a stable reference for rows that aren't selected, avoiding re-renders
@@ -1563,7 +1617,26 @@ function VirtualLogGridInner({
           {/* Render virtual rows - the striped background shows through gaps during fast scroll */}
           {virtualItems.map((virtualRow) => {
               const entry = entries[virtualRow.index];
-              if (!entry) return null;
+              if (!entry) {
+                // Only log once per scroll position to avoid spam
+                if (virtualRow.index % 100 === 0) {
+                  console.warn(`[VLG] Missing entry at index ${virtualRow.index}, entries.length=${entries.length}, virtualItems count=${virtualItems.length}`);
+                }
+                return null;
+              }
+              // Debug: Log first few entries to diagnose empty cells issue
+              if (virtualRow.index < 3 && renderCount % 50 === 0) {
+                console.log(`[VLG] Entry[${virtualRow.index}]:`, JSON.stringify({
+                  id: entry.id,
+                  title: entry.title,
+                  sessionName: entry.sessionName,
+                  timestamp: entry.timestamp,
+                  level: entry.level,
+                  logEntryType: entry.logEntryType,
+                  appName: entry.appName,
+                  keys: Object.keys(entry)
+                }));
+              }
               const rowSelectionInfo = rowSelectionMap.get(virtualRow.index);
               return (
                 <VirtualLogGridRow
