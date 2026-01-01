@@ -39,8 +39,8 @@ const config = {
 const roomManager = new RoomManager(config.maxEntries, config.maxStreamEntries);
 
 // ==================== Watch Throttling ====================
-// Limits watch broadcasts to 3 per second per watch to prevent UI overload
-const WATCH_THROTTLE_MS = 333; // ~3 updates per second
+// Limits watch broadcasts to 10 per second per watch to prevent UI overload
+const WATCH_THROTTLE_MS = 100; // ~10 updates per second
 const watchThrottleState = new Map(); // roomId:watchName -> { lastBroadcast, pending, timer }
 
 // ==================== Stream Throttling ====================
@@ -53,6 +53,40 @@ const streamThrottleState = new Map(); // Kept for compatibility but not used
 const ENTRY_THROTTLE_MS = 333; // ~3 updates per second per room
 const entryThrottleState = new Map(); // roomId -> { lastBroadcast, pendingEntries, timer }
 
+// ==================== Performance Metrics ====================
+// Track messages per second for monitoring
+const perfMetrics = {
+    // Current second counters
+    entriesReceived: 0,
+    watchesReceived: 0,
+    entriesBroadcast: 0,
+    watchesBroadcast: 0,
+    // Per-second rates (updated every second)
+    entriesPerSec: 0,
+    watchesPerSec: 0,
+    entriesBroadcastPerSec: 0,
+    watchesBroadcastPerSec: 0,
+    // Totals
+    totalEntriesReceived: 0,
+    totalWatchesReceived: 0,
+    // Last update time
+    lastUpdate: Date.now()
+};
+
+// Update rates every second
+setInterval(() => {
+    perfMetrics.entriesPerSec = perfMetrics.entriesReceived;
+    perfMetrics.watchesPerSec = perfMetrics.watchesReceived;
+    perfMetrics.entriesBroadcastPerSec = perfMetrics.entriesBroadcast;
+    perfMetrics.watchesBroadcastPerSec = perfMetrics.watchesBroadcast;
+    // Reset counters
+    perfMetrics.entriesReceived = 0;
+    perfMetrics.watchesReceived = 0;
+    perfMetrics.entriesBroadcast = 0;
+    perfMetrics.watchesBroadcast = 0;
+    perfMetrics.lastUpdate = Date.now();
+}, 1000);
+
 function getThrottleKey(roomId, watchName) {
     return `${roomId}:${watchName}`;
 }
@@ -62,6 +96,10 @@ function getThrottleKey(roomId, watchName) {
  * Always stores to watchStore immediately, but throttles WebSocket broadcasts
  */
 function throttledWatchBroadcast(roomId, packet) {
+    // Track received watch
+    perfMetrics.watchesReceived++;
+    perfMetrics.totalWatchesReceived++;
+
     const key = getThrottleKey(roomId, packet.name);
     const now = Date.now();
     let state = watchThrottleState.get(key);
@@ -81,6 +119,7 @@ function throttledWatchBroadcast(roomId, packet) {
             clearTimeout(state.timer);
             state.timer = null;
         }
+        perfMetrics.watchesBroadcast++;
         connectionManager.broadcastWatchToRoom(roomId, packet);
     } else {
         // Too soon - store as pending and schedule broadcast
@@ -91,6 +130,7 @@ function throttledWatchBroadcast(roomId, packet) {
                 const currentState = watchThrottleState.get(key);
                 if (currentState && currentState.pending) {
                     currentState.lastBroadcast = Date.now();
+                    perfMetrics.watchesBroadcast++;
                     connectionManager.broadcastWatchToRoom(roomId, currentState.pending);
                     currentState.pending = null;
                 }
@@ -110,10 +150,33 @@ function throttledStreamBroadcast(roomId, streamData) {
 }
 
 /**
+ * Format trace data for WebSocket broadcast
+ */
+function formatTraceSummary(trace) {
+    return {
+        traceId: trace.traceId,
+        rootSpanName: trace.rootSpanName,
+        startTime: trace.startTime ? trace.startTime.toISOString() : null,
+        endTime: trace.endTime ? trace.endTime.toISOString() : null,
+        duration: trace.endTime && trace.startTime
+            ? trace.endTime.getTime() - trace.startTime.getTime()
+            : null,
+        spanCount: trace.spanCount,
+        hasError: trace.hasError,
+        serviceNames: trace.apps ? Array.from(trace.apps) : [],
+        isActive: true  // Active because we just received data
+    };
+}
+
+/**
  * Throttled entry broadcast - batches entries and sends ~3 times/sec per room
  * Collects all entries and sends them together (unlike watch/stream which send latest only)
  */
 function throttledEntryBroadcast(roomId, entries) {
+    // Track received entries
+    perfMetrics.entriesReceived += entries.length;
+    perfMetrics.totalEntriesReceived += entries.length;
+
     const now = Date.now();
     let state = entryThrottleState.get(roomId);
 
@@ -137,6 +200,7 @@ function throttledEntryBroadcast(roomId, entries) {
             state.timer = null;
         }
         if (toSend.length > 0) {
+            perfMetrics.entriesBroadcast += toSend.length;
             connectionManager.broadcastEntriesToRoom(roomId, toSend);
         }
     } else if (!state.timer) {
@@ -148,6 +212,7 @@ function throttledEntryBroadcast(roomId, entries) {
                 currentState.lastBroadcast = Date.now();
                 const toSend = currentState.pendingEntries;
                 currentState.pendingEntries = [];
+                perfMetrics.entriesBroadcast += toSend.length;
                 connectionManager.broadcastEntriesToRoom(roomId, toSend);
             }
             currentState.timer = null;
@@ -216,14 +281,27 @@ app.post('/api/log', express.text({ type: '*/*' }), (req, res) => {
     let message = '';
     let title = '';
     let data = null;
+    let ctx = null;
+    let parsedBody = null;
 
     if (typeof req.body === 'string') {
-        message = req.body;
-        title = message.substring(0, 100);
-    } else if (typeof req.body === 'object' && req.body !== null) {
-        message = req.body.message || '';
-        title = req.body.title || message.substring(0, 100);
-        data = req.body.data ? Buffer.from(JSON.stringify(req.body.data)) : null;
+        // Try to parse as JSON first (since express.text() receives all as string)
+        try {
+            parsedBody = JSON.parse(req.body);
+        } catch {
+            // Not JSON, treat as plain text message
+            message = req.body;
+            title = message.substring(0, 100);
+        }
+    }
+
+    // If we parsed JSON or body was already an object
+    if (parsedBody || (typeof req.body === 'object' && req.body !== null)) {
+        const bodyObj = parsedBody || req.body;
+        message = bodyObj.message || bodyObj.msg || '';
+        title = bodyObj.title || message.substring(0, 100);
+        data = bodyObj.data ? Buffer.from(JSON.stringify(bodyObj.data)) : null;
+        ctx = bodyObj.ctx || null;  // Extract context for tracing
     }
 
     if (!message) {
@@ -245,11 +323,18 @@ app.post('/api/log', express.text({ type: '*/*' }), (req, res) => {
         timestamp: new Date(),
         color: { r: 0, g: 0, b: 0, a: 0 },
         data: data || (message.length > 100 ? Buffer.from(message) : null),
-        level: level
+        level: level,
+        ctx: ctx  // Include context for tracing
     };
 
     const storedEntry = room.logBuffer.push(entry);
     room.touch();
+
+    // Process for trace aggregation (if entry has trace context)
+    const trace = room.processEntryForTracing(storedEntry);
+    if (trace) {
+        connectionManager.broadcastTraceToRoom(roomId, formatTraceSummary(trace));
+    }
 
     // Broadcast to viewers
     throttledEntryBroadcast(roomId, [storedEntry]);
@@ -297,7 +382,15 @@ app.get('/api/status', (req, res) => {
         logSources: tcpServer.getClientCount(),
         viewers: connectionManager.getViewerCount(),
         storage: room ? room.logBuffer.getStats() : null,
-        totalStats: roomManager.getTotalStats()
+        totalStats: roomManager.getTotalStats(),
+        performance: {
+            entriesPerSec: perfMetrics.entriesPerSec,
+            watchesPerSec: perfMetrics.watchesPerSec,
+            entriesBroadcastPerSec: perfMetrics.entriesBroadcastPerSec,
+            watchesBroadcastPerSec: perfMetrics.watchesBroadcastPerSec,
+            totalEntriesReceived: perfMetrics.totalEntriesReceived,
+            totalWatchesReceived: perfMetrics.totalWatchesReceived
+        }
     });
 });
 
@@ -482,6 +575,166 @@ app.get('/api/sessions', (req, res) => {
 });
 
 /**
+ * GET /api/contexts - Get list of context keys with statistics
+ * Returns: { keys: string[], summary: { [key]: { uniqueValues, totalEntries, lastSeen } } }
+ */
+app.get('/api/contexts', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ ...room.logBuffer.getContextKeys(), room: roomId });
+});
+
+/**
+ * GET /api/contexts/:key - Get values for a specific context key
+ * Query params: limit, offset, sort (count|recent), search
+ * Returns: { key, values: [{ value, count, lastSeen }], total }
+ */
+app.get('/api/contexts/:key', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const { limit, offset, sort, search } = req.query;
+
+    const result = room.logBuffer.getContextValues(req.params.key, {
+        limit: limit ? parseInt(limit, 10) : 100,
+        offset: offset ? parseInt(offset, 10) : 0,
+        sort: sort || 'count',
+        search: search || ''
+    });
+
+    res.json({ ...result, room: roomId });
+});
+
+/**
+ * GET /api/contexts/:key/:value/entries - Get entries with specific context value
+ * Returns: { entries: LogEntry[], count: number }
+ */
+app.get('/api/contexts/:key/:value/entries', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const entries = room.logBuffer.getByContext(req.params.key, req.params.value);
+    res.json({ entries, count: entries.length, room: roomId });
+});
+
+// ==================== Trace API Endpoints ====================
+
+/**
+ * GET /api/traces - List all traces
+ * Query params:
+ *   - limit: number (default 50)
+ *   - offset: number (default 0)
+ *   - status: 'all' | 'ok' | 'error' (default 'all')
+ *   - minDuration: number (ms)
+ *   - maxDuration: number (ms)
+ *   - search: string (search in trace/span names)
+ *   - sort: 'recent' | 'duration' | 'spans' (default 'recent')
+ * Returns: { traces: TraceSummary[], total, offset, limit, room }
+ */
+app.get('/api/traces', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+
+    const result = room.traceAggregator.listTraces({
+        limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
+        offset: req.query.offset ? parseInt(req.query.offset, 10) : 0,
+        status: req.query.status || 'all',
+        minDuration: req.query.minDuration ? parseInt(req.query.minDuration, 10) : null,
+        maxDuration: req.query.maxDuration ? parseInt(req.query.maxDuration, 10) : null,
+        search: req.query.search || '',
+        sort: req.query.sort || 'recent'
+    });
+
+    res.json({ ...result, room: roomId });
+});
+
+/**
+ * GET /api/traces/stats - Get trace aggregation statistics
+ * Returns: { totalTracesProcessed, totalSpansProcessed, activeTraces, completedTraces, spanIndexSize }
+ */
+app.get('/api/traces/stats', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ stats: room.traceAggregator.getStats(), room: roomId });
+});
+
+/**
+ * GET /api/traces/:traceId - Get full trace details
+ * Returns: { traceId, rootSpanName, startTime, endTime, duration, spans, ... }
+ */
+app.get('/api/traces/:traceId', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const trace = room.traceAggregator.getTrace(req.params.traceId);
+
+    if (!trace) {
+        return res.status(404).json({ error: 'Trace not found', traceId: req.params.traceId, room: roomId });
+    }
+
+    res.json({ trace, room: roomId });
+});
+
+/**
+ * GET /api/traces/:traceId/tree - Get span hierarchy for waterfall view
+ * Returns: { traceId, rootSpanName, duration, spanCount, hasError, roots: SpanNode[] }
+ */
+app.get('/api/traces/:traceId/tree', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const tree = room.traceAggregator.getSpanTree(req.params.traceId);
+
+    if (!tree) {
+        return res.status(404).json({ error: 'Trace not found', traceId: req.params.traceId, room: roomId });
+    }
+
+    res.json({ ...tree, room: roomId });
+});
+
+/**
+ * GET /api/traces/:traceId/entries - Get all log entries in a trace
+ * Returns: { entries: LogEntry[], count, traceId }
+ */
+app.get('/api/traces/:traceId/entries', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const trace = room.traceAggregator.getTrace(req.params.traceId);
+
+    if (!trace) {
+        return res.status(404).json({ error: 'Trace not found', traceId: req.params.traceId, room: roomId });
+    }
+
+    // Get actual entries from log buffer using indexed lookup (O(n) instead of O(n*m))
+    const entries = room.logBuffer.getByIds(trace.entryIds)
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    res.json({ entries, count: entries.length, traceId: req.params.traceId, room: roomId });
+});
+
+/**
+ * GET /api/spans/:spanId/trace - Get trace containing a specific span
+ * Returns: { trace, room }
+ */
+app.get('/api/spans/:spanId/trace', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const trace = room.traceAggregator.getTraceBySpan(req.params.spanId);
+
+    if (!trace) {
+        return res.status(404).json({ error: 'Span not found', spanId: req.params.spanId, room: roomId });
+    }
+
+    res.json({ trace, room: roomId });
+});
+
+/**
+ * DELETE /api/traces - Clear all traces
+ */
+app.delete('/api/traces', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    room.traceAggregator.clear();
+    res.json({ success: true, room: roomId });
+});
+
+/**
  * GET /api/watches - Get current watch values
  */
 app.get('/api/watches', (req, res) => {
@@ -491,12 +744,35 @@ app.get('/api/watches', (req, res) => {
 });
 
 /**
- * GET /api/watches/:name/history - Get watch history
+ * GET /api/watches/:name/history - Get watch history with resolution support
+ * Query params:
+ *   - from: Start timestamp (ms since epoch)
+ *   - to: End timestamp (ms since epoch)
+ *   - resolution: 'raw' | '1s' | '1m' | '1h' | 'auto' (default: 'auto')
+ *
+ * Auto-resolution logic:
+ *   - < 30 sec range  → raw (sub-second precision)
+ *   - < 1 hour range  → 1s (secondly averages)
+ *   - < 24 hour range → 1m (minutely averages)
+ *   - > 24 hour range → 1h (hourly averages)
  */
 app.get('/api/watches/:name/history', (req, res) => {
     const roomId = getRoomFromRequest(req);
     const room = getRoomStorage(roomId);
-    res.json({ history: room.watchStore.getHistory(req.params.name), room: roomId });
+    const { from, to, resolution } = req.query;
+
+    const options = {
+        from: from ? parseInt(from, 10) : undefined,
+        to: to ? parseInt(to, 10) : undefined,
+        resolution: resolution || 'auto'
+    };
+
+    const result = room.watchStore.getHistory(req.params.name, options);
+    res.json({
+        ...result,
+        name: req.params.name,
+        room: roomId
+    });
 });
 
 /**
@@ -548,6 +824,26 @@ app.delete('/api/watches', (req, res) => {
     room.watchStore.clear();
     connectionManager.broadcastToRoom(roomId, { type: 'clear', target: 'watches' });
     res.json({ success: true, room: roomId });
+});
+
+/**
+ * DELETE /api/watches/history - Clear watch history only (keep current values)
+ */
+app.delete('/api/watches/history', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const watchName = req.query.name || null;
+    room.watchStore.clearHistory(watchName);
+    res.json({ success: true, room: roomId, watch: watchName || 'all' });
+});
+
+/**
+ * GET /api/watches/stats - Get watch history statistics
+ */
+app.get('/api/watches/stats', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ stats: room.watchStore.getHistoryStats(), room: roomId });
 });
 
 /**
@@ -673,6 +969,14 @@ app.get('/api/server/stats', (req, res) => {
         connections: {
             viewers: connectionManager.getViewerCount(),
             clients: tcpServer.getClientCount()
+        },
+        performance: {
+            entriesPerSec: perfMetrics.entriesPerSec,
+            watchesPerSec: perfMetrics.watchesPerSec,
+            entriesBroadcastPerSec: perfMetrics.entriesBroadcastPerSec,
+            watchesBroadcastPerSec: perfMetrics.watchesBroadcastPerSec,
+            totalEntriesReceived: perfMetrics.totalEntriesReceived,
+            totalWatchesReceived: perfMetrics.totalWatchesReceived
         }
     });
 });
@@ -1480,16 +1784,23 @@ function handlePacket(packet, clientInfo) {
             // App name update - just metadata
             break;
 
-        case 'logEntry':
+        case 'logEntry': {
             // Store in room's buffer
             const entry = room.logBuffer.push(packet);
             room.touch();
 
+            // Process for trace aggregation (if entry has trace context)
+            const entryTrace = room.processEntryForTracing(entry);
+            if (entryTrace) {
+                connectionManager.broadcastTraceToRoom(roomId, formatTraceSummary(entryTrace));
+            }
+
             // Throttled broadcast to viewers (max 3/sec to prevent UI overload)
             throttledEntryBroadcast(roomId, [entry]);
             break;
+        }
 
-        case 'processFlow':
+        case 'processFlow': {
             // Track method context
             room.methodTracker.processEntry(packet);
 
@@ -1497,9 +1808,16 @@ function handlePacket(packet, clientInfo) {
             const flowEntry = room.logBuffer.push(packet);
             room.touch();
 
+            // Process for trace aggregation (if entry has trace context)
+            const flowTrace = room.processEntryForTracing(flowEntry);
+            if (flowTrace) {
+                connectionManager.broadcastTraceToRoom(roomId, formatTraceSummary(flowTrace));
+            }
+
             // Throttled broadcast to viewers (max 3/sec to prevent UI overload)
             throttledEntryBroadcast(roomId, [flowEntry]);
             break;
+        }
 
         case 'watch':
             // Update room's watch store (always immediate - data is preserved)
@@ -1606,6 +1924,9 @@ async function start() {
                 roomManager: roomManager,
                 onEntry: (roomId, entry) => {
                     throttledEntryBroadcast(roomId, [entry]);
+                },
+                onTrace: (roomId, trace) => {
+                    connectionManager.broadcastTraceToRoom(roomId, formatTraceSummary(trace));
                 }
             });
             try {

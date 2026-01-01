@@ -28,6 +28,14 @@ interface ServerStats {
         viewers: number;
         clients: number;
     };
+    performance?: {
+        entriesPerSec: number;
+        watchesPerSec: number;
+        entriesBroadcastPerSec: number;
+        watchesBroadcastPerSec: number;
+        totalEntriesReceived: number;
+        totalWatchesReceived: number;
+    };
 }
 
 interface ConnectionInfo {
@@ -201,36 +209,6 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
         }
     };
 
-    const handleClearRoomWatches = async (roomId: string) => {
-        setClearingRoom(roomId);
-        try {
-            const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            const roomParam = `room=${encodeURIComponent(roomId)}`;
-            await fetch(`${baseUrl}/api/watches?${roomParam}`, { method: 'DELETE' });
-            fetchRoomsInfo();
-            fetchStats();
-        } catch (e) {
-            alert('Failed to clear watches');
-        } finally {
-            setClearingRoom(null);
-        }
-    };
-
-    const handleClearRoomStreams = async (roomId: string) => {
-        setClearingRoom(roomId);
-        try {
-            const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            const roomParam = `room=${encodeURIComponent(roomId)}`;
-            await fetch(`${baseUrl}/api/streams?${roomParam}`, { method: 'DELETE' });
-            fetchRoomsInfo();
-            fetchStats();
-        } catch (e) {
-            alert('Failed to clear streams');
-        } finally {
-            setClearingRoom(null);
-        }
-    };
-
     const handleClearAllLogs = async () => {
         if (!confirm('Clear ALL logs from ALL rooms?')) return;
         setClearingAll('logs');
@@ -242,36 +220,6 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
             fetchStats();
         } catch (e) {
             alert('Failed to clear all logs');
-        } finally {
-            setClearingAll(null);
-        }
-    };
-
-    const handleClearAllWatches = async () => {
-        if (!confirm('Clear ALL watches from ALL rooms?')) return;
-        setClearingAll('watches');
-        try {
-            const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            await fetch(`${baseUrl}/api/all/watches`, { method: 'DELETE' });
-            fetchRoomsInfo();
-            fetchStats();
-        } catch (e) {
-            alert('Failed to clear all watches');
-        } finally {
-            setClearingAll(null);
-        }
-    };
-
-    const handleClearAllStreams = async () => {
-        if (!confirm('Clear ALL streams from ALL rooms?')) return;
-        setClearingAll('streams');
-        try {
-            const baseUrl = getEffectiveServerUrl().replace(/^ws/, 'http');
-            await fetch(`${baseUrl}/api/all/streams`, { method: 'DELETE' });
-            fetchRoomsInfo();
-            fetchStats();
-        } catch (e) {
-            alert('Failed to clear all streams');
         } finally {
             setClearingAll(null);
         }
@@ -487,7 +435,7 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
 
                                         {/* Performance group */}
                                         <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
-                                            <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">Performance</div>
+                                            <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">Client</div>
                                             <div className="space-y-1 text-sm">
                                                 <div className="flex justify-between">
                                                     <span className="text-slate-500 dark:text-slate-400">Uptime</span>
@@ -504,6 +452,31 @@ export function ServerInfoModal({ isOpen, onClose }: ServerInfoModalProps) {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Server Throughput - full width */}
+                                    {stats.performance && (
+                                        <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                                            <div className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">Server Throughput</div>
+                                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-500 dark:text-slate-400">Entries received</span>
+                                                    <span className="font-medium font-mono text-slate-700 dark:text-slate-200">{stats.performance.entriesPerSec}/s</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-500 dark:text-slate-400">Entries broadcast</span>
+                                                    <span className="font-medium font-mono text-slate-700 dark:text-slate-200">{stats.performance.entriesBroadcastPerSec}/s</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-500 dark:text-slate-400">Watches received</span>
+                                                    <span className="font-medium font-mono text-slate-700 dark:text-slate-200">{stats.performance.watchesPerSec}/s</span>
+                                                </div>
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-500 dark:text-slate-400">Watches broadcast</span>
+                                                    <span className="font-medium font-mono text-slate-700 dark:text-slate-200">{stats.performance.watchesBroadcastPerSec}/s</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
