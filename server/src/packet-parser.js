@@ -253,15 +253,31 @@ class PacketParser {
 
     /**
      * Parse LogEntry packet
-     * Format v2 (with async context): header includes correlationIdLen, operationNameLen, operationDepth
-     * Format v1 (legacy): no async context fields
+     * Format v3 (with context tags): 64-byte header adds ctxLen for flexible context tags
+     * Format v2 (with async context): 60-byte header with correlationIdLen, operationNameLen, operationDepth
+     * Format v1 (legacy): 48-byte header without async context fields
+     *
+     * v3 Header (64 bytes): 12 int32 + 1 double + 2 int32 = 64 bytes
+     *   logEntryType(4), viewerId(4), appNameLen(4), sessionNameLen(4),
+     *   titleLen(4), hostNameLen(4), correlationIdLen(4), operationNameLen(4),
+     *   ctxLen(4), dataLen(4), processId(4), threadId(4), timestamp(8), color(4), operationDepth(4)
+     *
+     * v2 Header (60 bytes): 11 int32 + 1 double + 2 int32 = 60 bytes
+     *   logEntryType(4), viewerId(4), appNameLen(4), sessionNameLen(4),
+     *   titleLen(4), hostNameLen(4), correlationIdLen(4), operationNameLen(4),
+     *   dataLen(4), processId(4), threadId(4), timestamp(8), color(4), operationDepth(4)
+     *
+     * v1 Header (48 bytes): 9 int32 + 1 double + 1 int32 = 48 bytes
+     *   logEntryType(4), viewerId(4), appNameLen(4), sessionNameLen(4),
+     *   titleLen(4), hostNameLen(4), dataLen(4), processId(4), threadId(4),
+     *   timestamp(8), color(4)
      */
     parseLogEntry(data) {
         if (data.length < 48) return null;
 
         let offset = 0;
 
-        // Fixed fields (common to both versions)
+        // Common header fields
         const logEntryType = data.readInt32LE(offset); offset += 4;
         const viewerId = data.readInt32LE(offset); offset += 4;
         const appNameLen = data.readInt32LE(offset); offset += 4;
@@ -269,38 +285,58 @@ class PacketParser {
         const titleLen = data.readInt32LE(offset); offset += 4;
         const hostNameLen = data.readInt32LE(offset); offset += 4;
 
-        // v1 header: 48 bytes (0x30) - no correlation fields
-        // v2 header: 56 bytes (0x38) - includes correlationIdLen(4), operationNameLen(4), operationDepth(4)
-        // Detect version by checking expected sizes
-        const v1HeaderSize = 48;
-        const v2HeaderSize = 56;
+        // Detect v1 vs v2 vs v3 format
+        // In v1: next field is dataLen (could be large for binary data)
+        // In v2: next field is correlationIdLen (typically 0 or 32)
+        // In v3: adds ctxLen field after operationNameLen
+        const field7 = data.readInt32LE(offset);
+        const field8 = data.readInt32LE(offset + 4);
+        const field9 = data.readInt32LE(offset + 8);
+
+        // v3 Header: 64 bytes, v2 Header: 60 bytes, v1 Header: 48 bytes
+        const v3HeaderSize = 64;
+        const v2HeaderSize = 60;
+
+        // Heuristic detection:
+        // v3: field7 = correlationIdLen (0-64), field8 = operationNameLen (0-512), field9 = ctxLen (0-64KB)
+        // v2: field7 = correlationIdLen (0-64), field8 = operationNameLen (0-512), field9 = dataLen (any)
+        // v1: field7 = dataLen (any)
+
+        // Try v3 first: check if packet size matches v3 header
+        const looksLikeV3 = data.length >= v3HeaderSize &&
+                           field7 >= 0 && field7 <= 64 &&    // correlationIdLen
+                           field8 >= 0 && field8 <= 512 &&   // operationNameLen
+                           field9 >= 0 && field9 <= 65536;   // ctxLen (up to 64KB of context JSON)
+
+        const looksLikeV2 = !looksLikeV3 &&
+                           data.length >= v2HeaderSize &&
+                           field7 >= 0 && field7 <= 64 &&    // correlationIdLen
+                           field8 >= 0 && field8 <= 512;     // operationNameLen
 
         let correlationIdLen = 0;
         let operationNameLen = 0;
+        let ctxLen = 0;
         let correlationId = '';
         let operationName = '';
         let operationDepth = 0;
-
-        // Try to detect v2 format by checking if we have enough bytes for v2 header
-        // v2 adds: correlationIdLen(4) + operationNameLen(4) before dataLen
-        const potentialCorrelationIdLen = data.readInt32LE(offset);
-        const potentialOperationNameLen = data.readInt32LE(offset + 4);
-
-        // Calculate expected v1 data position (offset 24 = after hostNameLen)
-        // v1: dataLen at offset 24, followed by processId, threadId, timestamp, color
-        // v2: correlationIdLen at offset 24, operationNameLen at 28, dataLen at 32
-
-        // Check if data looks like v2 (reasonable string lengths for correlation/operation)
-        const looksLikeV2 = potentialCorrelationIdLen >= 0 && potentialCorrelationIdLen < 100 &&
-                           potentialOperationNameLen >= 0 && potentialOperationNameLen < 500 &&
-                           data.length >= v2HeaderSize;
-
+        let ctx = null;
         let dataLen, processId, threadId, timestamp, colorInt;
 
-        if (looksLikeV2) {
+        if (looksLikeV3) {
+            // v3 format with async context + context tags
+            correlationIdLen = data.readInt32LE(offset); offset += 4;
+            operationNameLen = data.readInt32LE(offset); offset += 4;
+            ctxLen = data.readInt32LE(offset); offset += 4;
+            dataLen = data.readInt32LE(offset); offset += 4;
+            processId = data.readInt32LE(offset); offset += 4;
+            threadId = data.readInt32LE(offset); offset += 4;
+            timestamp = data.readDoubleLE(offset); offset += 8;
+            colorInt = data.readUInt32LE(offset); offset += 4;
+            operationDepth = data.readInt32LE(offset); offset += 4;
+        } else if (looksLikeV2) {
             // v2 format with async context
-            correlationIdLen = potentialCorrelationIdLen; offset += 4;
-            operationNameLen = potentialOperationNameLen; offset += 4;
+            correlationIdLen = data.readInt32LE(offset); offset += 4;
+            operationNameLen = data.readInt32LE(offset); offset += 4;
             dataLen = data.readInt32LE(offset); offset += 4;
             processId = data.readInt32LE(offset); offset += 4;
             threadId = data.readInt32LE(offset); offset += 4;
@@ -316,7 +352,7 @@ class PacketParser {
             colorInt = data.readUInt32LE(offset); offset += 4;
         }
 
-        // Variable length fields
+        // Variable length fields (in order)
         const appName = appNameLen > 0 ? data.slice(offset, offset + appNameLen).toString('utf8') : '';
         offset += appNameLen;
 
@@ -329,8 +365,8 @@ class PacketParser {
         const hostName = hostNameLen > 0 ? data.slice(offset, offset + hostNameLen).toString('utf8') : '';
         offset += hostNameLen;
 
-        // v2 async context strings (only if v2 format detected)
-        if (looksLikeV2) {
+        // v2/v3 async context strings
+        if (looksLikeV2 || looksLikeV3) {
             correlationId = correlationIdLen > 0 ? data.slice(offset, offset + correlationIdLen).toString('utf8') : '';
             offset += correlationIdLen;
 
@@ -338,9 +374,21 @@ class PacketParser {
             offset += operationNameLen;
         }
 
+        // v3 context tags (JSON encoded)
+        if (looksLikeV3 && ctxLen > 0) {
+            try {
+                const ctxJson = data.slice(offset, offset + ctxLen).toString('utf8');
+                ctx = JSON.parse(ctxJson);
+            } catch (err) {
+                // Invalid JSON, ignore context
+                ctx = null;
+            }
+            offset += ctxLen;
+        }
+
         const entryData = dataLen > 0 ? data.slice(offset, offset + dataLen) : null;
 
-        return {
+        const result = {
             packetType: PacketType.LogEntry,
             type: 'logEntry',
             logEntryType,
@@ -355,11 +403,18 @@ class PacketParser {
             color: intToColor(colorInt),
             data: entryData,
             level: getLevelFromEntryType(logEntryType),
-            // Async context (v2)
+            // Async context (v2/v3)
             correlationId,
             operationName,
             operationDepth
         };
+
+        // Only add ctx if it has values (v3)
+        if (ctx && Object.keys(ctx).length > 0) {
+            result.ctx = ctx;
+        }
+
+        return result;
     }
 
     /**

@@ -411,6 +411,17 @@ class ConnectionManager {
     }
 
     /**
+     * Broadcast trace update to viewers in a specific room
+     */
+    broadcastTraceToRoom(roomId, traceData) {
+        const message = {
+            type: 'trace',
+            data: traceData
+        };
+        this.broadcastToRoom(roomId, message);
+    }
+
+    /**
      * Serialize entry for JSON transport
      */
     _serializeEntry(entry) {

@@ -9,21 +9,27 @@
  * - MethodContextTracker for call stacks
  */
 
-const { LogRingBuffer, WatchStore, MethodContextTracker, StreamStore } = require('./storage');
+const { LogRingBuffer, WatchStore, MethodContextTracker, StreamStore, TraceAggregator } = require('./storage');
 
 /**
  * Storage container for a single room
  */
 class RoomStorage {
-    constructor(maxEntries = 100000, maxStreamEntries = 1000) {
+    constructor(maxEntries = 100000, maxStreamEntries = 1000, maxTraces = 1000) {
         this.logBuffer = new LogRingBuffer(maxEntries);
         this.watchStore = new WatchStore();
         this.streamStore = new StreamStore(maxStreamEntries);
         this.methodTracker = new MethodContextTracker();
+        this.traceAggregator = new TraceAggregator(maxTraces);
         this.clients = new Set();    // TCP client IDs in this room
         this.viewers = new Set();    // WebSocket viewer IDs in this room
         this.createdAt = new Date();
         this.lastActivity = null;    // null until actual data is received
+
+        // Start trace cleanup interval (every 60 seconds)
+        this._traceCleanupInterval = setInterval(() => {
+            this.traceAggregator.cleanup();
+        }, 60000);
     }
 
     /**
@@ -41,7 +47,18 @@ class RoomStorage {
         this.watchStore.clear();
         this.methodTracker.clear();
         this.streamStore.clear();
+        this.traceAggregator.clear();
         this.lastActivity = null;  // Reset activity since data is cleared
+    }
+
+    /**
+     * Clean up resources (call before deleting room)
+     */
+    dispose() {
+        if (this._traceCleanupInterval) {
+            clearInterval(this._traceCleanupInterval);
+            this._traceCleanupInterval = null;
+        }
     }
 
     /**
@@ -52,11 +69,22 @@ class RoomStorage {
             logStats: this.logBuffer.getStats(),
             watchCount: Object.keys(this.watchStore.getAll()).length,
             streamStats: this.streamStore.getStats(),
+            traceStats: this.traceAggregator.getStats(),
             clientCount: this.clients.size,
             viewerCount: this.viewers.size,
             createdAt: this.createdAt,
             lastActivity: this.lastActivity
         };
+    }
+
+    /**
+     * Process a log entry for trace aggregation
+     * Call this after adding entry to logBuffer
+     * @param {Object} entry - The log entry
+     * @returns {Object|null} Updated trace if entry has trace context
+     */
+    processEntryForTracing(entry) {
+        return this.traceAggregator.processEntry(entry);
     }
 }
 
@@ -147,7 +175,8 @@ class RoomManager {
 
         if (this.rooms.has(roomId)) {
             const room = this.rooms.get(roomId);
-            room.clear();  // Clear data first
+            room.dispose();  // Clean up intervals/resources
+            room.clear();    // Clear data
             this.rooms.delete(roomId);
             console.log(`[RoomManager] Deleted room: ${roomId}`);
             return true;

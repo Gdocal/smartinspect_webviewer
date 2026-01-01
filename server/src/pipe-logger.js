@@ -28,6 +28,7 @@ class PipeLogger {
         this.defaultRoom = options.defaultRoom || 'default';
         this.roomManager = options.roomManager;
         this.onEntry = options.onEntry || (() => {});
+        this.onTrace = options.onTrace || (() => {});
 
         this.readStream = null;
         this.rl = null;
@@ -250,6 +251,12 @@ class PipeLogger {
 
         const storedEntry = room.logBuffer.push(entry);
         room.touch();
+
+        // Process for trace aggregation (if entry has trace context)
+        const trace = room.processEntryForTracing(storedEntry);
+        if (trace) {
+            this.onTrace(roomId, trace);
+        }
 
         // Emit for broadcasting
         this.onEntry(roomId, storedEntry);

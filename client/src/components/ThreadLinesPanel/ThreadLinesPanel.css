@@ -1,0 +1,300 @@
+/* Thread Lines Panel - Vertical swimlanes for context visualization */
+
+.thread-lines-panel {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-color);
+    font-size: 11px;
+    user-select: none;
+    flex-shrink: 0;
+}
+
+.thread-lines-panel.dark {
+    --bg-primary: #1e293b;
+    --bg-secondary: #334155;
+    --bg-hover: #475569;
+    --border-color: #475569;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+}
+
+.thread-lines-panel.light {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --border-color: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+}
+
+/* Collapsed state */
+.thread-lines-panel.collapsed {
+    width: 20px;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 8px;
+}
+
+.thread-lines-expand-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.thread-lines-expand-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Header */
+.thread-lines-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+}
+
+.thread-lines-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.thread-lines-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thread-lines-collapse-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* Column headers */
+.thread-lines-column-headers {
+    display: flex;
+}
+
+.thread-lines-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 100%;
+    border-right: 1px solid var(--border-color);
+}
+
+.thread-lines-column-label {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 9px;
+    text-transform: uppercase;
+}
+
+.thread-lines-column-remove {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    padding: 1px 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.thread-lines-column-header:hover .thread-lines-column-remove {
+    opacity: 1;
+}
+
+.thread-lines-column-remove:hover {
+    color: #ef4444;
+}
+
+/* Add column dropdown */
+.thread-lines-add-dropdown select {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px;
+    width: 20px;
+}
+
+.thread-lines-add-dropdown select:hover {
+    color: var(--text-primary);
+}
+
+/* Toggle button */
+.thread-lines-toggle-all {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 9px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+}
+
+.thread-lines-toggle-all:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.thread-lines-toggle-all.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+}
+
+/* Scroll container */
+.thread-lines-scroll {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1;
+}
+
+/* Hide scrollbar but keep functionality */
+.thread-lines-scroll::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+.thread-lines-inner {
+    position: relative;
+    width: 100%;
+}
+
+/* Row */
+.thread-lines-row {
+    display: flex;
+    border-bottom: 1px solid transparent;
+}
+
+/* Cell */
+.thread-line-cell {
+    height: 100%;
+    border-right: 1px solid var(--border-color);
+    cursor: default;
+    transition: opacity 0.15s;
+}
+
+.thread-line-cell.has-value {
+    cursor: pointer;
+}
+
+.thread-line-cell.has-value:hover {
+    opacity: 0.8;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.thread-line-cell.active {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Legend at bottom */
+.thread-lines-legend {
+    border-top: 1px solid var(--border-color);
+    padding: 4px;
+    background: var(--bg-secondary);
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.thread-lines-legend-group {
+    margin-bottom: 4px;
+}
+
+.thread-lines-legend-group:last-child {
+    margin-bottom: 0;
+}
+
+.thread-lines-legend-key {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.thread-lines-legend-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+.thread-lines-legend-value {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 2px 4px;
+    cursor: pointer;
+    font-size: 9px;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+}
+
+.thread-lines-legend-value:hover {
+    border-color: var(--value-color);
+    color: var(--text-primary);
+}
+
+.thread-lines-legend-value.active {
+    background: var(--value-color);
+    border-color: var(--value-color);
+    color: white;
+}
+
+.thread-lines-legend-color {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--value-color);
+    flex-shrink: 0;
+}
+
+.thread-lines-legend-text {
+    max-width: 50px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thread-lines-legend-count {
+    color: var(--text-muted);
+    font-size: 8px;
+}
+
+.thread-lines-legend-value.active .thread-lines-legend-count {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.thread-lines-legend-more {
+    font-size: 9px;
+    color: var(--text-muted);
+    padding: 2px 4px;
+}

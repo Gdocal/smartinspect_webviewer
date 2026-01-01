@@ -75,10 +75,10 @@ export interface LogEntry {
     parentId?: number | null;
     context?: string[];
     matchingEnterId?: number | null;
-    // Async context fields (v2 protocol)
-    correlationId?: string;      // Groups related async operations
-    operationName?: string;      // Current operation name within async flow
-    operationDepth?: number;     // Async nesting level
+    // Visual indentation level for nested operations
+    operationDepth?: number;
+    // Context tags (v3 protocol) - includes OpenTelemetry trace context (_traceId, _spanId, _spanName, _spanKind)
+    ctx?: Record<string, string>;
 }
 
 export interface WatchValue {
@@ -211,7 +211,7 @@ export interface FilterV2 {
     hostNames: FilterRules;
     titles: FilterRules;
     entryTypes: FilterRules;    // values are string representations of entry type numbers
-    correlations: FilterRules;  // Filter by correlationId for async flow grouping
+    correlations: FilterRules;  // Filter by traceId (ctx._traceId) for trace grouping
     // Quick search pattern (searches title and data)
     messagePattern: string;
     // Time range
@@ -519,7 +519,7 @@ export interface LegacyHighlightCondition {
 
 // View = predefined filter set with highlighting rules
 // VirtualLogGrid column configuration (replaces AG Grid ColumnState)
-export type VlgColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content';
+export type VlgColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content' | 'context-tags' | 'trace-id' | 'span-name' | 'span-kind';
 
 export interface VlgColumnConfig {
     id: string;
@@ -583,6 +583,7 @@ export interface Project {
         showDetailPanel: boolean;
         showWatchPanel: boolean;
         showStreamPanel: boolean;
+        showContextPanel: boolean;
     };
     limits: ProjectLimits;
     theme: 'light' | 'dark';
@@ -636,6 +637,7 @@ export interface PanelVisibility {
     showDetailPanel: boolean;
     showWatchPanel: boolean;
     showStreamPanel: boolean;
+    showContextPanel: boolean;
 }
 
 interface LogState {
@@ -728,12 +730,28 @@ interface LogState {
     showDetailPanel: boolean;
     showWatchPanel: boolean;
     showStreamPanel: boolean;
+    showContextPanel: boolean; // Context tags explorer panel
     highlightsPanelOpen: boolean; // True when highlights panel is open
     isStreamsMode: boolean; // True when Streams tab is active
+    isTracesMode: boolean; // True when Traces tab is active
+    isMetricsMode: boolean; // True when Metrics tab is active
     editingViewId: string | null; // ID of view being edited (triggers ViewEditor modal)
     theme: 'light' | 'dark'; // UI theme
     rowDensity: 'compact' | 'default' | 'comfortable'; // Row density for grids
-    correlationHighlighting: boolean; // Auto-highlight entries by correlationId
+    customRowHeight: number | null; // Custom row height in pixels (null = use density default)
+    correlationHighlighting: boolean; // Auto-highlight entries by traceId (ctx._traceId)
+    depthIndentation: boolean; // Show visual indentation based on operationDepth
+
+    // Context fade mode - dims entries not matching the selected context
+    contextFadeFilter: { key: string; value: string } | null;
+
+    // Context ribbon - show colored vertical ribbon based on context key
+    // null = disabled, string = context key to use for ribbon coloring
+    contextRibbonKey: string | null;
+
+    // Thread Lines panel - configurable columns showing context values as vertical swimlanes
+    threadLineColumns: Array<{ key: string; label?: string; width?: number }>;
+    showThreadLinesPanel: boolean;
 
     // Project tracking (shared state for dirty indicator)
     loadedProjectId: string | null; // Which server project is loaded (null = fresh)
@@ -797,6 +815,8 @@ interface LogState {
     setSelectedEntryId: (id: number | null) => void;
     setSelectedStreamEntryId: (id: number | null) => void;
     setStreamsMode: (isStreamsMode: boolean) => void;
+    setTracesMode: (isTracesMode: boolean) => void;
+    setMetricsMode: (isMetricsMode: boolean) => void;
 
     // View actions
     addView: (view: Omit<View, 'id'>, setAsActive?: boolean) => void;
@@ -836,6 +856,7 @@ interface LogState {
     setShowDetailPanel: (show: boolean) => void;
     setShowWatchPanel: (show: boolean) => void;
     setShowStreamPanel: (show: boolean) => void;
+    setShowContextPanel: (show: boolean) => void;
     setHighlightsPanelOpen: (open: boolean) => void;
 
     // View editing
@@ -867,6 +888,12 @@ interface LogState {
 
     // Correlation highlighting
     setCorrelationHighlighting: (enabled: boolean) => void;
+    setDepthIndentation: (enabled: boolean) => void;
+    setContextFadeFilter: (filter: { key: string; value: string } | null) => void;
+    setContextRibbonKey: (key: string | null) => void;
+    setThreadLineColumns: (columns: Array<{ key: string; label?: string; width?: number }>) => void;
+    toggleThreadLineColumn: (key: string) => void;
+    setShowThreadLinesPanel: (show: boolean) => void;
 
     // Layout size actions
     setDetailPanelHeightPercent: (percent: number) => void;
@@ -981,14 +1008,23 @@ export const useLogStore = create<LogState>((set, get) => ({
     showDetailPanel: true,
     showWatchPanel: true,
     showStreamPanel: false,
+    showContextPanel: false,
     highlightsPanelOpen: false,
     isStreamsMode: false,
+    isTracesMode: false,
+    isMetricsMode: false,
     editingViewId: null,
     previewTitleFilter: null,
     lastTrimCount: 0,
     theme: (localStorage.getItem('si-theme') as 'light' | 'dark') || 'light',
     rowDensity: (localStorage.getItem('si-row-density') as 'compact' | 'default' | 'comfortable') || 'compact',
+    customRowHeight: null, // Custom row height in pixels (null = use density default)
     correlationHighlighting: localStorage.getItem('si-correlation-highlighting') === 'true',
+    depthIndentation: localStorage.getItem('si-depth-indentation') !== 'false', // Default true
+    contextFadeFilter: null, // No context fade by default
+    contextRibbonKey: null, // No context ribbon by default
+    threadLineColumns: [], // No thread line columns by default
+    showThreadLinesPanel: false, // Thread lines panel hidden by default
 
     // Runtime view state (not persisted - tracks stuckToBottom per view)
     viewStuckToBottom: new Map<string, boolean>(),
@@ -1076,6 +1112,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     }),
 
     // OPTIMIZED: Batch add with efficient array handling and deduplication
+    // Batch trim buffer - accumulate 5K extra before trimming to prevent continuous removal
     addEntriesBatch: (newEntries) => set((state) => {
         if (newEntries.length === 0) return state;
 
@@ -1088,23 +1125,29 @@ export const useLogStore = create<LogState>((set, get) => ({
         const currentLen = state.entries.length;
         const newLen = uniqueNewEntries.length;
         const maxLen = state.limits.maxBufferEntries;
+        const BATCH_TRIM_BUFFER = 5000; // Allow 5K extra before batch trim
+        const batchThreshold = maxLen + BATCH_TRIM_BUFFER;
         const totalLen = currentLen + newLen;
 
         let result: LogEntry[];
         let trimCount = 0; // Track how many entries were removed from the top
 
         if (totalLen <= maxLen) {
-            // Fast path: just concatenate
+            // Fast path: under limit, just concatenate
             result = state.entries.concat(uniqueNewEntries);
         } else if (newLen >= maxLen) {
             // New entries alone exceed max - just take the last maxLen from new
             result = uniqueNewEntries.slice(-maxLen);
             trimCount = currentLen; // All old entries were trimmed
+        } else if (totalLen <= batchThreshold) {
+            // Between maxLen and batchThreshold: accumulate without trimming
+            // This prevents continuous row removal that looks like scrolling
+            result = state.entries.concat(uniqueNewEntries);
         } else {
-            // Need to trim: keep end of current + all new
-            const keepFromCurrent = maxLen - newLen;
-            result = state.entries.slice(-keepFromCurrent).concat(uniqueNewEntries);
-            trimCount = currentLen - keepFromCurrent; // Number of old entries trimmed
+            // Over batchThreshold: batch trim back to maxLen
+            const combined = state.entries.concat(uniqueNewEntries);
+            result = combined.slice(-maxLen);
+            trimCount = combined.length - maxLen; // Number of entries trimmed in this batch
         }
 
         // Extract unique sessions, appNames, hostNames and correlations from new entries
@@ -1136,11 +1179,13 @@ export const useLogStore = create<LogState>((set, get) => ({
             } else if (entry.hostName) {
                 newHostNames[entry.hostName]++;
             }
-            if (entry.correlationId && !(entry.correlationId in newCorrelations)) {
-                newCorrelations[entry.correlationId] = 1;
+            // Track traceIds from ctx._traceId
+            const traceId = entry.ctx?._traceId;
+            if (traceId && !(traceId in newCorrelations)) {
+                newCorrelations[traceId] = 1;
                 correlationsChanged = true;
-            } else if (entry.correlationId) {
-                newCorrelations[entry.correlationId]++;
+            } else if (traceId) {
+                newCorrelations[traceId]++;
             }
         }
 
@@ -1225,7 +1270,9 @@ export const useLogStore = create<LogState>((set, get) => ({
     setAutoScroll: (autoScroll) => set({ autoScroll }),
     setSelectedEntryId: (id) => set({ selectedEntryId: id }),
     setSelectedStreamEntryId: (id) => set({ selectedStreamEntryId: id }),
-    setStreamsMode: (isStreamsMode) => set({ isStreamsMode }),
+    setStreamsMode: (isStreamsMode) => set({ isStreamsMode, isTracesMode: false, isMetricsMode: false }),
+    setTracesMode: (isTracesMode) => set({ isTracesMode, isStreamsMode: false, isMetricsMode: false }),
+    setMetricsMode: (isMetricsMode) => set({ isMetricsMode, isStreamsMode: false, isTracesMode: false }),
 
     // View actions
     addView: (view, setAsActive = false) => set((state) => {
@@ -1413,6 +1460,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     setShowDetailPanel: (show) => set({ showDetailPanel: show }),
     setShowWatchPanel: (show) => set({ showWatchPanel: show }),
     setShowStreamPanel: (show) => set({ showStreamPanel: show }),
+    setShowContextPanel: (show) => set({ showContextPanel: show }),
     setHighlightsPanelOpen: (open) => set({ highlightsPanelOpen: open }),
 
     // View editing
@@ -1462,6 +1510,43 @@ export const useLogStore = create<LogState>((set, get) => ({
     setCorrelationHighlighting: (enabled) => {
         localStorage.setItem('si-correlation-highlighting', enabled ? 'true' : 'false');
         set({ correlationHighlighting: enabled });
+    },
+
+    // Depth indentation
+    setDepthIndentation: (enabled) => {
+        localStorage.setItem('si-depth-indentation', enabled ? 'true' : 'false');
+        set({ depthIndentation: enabled });
+    },
+    setContextFadeFilter: (filter) => {
+        set({ contextFadeFilter: filter });
+    },
+    setContextRibbonKey: (key) => {
+        set({ contextRibbonKey: key });
+    },
+    setThreadLineColumns: (columns) => {
+        set({ threadLineColumns: columns });
+    },
+    toggleThreadLineColumn: (key) => {
+        const { threadLineColumns } = get();
+        const existingIndex = threadLineColumns.findIndex(c => c.key === key);
+        if (existingIndex >= 0) {
+            // Remove if exists
+            const newColumns = threadLineColumns.filter(c => c.key !== key);
+            set({ threadLineColumns: newColumns });
+            // Hide panel if no columns left
+            if (newColumns.length === 0) {
+                set({ showThreadLinesPanel: false });
+            }
+        } else {
+            // Add new column
+            set({
+                threadLineColumns: [...threadLineColumns, { key, width: 16 }],
+                showThreadLinesPanel: true, // Auto-show panel when adding column
+            });
+        }
+    },
+    setShowThreadLinesPanel: (show) => {
+        set({ showThreadLinesPanel: show });
     },
 
     // Layout size actions
