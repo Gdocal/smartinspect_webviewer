@@ -1480,6 +1480,16 @@ function VirtualLogGridInner({
         });
       }
 
+      // Update detail panel when navigating with arrow keys (non-shift)
+      // For shift+arrow (range selection), we don't update detail panel
+      if (!e.shiftKey) {
+        const onRowClickCurrent = onRowClickRef.current;
+        const entry = entriesCurrent[newRow];
+        if (onRowClickCurrent && entry) {
+          onRowClickCurrent(entry, newRow);
+        }
+      }
+
       virtualizer.scrollToIndex(newRow, { align: 'auto' });
     };
 
