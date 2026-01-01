@@ -37,8 +37,19 @@ let lastBacklogWarning = 0;
 let backlogStartTime = 0; // Track when backlog started
 const BACKLOG_WARNING_INTERVAL = 5000; // Warn every 5 seconds if backlogged
 const BACKLOG_THRESHOLD = 50; // Warn if queue exceeds this
-const MAX_BATCH_SIZE = 100; // Process max this many messages per frame
-const MAX_BATCH_TIME_MS = 16; // Target 60fps - max 16ms per batch
+const MAX_BATCH_SIZE = 500; // Process max this many messages per frame (increased from 100)
+const MAX_BATCH_TIME_MS = 50; // Allow more time per batch when backlogged (increased from 16)
+
+// Export queue stats for UI monitoring
+export function getQueueStats(): { queueLength: number; backlogStartTime: number; oldestMessageAge: number } {
+    const now = Date.now();
+    const oldestAge = messageQueue.length > 0 ? now - messageQueue[0].receivedAt : 0;
+    return {
+        queueLength: messageQueue.length,
+        backlogStartTime: backlogStartTime,
+        oldestMessageAge: oldestAge
+    };
+}
 
 function scheduleProcessing(): void {
     if (processingScheduled) return;
@@ -74,13 +85,18 @@ function processMessageBatch(): void {
         }
     }
 
-    // Batch watch updates for single store update
+    // Batch updates for single store operations - MAJOR OPTIMIZATION
     const watchUpdates: Record<string, WatchValue> = {};
+    const entryBatch: LogEntry[] = [];
     let processedCount = 0;
 
-    while (messageQueue.length > 0 && processedCount < MAX_BATCH_SIZE) {
+    // When backlogged, be more aggressive - process more messages per frame
+    const effectiveBatchSize = store.backlogged ? MAX_BATCH_SIZE * 2 : MAX_BATCH_SIZE;
+    const effectiveTimeMs = store.backlogged ? MAX_BATCH_TIME_MS * 2 : MAX_BATCH_TIME_MS;
+
+    while (messageQueue.length > 0 && processedCount < effectiveBatchSize) {
         const elapsed = performance.now() - startTime;
-        if (elapsed > MAX_BATCH_TIME_MS && processedCount > 0) {
+        if (elapsed > effectiveTimeMs && processedCount > 0) {
             // Time budget exceeded, schedule next batch
             break;
         }
@@ -89,8 +105,9 @@ function processMessageBatch(): void {
         processedCount++;
 
         try {
-            // Handle watch messages specially - batch them
-            const msg = queued.message as { type?: string; data?: unknown };
+            const msg = queued.message as { type?: string; data?: unknown; entry?: LogEntry };
+
+            // Batch watches
             if (msg.type === 'watch') {
                 const watch = msg.data as { name: string; value: string; timestamp: string; watchType?: number; session?: string; group?: string };
                 if (watch?.name) {
@@ -102,8 +119,21 @@ function processMessageBatch(): void {
                         group: watch.group
                     };
                 }
-            } else {
-                // Process other messages immediately
+            }
+            // Batch entries - collect them instead of processing one by one
+            else if (msg.type === 'entries') {
+                const entries = msg.data as LogEntry[];
+                if (entries && entries.length > 0) {
+                    entryBatch.push(...entries);
+                }
+            }
+            else if (msg.type === 'entry') {
+                if (msg.entry) {
+                    entryBatch.push(msg.entry);
+                }
+            }
+            // Process other messages immediately
+            else {
                 handleMessage(queued.message, store);
             }
         } catch (err) {
@@ -111,7 +141,10 @@ function processMessageBatch(): void {
         }
     }
 
-    // Apply batched watch updates in single store update
+    // Apply all batched updates in single store operations
+    if (entryBatch.length > 0) {
+        store.addEntriesBatch(entryBatch);
+    }
     if (Object.keys(watchUpdates).length > 0) {
         store.updateWatchBatch(watchUpdates);
     }
@@ -558,6 +591,25 @@ function handleMessage(message: any, store: ReturnType<typeof useLogStore.getSta
             if (rooms && Array.isArray(rooms)) {
                 store.setAvailableRooms(rooms);
             }
+            break;
+        }
+        case 'trace': {
+            // Trace update from server - live trace data
+            const traceData = message.data as {
+                traceId: string;
+                rootSpanName?: string;
+                startTime: string;
+                endTime?: string;
+                duration?: number;
+                spanCount: number;
+                hasError: boolean;
+                serviceNames?: string[];
+                isActive: boolean;
+            };
+            // Dynamically import traceStore to avoid circular dependencies
+            import('../store/traceStore').then(({ useTraceStore }) => {
+                useTraceStore.getState().upsertTrace(traceData);
+            });
             break;
         }
     }

@@ -2,10 +2,12 @@
  * StatusBar - Enterprise-style connection status and stats
  */
 
+import { useState, useEffect } from 'react';
 import { useLogStore } from '../store/logStore';
 import { RoomSelector } from './RoomSelector';
 import { Tooltip } from './Tooltip';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
+import { getQueueStats } from '../services/earlyWebSocket';
 
 interface StatusBarProps {
     onServerInfoClick?: () => void;
@@ -13,8 +15,23 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ onServerInfoClick, onClientsClick }: StatusBarProps) {
-    const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, limits, roomSwitching, authRequired, currentUser, theme, toggleTheme, tcpClientCount } = useLogStore();
+    const { connected, connecting, error, paused, reconnectIn, serverUrl, stats, limits, roomSwitching, authRequired, currentUser, theme, toggleTheme, tcpClientCount, backlogged } = useLogStore();
     const { markDirty } = useProjectPersistence();
+
+    // Track queue stats for backlog indicator
+    const [queueStats, setQueueStats] = useState({ queueLength: 0, backlogStartTime: 0, oldestMessageAge: 0 });
+
+    useEffect(() => {
+        if (!backlogged) {
+            setQueueStats({ queueLength: 0, backlogStartTime: 0, oldestMessageAge: 0 });
+            return;
+        }
+        // Poll queue stats when backlogged
+        const interval = setInterval(() => {
+            setQueueStats(getQueueStats());
+        }, 500);
+        return () => clearInterval(interval);
+    }, [backlogged]);
 
     // Get connection status text and style
     // During room switching, show "Switching room..." to avoid layout shift
@@ -59,6 +76,27 @@ export function StatusBar({ onServerInfoClick, onClientsClick }: StatusBarProps)
                             <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                         </svg>
                         <span>Paused</span>
+                    </div>
+                </Tooltip>
+            )}
+
+            {/* Backlog indicator - shows when client is behind on processing */}
+            {backlogged && (
+                <Tooltip
+                    content={`Processing queue: ${queueStats.queueLength} messages, ${(queueStats.oldestMessageAge / 1000).toFixed(1)}s behind real-time`}
+                    position="top"
+                >
+                    <div className="flex items-center gap-1.5 text-orange-400 ml-3 cursor-default animate-pulse">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="font-mono tabular-nums">
+                            {queueStats.oldestMessageAge > 60000
+                                ? `${Math.floor(queueStats.oldestMessageAge / 60000)}m ${Math.floor((queueStats.oldestMessageAge % 60000) / 1000)}s behind`
+                                : `${(queueStats.oldestMessageAge / 1000).toFixed(0)}s behind`
+                            }
+                        </span>
+                        <span className="text-orange-300/70 text-[10px]">({queueStats.queueLength} queued)</span>
                     </div>
                 </Tooltip>
             )}
