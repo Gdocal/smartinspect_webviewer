@@ -45,8 +45,6 @@ const DENSITY_CONFIG = {
 
 export function FilterBar() {
     const {
-        filter,
-        setFilter,
         viewPausedState,
         setViewPaused,
         clearEntries,
@@ -106,8 +104,14 @@ export function FilterBar() {
                 <input
                     type="text"
                     placeholder="Quick search..."
-                    value={filter.messagePattern}
-                    onChange={(e) => setFilter({ messagePattern: e.target.value })}
+                    value={filterV2.messagePattern}
+                    onChange={(e) => {
+                        if (activeViewId) {
+                            updateView(activeViewId, {
+                                filterV2: { ...filterV2, messagePattern: e.target.value }
+                            });
+                        }
+                    }}
                     className={`${density.inputWidth} ${density.inputText} border border-slate-200 dark:border-slate-600 rounded pl-7 pr-2 py-0.5 ${density.inputHeight} bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none`}
                 />
                 <svg className={`${density.iconSize} text-slate-400 absolute left-2 top-1/2 -translate-y-1/2`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
