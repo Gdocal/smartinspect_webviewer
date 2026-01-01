@@ -11,6 +11,7 @@ import { DashboardToolbar } from './DashboardToolbar';
 import { PanelGrid } from './PanelGrid';
 import { PanelSettingsDrawer } from './PanelSettingsDrawer';
 import { Panel } from './Panel';
+import { GridTest } from './GridTest';
 
 export function MetricsView() {
     const { currentRoom, watches } = useLogStore();
@@ -27,6 +28,7 @@ export function MetricsView() {
     const activeDashboard = getActiveDashboard(currentRoom);
     const [showPanelPicker, setShowPanelPicker] = useState(false);
     const [settingsPanelId, setSettingsPanelId] = useState<string | null>(null);
+    const [showGridTest, setShowGridTest] = useState(false);
 
     // Get fullscreen panel
     const fullscreenPanelData = fullscreenPanelId
@@ -49,12 +51,17 @@ export function MetricsView() {
     // Check if we have watches
     const hasWatches = Object.keys(watches).length > 0;
 
-    // Keyboard shortcuts for fullscreen
+    // Keyboard shortcuts for fullscreen and grid test
     useEffect(() => {
-        if (!fullscreenPanelId) return;
-
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') {
+            // Ctrl+Shift+G to toggle grid test
+            if (e.ctrlKey && e.shiftKey && e.key === 'G') {
+                e.preventDefault();
+                setShowGridTest(prev => !prev);
+                return;
+            }
+            // Escape to exit fullscreen
+            if (e.key === 'Escape' && fullscreenPanelId) {
                 setFullscreenPanel(null);
             }
         };
@@ -62,6 +69,21 @@ export function MetricsView() {
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [fullscreenPanelId, setFullscreenPanel]);
+
+    // Show grid test page (for debugging react-grid-layout)
+    if (showGridTest) {
+        return (
+            <div className="h-full relative">
+                <button
+                    onClick={() => setShowGridTest(false)}
+                    className="absolute top-4 right-4 z-50 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                >
+                    Exit Test (Ctrl+Shift+G)
+                </button>
+                <GridTest />
+            </div>
+        );
+    }
 
     // Empty state: No dashboards
     if (dashboards.length === 0) {

@@ -1,11 +1,14 @@
 /**
  * PanelGrid - Draggable/resizable grid layout for panels
+ * Uses react-grid-layout v2 API with hooks (same pattern as working GridTest)
  */
 
-import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import GridLayout from 'react-grid-layout';
-const RGL = GridLayout as any;
+import { useCallback, useMemo, useState, useEffect } from 'react';
+import {
+    Responsive,
+    useContainerWidth,
+    verticalCompactor,
+} from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './grid-layout.css';
@@ -13,14 +16,18 @@ import { useLogStore } from '../../store/logStore';
 import { useMetricsStore, MetricsDashboard, GridLayoutItem } from '../../store/metricsStore';
 import { Panel } from './Panel';
 
+const BREAKPOINTS = { lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 };
+const COLS = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
+
 interface PanelGridProps {
     dashboard: MetricsDashboard;
     onOpenSettings: (panelId: string) => void;
 }
 
 export function PanelGrid({ dashboard, onOpenSettings }: PanelGridProps) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [containerWidth, setContainerWidth] = useState(1200);
+    // v2: Use the useContainerWidth hook for responsive width
+    const { width, containerRef, mounted } = useContainerWidth();
+
     const { currentRoom } = useLogStore();
     const {
         updateLayout,
@@ -30,38 +37,40 @@ export function PanelGrid({ dashboard, onOpenSettings }: PanelGridProps) {
         setFullscreenPanel
     } = useMetricsStore();
 
-    // Track container width for responsive layout
+    // Row height - larger for better usability (30px per unit)
+    const rowHeight = 30;
+
+    // Local state for layouts - sync from dashboard
+    const [layouts, setLayouts] = useState<{ lg: GridLayoutItem[] }>(() => ({
+        lg: dashboard.layout.map(item => ({
+            ...item,
+            minW: 2,
+            minH: 3  // 3 * 30px = 90px minimum
+        }))
+    }));
+
+    // Sync layouts when dashboard changes externally
     useEffect(() => {
-        if (!containerRef.current) return;
-
-        const observer = new ResizeObserver(entries => {
-            for (const entry of entries) {
-                setContainerWidth(entry.contentRect.width);
-            }
+        setLayouts({
+            lg: dashboard.layout.map(item => ({
+                ...item,
+                minW: 2,
+                minH: 3
+            }))
         });
+    }, [dashboard.id]); // Only reset when dashboard ID changes
 
-        observer.observe(containerRef.current);
-        return () => observer.disconnect();
-    }, []);
+    // Handle layout change - v2 API passes (currentLayout, allLayouts)
+    const handleLayoutChange = useCallback((_currentLayout: GridLayoutItem[], allLayouts: { lg: GridLayoutItem[] }) => {
+        const newLayout = allLayouts.lg;
+        if (!newLayout) return;
 
-    // Convert our layout format to react-grid-layout format
-    const layout = useMemo(() => {
-        return dashboard.layout.map(item => ({
-            i: item.i,
-            x: item.x,
-            y: item.y,
-            w: item.w,
-            h: item.h,
-            minW: 1,
-            minH: 1  // Minimum ~30px height
-        }));
-    }, [dashboard.layout]);
+        console.log('[PanelGrid] Layout changed, heights:', newLayout.map(l => l.h));
 
-    // Handle layout change - using any[] due to react-grid-layout type inconsistencies
-    const handleLayoutChange = useCallback((newLayout: Array<{ i: string; x: number; y: number; w: number; h: number }>) => {
-        // With rowHeight=5, each h unit = 5px + 4px margin = 9px step
-        console.log('[PanelGrid] Heights (grid units):', newLayout.map(l => l.h),
-            'Pixel heights:', newLayout.map(l => l.h * 5 + (l.h - 1) * 4));
+        // Update local state
+        setLayouts(allLayouts);
+
+        // Persist to store
         const converted: GridLayoutItem[] = newLayout.map(item => ({
             i: item.i,
             x: item.x,
@@ -89,11 +98,31 @@ export function PanelGrid({ dashboard, onOpenSettings }: PanelGridProps) {
         setFullscreenPanel(panelId);
     }, [setFullscreenPanel]);
 
-    // Row height controls resize granularity - smaller = finer control
-    // Each resize step = rowHeight + vertical margin
-    // With rowHeight=5 and margin=[4,4], step = 9px (very fine control)
-    const rowHeight = 5;
-    const cols = 12;
+    // Memoize children for performance (same pattern as working example)
+    const children = useMemo(() => {
+        return dashboard.panels.map(panel => {
+            const layoutItem = layouts.lg.find(l => l.i === panel.id);
+            const h = layoutItem?.h || 5;
+            const cols = 12;
+            const panelWidth = ((width - 32) / cols) * (layoutItem?.w || 6) - 8;
+            const panelHeight = (rowHeight * h) + (8 * (h - 1)) - 8;
+
+            return (
+                <div key={panel.id} className="h-full">
+                    <Panel
+                        panel={panel}
+                        width={panelWidth}
+                        height={panelHeight}
+                        editMode={editMode}
+                        onEdit={() => handleEdit(panel.id)}
+                        onDelete={() => handleDelete(panel.id)}
+                        onDuplicate={() => handleDuplicate(panel.id)}
+                        onFullscreen={() => handleFullscreen(panel.id)}
+                    />
+                </div>
+            );
+        });
+    }, [dashboard.panels, layouts.lg, width, rowHeight, editMode, handleEdit, handleDelete, handleDuplicate, handleFullscreen]);
 
     if (dashboard.panels.length === 0) {
         return null;
@@ -101,45 +130,23 @@ export function PanelGrid({ dashboard, onOpenSettings }: PanelGridProps) {
 
     return (
         <div ref={containerRef} className="h-full overflow-auto p-4">
-            <RGL
-                className="layout"
-                layout={layout}
-                cols={cols}
-                rowHeight={rowHeight}
-                width={containerWidth - 32}
-                onLayoutChange={handleLayoutChange}
-                isDraggable={editMode}
-                isResizable={editMode}
-                draggableHandle=".cursor-move"
-                margin={[4, 4]}
-                containerPadding={[0, 0]}
-                useCSSTransforms={true}
-                compactType={null}
-                preventCollision={false}
-            >
-                {dashboard.panels.map(panel => {
-                    const layoutItem = dashboard.layout.find(l => l.i === panel.id);
-                    const h = layoutItem?.h || 30;
-                    const panelWidth = ((containerWidth - 32) / cols) * (layoutItem?.w || 6) - 8;
-                    // Height = (rowHeight * h) + (margin * (h-1)) - padding
-                    const panelHeight = (rowHeight * h) + (4 * (h - 1)) - 8;
-
-                    return (
-                        <div key={panel.id} className="h-full">
-                            <Panel
-                                panel={panel}
-                                width={panelWidth}
-                                height={panelHeight}
-                                editMode={editMode}
-                                onEdit={() => handleEdit(panel.id)}
-                                onDelete={() => handleDelete(panel.id)}
-                                onDuplicate={() => handleDuplicate(panel.id)}
-                                onFullscreen={() => handleFullscreen(panel.id)}
-                            />
-                        </div>
-                    );
-                })}
-            </RGL>
+            {mounted && (
+                <Responsive
+                    className="layout"
+                    layouts={layouts}
+                    breakpoints={BREAKPOINTS}
+                    cols={COLS}
+                    rowHeight={rowHeight}
+                    width={width - 32}
+                    onLayoutChange={handleLayoutChange}
+                    compactor={verticalCompactor}
+                    margin={[8, 8]}
+                    containerPadding={[0, 0]}
+                    useCSSTransforms={true}
+                >
+                    {children}
+                </Responsive>
+            )}
         </div>
     );
 }
