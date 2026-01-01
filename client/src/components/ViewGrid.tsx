@@ -626,75 +626,114 @@ export function ViewGrid({
     const cumulativeTrimCountRef = useRef(0);
     const prevSliceOffsetRef = useRef(0);
 
+    // BATCH TRIM STATE: Track the slice start index we're currently showing
+    // When user scrolls up, we stop trimming and let this grow up to maxGridRows + BATCH_TRIM_BUFFER
+    // When it exceeds that, we batch trim back to maxGridRows
+    const [displayStartIndex, setDisplayStartIndex] = useState(0);
+    // Track previous filteredEntries length to detect store-level trim
+    const prevFilteredLengthRef = useRef(filteredEntries.length);
+
+    // Detect when store trimmed entries and adjust displayStartIndex
+    // If filteredEntries.length dropped significantly, the store trimmed from the front
+    useEffect(() => {
+        const prevLen = prevFilteredLengthRef.current;
+        const currLen = filteredEntries.length;
+
+        // If length dropped by more than a small delta, store trimmed
+        // (Small increases/decreases from filtering are normal)
+        if (prevLen > currLen + 100) {
+            const trimmedByStore = prevLen - currLen;
+            // Adjust our displayStartIndex down by the amount trimmed
+            const newStartIdx = Math.max(0, displayStartIndex - trimmedByStore);
+            scrollLog.warn(`STORE TRIM detected: ${prevLen} -> ${currLen}, adjusting displayStartIndex ${displayStartIndex} -> ${newStartIdx}`);
+            setDisplayStartIndex(newStartIdx);
+        }
+
+        prevFilteredLengthRef.current = currLen;
+    }, [filteredEntries.length, displayStartIndex]);
+
     // Check if view is stuck to bottom (for aggressive vs safe trimming)
     const isStuckToBottom = getViewStuckToBottom(view.id);
 
     // Apply maxGridRows cap with BATCH TRIMMING
     // Instead of continuous trimming, let buffer grow and trim in batches
     const maxGridRows = limits.maxGridRows;
-    const batchTrimThreshold = maxGridRows + BATCH_TRIM_BUFFER; // e.g., 15K for 10K limit
+    const batchTrimThreshold = maxGridRows + BATCH_TRIM_BUFFER;
 
-    const { cappedEntries, sliceOffset, debugTrim } = useMemo(() => {
-        const excessRows = Math.max(0, filteredEntries.length - maxGridRows);
+    // Calculate what to display
+    const { cappedEntries, sliceOffset, debugTrim, newDisplayStartIndex } = useMemo(() => {
+        const totalEntries = filteredEntries.length;
         const safeToTrim = Math.max(0, firstVisibleRowRef.current - 50);
 
-        // Case 1: Under maxGridRows - no trimming needed
-        if (filteredEntries.length <= maxGridRows) {
+        // Case 1: Under maxGridRows - show everything
+        if (totalEntries <= maxGridRows) {
             return {
                 cappedEntries: filteredEntries,
                 sliceOffset: 0,
-                debugTrim: { excessRows: 0, safeToTrim, mustTrim: 0, actualTrim: 0, batchPending: false }
+                debugTrim: { excessRows: 0, safeToTrim, mustTrim: 0, actualTrim: 0, batchPending: false },
+                newDisplayStartIndex: null as number | null
             };
         }
 
-        // Case 2: When stuck to bottom - trim aggressively (user doesn't care about old rows)
+        // Case 2: When stuck to bottom - trim aggressively
         if (isStuckToBottom) {
+            const startIdx = totalEntries - maxGridRows;
             return {
-                cappedEntries: filteredEntries.slice(-maxGridRows),
-                sliceOffset: excessRows,
-                debugTrim: { excessRows, safeToTrim, mustTrim: 0, actualTrim: excessRows, batchPending: false }
+                cappedEntries: filteredEntries.slice(startIdx),
+                sliceOffset: startIdx,
+                debugTrim: { excessRows: startIdx, safeToTrim, mustTrim: 0, actualTrim: startIdx, batchPending: false },
+                newDisplayStartIndex: startIdx
             };
         }
 
         // Case 3: Scrolled up - use BATCH TRIMMING
-        // Display always capped at maxGridRows
-        // Store accumulates until batchTrimThreshold, then batch trim happens
+        // Show from displayStartIndex to end, capped at batchTrimThreshold rows
+        const availableFromStart = totalEntries - displayStartIndex;
 
-        // Track cumulative offset for scroll compensation
-        // Only apply scroll compensation when batch trim happens (excess >= BATCH_TRIM_BUFFER)
-        const shouldBatchTrim = excessRows >= BATCH_TRIM_BUFFER;
-
-        if (shouldBatchTrim) {
-            // Batch trim time - trim back to maxGridRows and apply scroll compensation
-            const trimAmount = excessRows;
+        // If we have more than threshold, time to batch trim
+        if (availableFromStart > batchTrimThreshold) {
+            const newStartIdx = totalEntries - maxGridRows;
+            const trimAmount = newStartIdx - displayStartIndex;
             const firstVisibleRow = firstVisibleRowRef.current;
 
-            scrollLog.warn(`BATCH TRIM: removing ${trimAmount} rows, excess=${excessRows}, firstVisible=${firstVisibleRow}`);
+            scrollLog.warn(`BATCH TRIM: moving start ${displayStartIndex} -> ${newStartIdx}, trimming ${trimAmount} rows`);
 
             return {
-                cappedEntries: filteredEntries.slice(-maxGridRows),
-                sliceOffset: trimAmount,
+                cappedEntries: filteredEntries.slice(newStartIdx),
+                sliceOffset: newStartIdx,
                 debugTrim: {
-                    excessRows,
+                    excessRows: availableFromStart - maxGridRows,
                     safeToTrim,
                     mustTrim: trimAmount,
                     actualTrim: trimAmount,
                     batchPending: false,
                     firstVisibleRow,
-                    viewportCase: firstVisibleRow >= trimAmount + 50 ? 'safe' :
-                                  firstVisibleRow >= trimAmount ? 'partial' : 'full-overlap'
-                }
+                },
+                newDisplayStartIndex: newStartIdx
             };
         }
 
-        // Under threshold - cap display to maxGridRows, no scroll compensation yet
-        // Store accumulates but display stays at 10K (batch-pending state)
+        // Under threshold - keep all from displayStartIndex, buffering new entries
         return {
-            cappedEntries: filteredEntries.slice(-maxGridRows),
-            sliceOffset: 0,
-            debugTrim: { excessRows, safeToTrim, mustTrim: 0, actualTrim: 0, batchPending: true }
+            cappedEntries: filteredEntries.slice(displayStartIndex),
+            sliceOffset: displayStartIndex,
+            debugTrim: {
+                excessRows: Math.max(0, availableFromStart - maxGridRows),
+                safeToTrim,
+                mustTrim: 0,
+                actualTrim: 0,
+                batchPending: availableFromStart > maxGridRows
+            },
+            newDisplayStartIndex: null
         };
-    }, [filteredEntries, maxGridRows, batchTrimThreshold, isStuckToBottom]);
+    }, [filteredEntries, maxGridRows, batchTrimThreshold, isStuckToBottom, displayStartIndex]);
+
+    // Update displayStartIndex when batch trim happened or when stuck to bottom
+    useEffect(() => {
+        if (newDisplayStartIndex !== null && newDisplayStartIndex !== displayStartIndex) {
+            setDisplayStartIndex(newDisplayStartIndex);
+        }
+    }, [newDisplayStartIndex, displayStartIndex]);
 
     // Track cumulative trim count by monitoring slice offset changes
     if (sliceOffset > prevSliceOffsetRef.current) {

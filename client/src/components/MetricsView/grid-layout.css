@@ -1,0 +1,47 @@
+/* Override react-grid-layout placeholder styles - Grafana-inspired */
+
+/* Placeholder shown during drag/resize - this is the important one */
+.react-grid-layout .react-grid-placeholder {
+    background: rgba(99, 132, 255, 0.15) !important;
+    border: 2px dashed rgba(99, 132, 255, 0.6) !important;
+    border-radius: 6px !important;
+    box-shadow:
+        0 0 20px rgba(99, 132, 255, 0.3),
+        inset 0 0 30px rgba(99, 132, 255, 0.1) !important;
+    opacity: 1 !important;
+    transition: none !important;
+}
+
+/* Dragging item - subtle, don't compete with placeholder */
+.react-grid-layout .react-grid-item.react-draggable-dragging {
+    opacity: 0.7 !important;
+    z-index: 100 !important;
+}
+
+/* Resizing item - subtle opacity */
+.react-grid-layout .react-grid-item.resizing {
+    opacity: 0.8 !important;
+}
+
+/* Resize handle styling */
+.react-grid-item > .react-resizable-handle {
+    background-image: none !important;
+    width: 16px !important;
+    height: 16px !important;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+    content: '' !important;
+    position: absolute !important;
+    right: 4px !important;
+    bottom: 4px !important;
+    width: 8px !important;
+    height: 8px !important;
+    border-right: 2px solid rgba(148, 163, 184, 0.5) !important;
+    border-bottom: 2px solid rgba(148, 163, 184, 0.5) !important;
+    border-radius: 0 0 2px 0 !important;
+}
+
+.react-grid-item:hover > .react-resizable-handle::after {
+    border-color: rgba(99, 132, 255, 0.8) !important;
+}

@@ -1,0 +1,90 @@
+/**
+ * Grafana-inspired dark theme overrides for uPlot
+ */
+
+/* Legend styling */
+.uplot .u-legend {
+    font-size: 11px;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding: 4px 8px;
+    background: transparent;
+    text-align: left;
+}
+
+.uplot .u-legend th {
+    font-weight: normal;
+    color: #9ca3af;
+    padding: 2px 6px;
+}
+
+.uplot .u-legend td {
+    padding: 2px 6px;
+}
+
+.uplot .u-legend .u-marker {
+    width: 14px;
+    height: 3px;
+    border-radius: 1px;
+    margin-right: 6px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.uplot .u-legend .u-label {
+    color: #d1d5db;
+}
+
+.uplot .u-legend .u-value {
+    color: #9ca3af;
+    font-family: ui-monospace, monospace;
+    text-align: right;
+    min-width: 50px;
+}
+
+/* Cursor crosshair */
+.uplot .u-cursor-x,
+.uplot .u-cursor-y {
+    border-color: #ffffff30 !important;
+}
+
+/* Selection */
+.uplot .u-select {
+    background: #3b82f620;
+    border: 1px solid #3b82f640;
+}
+
+/* Inline legend (at bottom) */
+.uplot .u-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    justify-content: center;
+    margin-top: 4px;
+}
+
+.uplot .u-inline tr {
+    display: inline-flex;
+    align-items: center;
+}
+
+.uplot .u-inline th,
+.uplot .u-inline td {
+    display: inline;
+    padding: 0;
+}
+
+/* Hide series toggle checkboxes if any */
+.uplot .u-legend input {
+    display: none;
+}
+
+/* Tooltip styling */
+.uplot .u-tooltip {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 8px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+    font-size: 11px;
+    color: #e2e8f0;
+}

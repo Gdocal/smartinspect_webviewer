@@ -52,6 +52,7 @@ const HEADER_DENSITY_CONFIG = {
 };
 import { FilterBar } from './components/FilterBar';
 import { WatchPanel } from './components/WatchPanel';
+import { ContextPanel } from './components/ContextPanel';
 import { StreamPanel } from './components/StreamPanel';
 import { DetailPanel } from './components/DetailPanel';
 import { StreamDetailPanel } from './components/StreamDetailPanel';
@@ -64,6 +65,8 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { ProjectDropdown } from './components/ProjectDropdown';
 import { AutoPauseNotification } from './components/AutoPauseNotification';
 import { useAutoPauseMonitor } from './hooks/useAutoPauseMonitor';
+import { TracesView } from './components/TracesView';
+import { MetricsView } from './components/MetricsView';
 
 export function App() {
     const {
@@ -77,9 +80,13 @@ export function App() {
         showDetailPanel,
         showWatchPanel,
         showStreamPanel,
+        showContextPanel,
         setShowDetailPanel,
         setShowWatchPanel,
+        setShowContextPanel,
         isStreamsMode,
+        isTracesMode,
+        isMetricsMode,
         selectedStreamEntryId,
         setSelectedStreamEntryId,
         theme,
@@ -241,6 +248,21 @@ export function App() {
                         </svg>
                     </button>
 
+                    {/* Context panel toggle */}
+                    <button
+                        onClick={() => { setShowContextPanel(!showContextPanel); markDirty(); }}
+                        className={`${headerDensity.buttonPadding} rounded transition-all ${
+                            showContextPanel
+                                ? 'bg-blue-500/15 text-blue-400'
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'
+                        }`}
+                        title="Toggle context panel"
+                    >
+                        <svg className={headerDensity.iconSize} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                    </button>
+
                     <div className={`w-px ${headerDensity.separatorH} bg-slate-700 ${headerDensity.separatorMx}`} />
 
                     {/* Install App button - only show when installable */}
@@ -300,25 +322,35 @@ export function App() {
                 {/* Left side: Grid/Streams + Details (stacked vertically) */}
                 <div className="flex-1 flex flex-col min-w-0">
                     {/* Filter bar - only show for logs mode, inside left content area */}
-                    {!isStreamsMode && <FilterBar />}
+                    {!isStreamsMode && !isTracesMode && !isMetricsMode && <FilterBar />}
 
-                    {/* Content area - both views mounted, visibility controlled by CSS to prevent remount animations */}
+                    {/* Content area - all views mounted, visibility controlled by CSS to prevent remount animations */}
                     <div className="flex-1 min-h-0 overflow-hidden relative">
-                        <div className={`absolute inset-0 ${isStreamsMode ? '' : 'invisible'}`}>
+                        {/* Logs View - base layer */}
+                        <div className={`absolute inset-0 z-0 ${!isStreamsMode && !isTracesMode && !isMetricsMode ? '' : 'invisible'}`}>
+                            <ViewGridContainer
+                                onColumnStateChange={handleViewColumnStateChange}
+                            />
+                        </div>
+                        {/* Streams View */}
+                        <div className={`absolute inset-0 z-10 ${isStreamsMode ? '' : 'invisible'}`}>
                             <StreamsView
                                 onSelectEntry={handleStreamEntrySelect}
                                 selectedEntryId={selectedStreamEntryId}
                             />
                         </div>
-                        <div className={`absolute inset-0 ${isStreamsMode ? 'invisible' : ''}`}>
-                            <ViewGridContainer
-                                onColumnStateChange={handleViewColumnStateChange}
-                            />
+                        {/* Traces View */}
+                        <div className={`absolute inset-0 z-20 ${isTracesMode ? '' : 'invisible'}`}>
+                            <TracesView />
+                        </div>
+                        {/* Metrics View - top layer */}
+                        <div className={`absolute inset-0 z-30 ${isMetricsMode ? '' : 'invisible'}`}>
+                            <MetricsView />
                         </div>
                     </div>
 
                     {/* Stream Panel (if visible, only in logs mode) */}
-                    {!isStreamsMode && showStreamPanel && (
+                    {!isStreamsMode && !isTracesMode && !isMetricsMode && showStreamPanel && (
                         <div className="h-48 border-t border-slate-300 dark:border-slate-700 flex-shrink-0">
                             <StreamPanel />
                         </div>
@@ -347,6 +379,22 @@ export function App() {
                         </>
                     )}
                 </div>
+
+                {/* Right side: Context Panel (collapsible, full height) */}
+                {showContextPanel && (
+                    <>
+                        {/* Separator */}
+                        <div className="w-1.5 bg-slate-200 dark:bg-slate-700 flex-shrink-0 flex items-center justify-center">
+                            <div className="h-8 w-0.5 bg-slate-400 dark:bg-slate-500 rounded" />
+                        </div>
+                        <div
+                            className="flex-shrink-0 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 overflow-hidden"
+                            style={{ width: 280 }}
+                        >
+                            <ContextPanel />
+                        </div>
+                    </>
+                )}
 
                 {/* Right side: Watch Panel (collapsible, full height, always available) */}
                 {showWatchPanel && (

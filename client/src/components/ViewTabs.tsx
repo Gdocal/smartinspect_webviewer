@@ -3,7 +3,7 @@
  * Uses the same filter components as HighlightRuleEditor for consistency
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLogStore, View, Filter, FilterV2, HighlightRule, ListTextFilter, TextFilter, defaultListTextFilter, VlgColumnConfig, createDefaultFilterV2 } from '../store/logStore';
 import { useProjectPersistence } from '../hooks/useProjectPersistence';
 import { HighlightRuleEditor, Checkbox, ListTextFilterInput, LevelSelect, TextFilterInput, EntryTypeSelect } from './HighlightRuleEditor';
@@ -722,7 +722,7 @@ const TAB_DENSITY_CONFIG = {
 };
 
 export function ViewTabs() {
-    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, editingViewId, setEditingViewId, rowDensity } = useLogStore();
+    const { views, activeViewId, setActiveView, addView, updateView, deleteView, isStreamsMode, setStreamsMode, isTracesMode, setTracesMode, isMetricsMode, setMetricsMode, editingViewId, setEditingViewId, rowDensity } = useLogStore();
     const { markDirty } = useProjectPersistence();
     const density = TAB_DENSITY_CONFIG[rowDensity];
     const [showEditor, setShowEditor] = useState(false);
@@ -836,8 +836,18 @@ export function ViewTabs() {
         setStreamsMode(true);
     };
 
+    const handleTracesClick = () => {
+        setTracesMode(true);
+    };
+
+    const handleMetricsClick = () => {
+        setMetricsMode(true);
+    };
+
     const handleViewClick = (viewId: string) => {
         setStreamsMode(false);
+        setTracesMode(false);
+        setMetricsMode(false);
         setActiveView(viewId);
     };
 
@@ -869,7 +879,8 @@ export function ViewTabs() {
         // Activate the kept view
         setActiveView(keepViewId);
         setStreamsMode(false);
-    }, [views, deleteView, setActiveView, setStreamsMode, markDirty]);
+        setMetricsMode(false);
+    }, [views, deleteView, setActiveView, setStreamsMode, setMetricsMode, markDirty]);
 
     // Close view via context menu (with confirmation)
     const handleCloseViewFromMenu = useCallback(async (view: View) => {
@@ -972,7 +983,24 @@ export function ViewTabs() {
                     className={`flex items-center ${density.gap} px-2 ${density.containerPy} overflow-x-auto scrollbar-hide`}
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                 >
-                    {/* Streams tab - pinned first, different styling */}
+                    {/* Traces tab - pinned first */}
+                    <div
+                        onClick={handleTracesClick}
+                        className={`flex-shrink-0 flex items-center ${density.gap} ${density.tabPx} ${density.tabPy} rounded cursor-pointer transition-colors ${
+                            isTracesMode
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300'
+                        }`}
+                    >
+                        <svg className={`${density.iconSize} ${isTracesMode ? 'text-amber-200' : 'text-amber-500 dark:text-amber-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <span className={`${density.tabText} font-medium whitespace-nowrap ${isTracesMode ? 'text-white' : 'text-amber-700 dark:text-amber-300'}`}>
+                            Traces
+                        </span>
+                    </div>
+
+                    {/* Streams tab */}
                     <div
                         onClick={handleStreamsClick}
                         className={`flex-shrink-0 flex items-center ${density.gap} ${density.tabPx} ${density.tabPy} rounded cursor-pointer transition-colors ${
@@ -989,12 +1017,29 @@ export function ViewTabs() {
                         </span>
                     </div>
 
+                    {/* Metrics tab */}
+                    <div
+                        onClick={handleMetricsClick}
+                        className={`flex-shrink-0 flex items-center ${density.gap} ${density.tabPx} ${density.tabPy} rounded cursor-pointer transition-colors ${
+                            isMetricsMode
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-emerald-100 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                        }`}
+                    >
+                        <svg className={`${density.iconSize} ${isMetricsMode ? 'text-emerald-200' : 'text-emerald-500 dark:text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                        </svg>
+                        <span className={`${density.tabText} font-medium whitespace-nowrap ${isMetricsMode ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                            Metrics
+                        </span>
+                    </div>
+
                     {/* Separator */}
                     <div className={`w-px ${density.separatorH} bg-slate-300 dark:bg-slate-600 mx-1 flex-shrink-0`} />
 
                     {/* Regular view tabs */}
                     {views.map(view => {
-                        const isActiveTab = !isStreamsMode && activeViewId === view.id;
+                        const isActiveTab = !isStreamsMode && !isTracesMode && !isMetricsMode && activeViewId === view.id;
 
                         // For colored tabs: active = solid color + white text
                         // inactive = light tinted background + colored text (like Streams tab)
@@ -1204,9 +1249,16 @@ function ColumnChooserPanel({ view, onColumnChange, onClose, density }: ColumnCh
     const d = COLUMN_PANEL_DENSITY[density];
 
     // Get columns from view or use defaults
-    const columns = view.columnConfig && view.columnConfig.length > 0
-        ? view.columnConfig
-        : DEFAULT_COLUMNS;
+    // Merge with DEFAULT_COLUMNS to pick up any new columns that were added
+    const columns = useMemo(() => {
+        if (!view.columnConfig || view.columnConfig.length === 0) {
+            return DEFAULT_COLUMNS;
+        }
+        // Merge: keep saved config, add any new columns from DEFAULT_COLUMNS
+        const savedIds = new Set(view.columnConfig.map(c => c.id));
+        const newColumns = DEFAULT_COLUMNS.filter(c => !savedIds.has(c.id));
+        return [...view.columnConfig, ...newColumns];
+    }, [view.columnConfig]);
 
     const toggleColumn = (columnId: string) => {
         const newColumns = columns.map(col =>
@@ -1286,22 +1338,22 @@ interface ViewGridContainerProps {
 export function ViewGridContainer({
     onColumnStateChange
 }: ViewGridContainerProps) {
-    const { views, activeViewId, isStreamsMode, updateView, rowDensity } = useLogStore();
+    const { views, activeViewId, isStreamsMode, isMetricsMode, updateView, rowDensity } = useLogStore();
     const [mountedViews, setMountedViews] = useState<Set<string>>(new Set());
     const [activePanel, setActivePanel] = useState<'none' | 'filters' | 'columns' | 'highlights'>('none');
 
     // Track which views have been mounted (lazy mounting)
     useEffect(() => {
-        if (activeViewId && !isStreamsMode && !mountedViews.has(activeViewId)) {
+        if (activeViewId && !isStreamsMode && !isMetricsMode && !mountedViews.has(activeViewId)) {
             setMountedViews(prev => new Set([...prev, activeViewId]));
         }
-    }, [activeViewId, isStreamsMode, mountedViews]);
+    }, [activeViewId, isStreamsMode, isMetricsMode, mountedViews]);
 
     // Get active view for filter panel
     const activeView = views.find(v => v.id === activeViewId);
 
-    // When in streams mode, don't render any grids as active
-    if (isStreamsMode) {
+    // When in streams/metrics mode, don't render any grids as active
+    if (isStreamsMode || isMetricsMode) {
         // Still render mounted views but all hidden
         return (
             <div className="relative h-full w-full">
