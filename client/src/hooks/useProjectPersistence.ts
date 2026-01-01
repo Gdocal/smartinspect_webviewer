@@ -80,7 +80,8 @@ function createDefaultProject(user: string): Project {
         panelVisibility: {
             showDetailPanel: true,
             showWatchPanel: true,
-            showStreamPanel: false
+            showStreamPanel: false,
+            showContextPanel: false
         },
         limits: { ...defaultLimits },
         theme: 'light'
@@ -149,7 +150,8 @@ function extractProjectFromStore(): Omit<Project, 'id' | 'name' | 'description' 
         panelVisibility: {
             showDetailPanel: state.showDetailPanel,
             showWatchPanel: state.showWatchPanel,
-            showStreamPanel: state.showStreamPanel
+            showStreamPanel: state.showStreamPanel,
+            showContextPanel: state.showContextPanel
         },
         limits: { ...state.limits },
         theme: state.theme,
@@ -198,6 +200,9 @@ function applyProjectToStore(project: Project): void {
     if (typeof panelVisibility.showStreamPanel === 'boolean') {
         store.setShowStreamPanel(panelVisibility.showStreamPanel);
     }
+    if (typeof panelVisibility.showContextPanel === 'boolean') {
+        store.setShowContextPanel(panelVisibility.showContextPanel);
+    }
 
     // Apply theme
     if (project.theme) {
@@ -245,6 +250,7 @@ export function useProjectPersistence() {
     const showDetailPanel = useLogStore(state => state.showDetailPanel);
     const showWatchPanel = useLogStore(state => state.showWatchPanel);
     const showStreamPanel = useLogStore(state => state.showStreamPanel);
+    const showContextPanel = useLogStore(state => state.showContextPanel);
     const detailPanelHeightPercent = useLogStore(state => state.detailPanelHeightPercent);
     const watchPanelWidthPercent = useLogStore(state => state.watchPanelWidthPercent);
     const watchPanelColumnWidths = useLogStore(state => state.watchPanelColumnWidths);
@@ -413,7 +419,7 @@ export function useProjectPersistence() {
 
         console.log('[ProjectPersistence] Auto-save effect running');
         scheduleSave();
-    }, [views, activeViewId, showDetailPanel, showWatchPanel, showStreamPanel,
+    }, [views, activeViewId, showDetailPanel, showWatchPanel, showStreamPanel, showContextPanel,
         detailPanelHeightPercent, watchPanelWidthPercent, watchPanelColumnWidths, streamsViewColumnWidths,
         watchPanelHiddenColumns, streamsViewHiddenColumns, streamsChannelHiddenColumns, theme, scheduleSave]);
 

@@ -61,6 +61,15 @@ export function getRowHeight(density: RowDensity): number {
   return ROW_HEIGHTS[density];
 }
 
+// Get effective row height considering custom override
+export function getEffectiveRowHeight(density: RowDensity, customHeight: number | null): number {
+  return customHeight !== null ? customHeight : ROW_HEIGHTS[density];
+}
+
+// Row height constraints for custom height slider
+export const MIN_ROW_HEIGHT = 14;
+export const MAX_ROW_HEIGHT = 48;
+
 export function getStreamRowHeight(density: RowDensity): number {
   return STREAM_ROW_HEIGHTS[density];
 }

@@ -688,21 +688,22 @@ export const RowContextMenu = memo(function RowContextMenu({
     onClose();
   };
 
-  // Create view from Correlation ID (Show Related async operations)
-  const handleShowRelatedCorrelation = () => {
-    if (!clickedEntry?.correlationId) return;
-    const shortId = clickedEntry.correlationId.substring(0, 8);
+  // Create view from Trace ID (Show Related trace entries)
+  const handleShowRelatedTrace = () => {
+    const traceId = clickedEntry?.ctx?._traceId;
+    if (!traceId) return;
+    const shortId = traceId.substring(0, 8);
 
-    // Create filter with correlations rule using FilterV2
+    // Create filter with correlations rule using FilterV2 (reusing correlations filter for traceId)
     const filterV2 = createDefaultFilterV2();
     filterV2.correlations.rules.push(createFilterRule({
       include: true,
       operator: 'equals',
-      value: clickedEntry.correlationId,
+      value: traceId,
     }));
 
     addView({
-      name: `Corr:${shortId}...`,
+      name: `Trace:${shortId}...`,
       filter: {
         sessions: [],
         levels: [],
@@ -1171,18 +1172,18 @@ export const RowContextMenu = memo(function RowContextMenu({
         </div>
       )}
 
-      {/* Show Related - filter by correlation ID (async flow grouping) */}
-      {clickedEntry?.correlationId && (
+      {/* Show Related - filter by trace ID */}
+      {clickedEntry?.ctx?._traceId && (
         <button
           className="vlg-menu-item"
-          onClick={handleShowRelatedCorrelation}
+          onClick={handleShowRelatedTrace}
         >
           <svg className="vlg-menu-icon" viewBox="0 0 16 16" fill="currentColor">
             <path d="M6 3.5a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 0-1 0v2A1.5 1.5 0 0 0 6.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-8A1.5 1.5 0 0 0 5 3.5v2a.5.5 0 0 0 1 0v-2z"/>
             <path d="M11.354 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 1 0-.708.708L9.793 7.5H1.5a.5.5 0 0 0 0 1h8.293l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
           </svg>
-          <span>Show Related (Async Flow)</span>
-          <span className="vlg-menu-value">{clickedEntry.correlationId.substring(0, 8)}...</span>
+          <span>Show Related (Trace)</span>
+          <span className="vlg-menu-value">{clickedEntry.ctx._traceId.substring(0, 8)}...</span>
         </button>
       )}
 

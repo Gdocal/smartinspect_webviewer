@@ -376,6 +376,26 @@ export function DetailPanel() {
                         </div>
                     </div>
                 )}
+
+                {/* Context Tags (v3 protocol - flexible key-value pairs) */}
+                {selectedEntry.ctx && Object.keys(selectedEntry.ctx).length > 0 && (
+                    <div className="mt-4">
+                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Context Tags</div>
+                        <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3">
+                            <div className="flex flex-wrap gap-2">
+                                {Object.entries(selectedEntry.ctx).map(([key, value]) => (
+                                    <div
+                                        key={key}
+                                        className="inline-flex items-center bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded-md px-2 py-1"
+                                    >
+                                        <span className="text-xs font-semibold text-blue-600 dark:text-blue-300 mr-1">{key}:</span>
+                                        <span className="text-xs font-mono">{String(value)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

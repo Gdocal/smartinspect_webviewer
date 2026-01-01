@@ -10,6 +10,17 @@ interface UseScrollDetectionOptions {
   userStoppedAutoscroll?: boolean;
 }
 
+// Debug flag for scroll detection
+const DEBUG_SCROLL_DETECTION = true;
+const sdLog = (msg: string, data?: Record<string, unknown>) => {
+  if (!DEBUG_SCROLL_DETECTION) return;
+  if (data) {
+    console.log(`[ScrollDetection] ${msg}`, data);
+  } else {
+    console.log(`[ScrollDetection] ${msg}`);
+  }
+};
+
 export function useScrollDetection({
   scrollElement,
   onUserScrollUp,
@@ -42,10 +53,14 @@ export function useScrollDetection({
     const handleWheel = (e: WheelEvent) => {
       // Only trigger if there's actually content to scroll (scrollbar exists)
       const hasScrollbar = scrollElement.scrollHeight > scrollElement.clientHeight;
-      if (!hasScrollbar) return;
+      if (!hasScrollbar) {
+        sdLog('handleWheel: no scrollbar, ignoring');
+        return;
+      }
 
       if (e.deltaY < 0) {
         // Scrolling UP = negative deltaY
+        sdLog('handleWheel: UP detected', { deltaY: e.deltaY, userScrolledUpRef: userScrolledUpRef.current });
         userScrolledUpRef.current = true;
         onUserScrollUp();
       } else if (e.deltaY > 0) {
@@ -55,7 +70,14 @@ export function useScrollDetection({
           const { scrollTop, scrollHeight, clientHeight } = scrollElement;
           const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
           const withinGracePeriod = performance.now() - userStopTimeRef.current < GRACE_PERIOD_MS;
+          sdLog('handleWheel: DOWN detected (rAF)', {
+            distanceFromBottom,
+            bottomThreshold,
+            userScrolledUpRef: userScrolledUpRef.current,
+            withinGracePeriod
+          });
           if (distanceFromBottom < bottomThreshold && userScrolledUpRef.current && !withinGracePeriod) {
+            sdLog('handleWheel: RE-ENABLING autoscroll at bottom');
             userScrolledUpRef.current = false;
             onScrollToBottom();
           }

@@ -13,7 +13,7 @@ export interface VirtualLogGridProps {
   onKeyboardNavigate?: (entryId: number) => void;
 }
 
-export type ColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content';
+export type ColumnType = 'icon' | 'level' | 'text' | 'number' | 'timestamp' | 'stream-content' | 'context-tags' | 'trace-id' | 'span-name' | 'span-kind';
 
 export interface ColumnConfig {
   id: string;
@@ -119,34 +119,44 @@ export const DEFAULT_COLUMNS: ColumnConfig[] = [
     width: 110,
     minWidth: 90,
   },
-  // Async context columns (v2 protocol)
+  // OpenTelemetry trace columns (extracted from ctx)
   {
-    id: 'correlationId',
-    field: 'correlationId',
-    header: 'Correlation',
-    type: 'text',
-    width: 120,
+    id: 'traceId',
+    field: 'ctx._traceId',
+    header: 'TraceId',
+    type: 'trace-id',
+    width: 100,
     minWidth: 80,
-    hidden: true,  // Hidden by default, enable for async debugging
+    hidden: true,  // Enable for distributed tracing
   },
   {
-    id: 'operationName',
-    field: 'operationName',
-    header: 'Operation',
-    type: 'text',
+    id: 'spanName',
+    field: 'ctx._spanName',
+    header: 'Span',
+    type: 'span-name',
     width: 140,
     minWidth: 100,
     hidden: true,
   },
   {
-    id: 'operationDepth',
-    field: 'operationDepth',
-    header: 'Depth',
-    type: 'number',
-    width: 60,
+    id: 'spanKind',
+    field: 'ctx._spanKind',
+    header: 'Kind',
+    type: 'span-kind',
+    width: 70,
     minWidth: 50,
     hidden: true,
     align: 'center',
+  },
+  // Context tags (v3 protocol - flexible key-value pairs)
+  {
+    id: 'ctx',
+    field: 'ctx',
+    header: 'Context',
+    type: 'context-tags',
+    width: 200,
+    minWidth: 100,
+    hidden: true,  // Hidden by default, enable for context-based debugging
   },
 ];
 

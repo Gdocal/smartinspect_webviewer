@@ -1068,7 +1068,9 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
         hostNames,
         correlations,
         correlationHighlighting,
-        setCorrelationHighlighting
+        setCorrelationHighlighting,
+        depthIndentation,
+        setDepthIndentation
     } = useLogStore();
 
     // Convert to arrays for dropdown suggestions
@@ -1148,10 +1150,14 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
                 </button>
             </div>
 
-            {/* Correlation Highlighting Section - only show when correlations exist */}
+            {/* Async Context Section - only show when correlations exist */}
             {Object.keys(correlations).length > 0 && (
                 <div className={`${density.rowPx} ${density.rowPy} border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50`}>
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <div className={`${density.rowText} text-slate-500 dark:text-slate-400 mb-2 font-medium`}>
+                        Async Context
+                    </div>
+                    {/* Correlation highlighting toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer mb-2">
                         <Checkbox
                             checked={correlationHighlighting}
                             onChange={setCorrelationHighlighting}
@@ -1159,13 +1165,13 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
                         />
                         <div className="flex-1 min-w-0">
                             <div className={`${density.rowText} text-slate-700 dark:text-slate-200`}>
-                                Auto-highlight correlations
+                                Auto-highlight traces
                             </div>
                             <div className="text-[10px] text-slate-400 dark:text-slate-500">
-                                Color-code entries by correlationId (async flow grouping)
+                                Color-code entries by traceId
                             </div>
                         </div>
-                        {/* Color preview strip showing sample correlation colors */}
+                        {/* Color preview strip */}
                         <div className="flex gap-0.5">
                             {[0, 60, 120, 180, 240, 300].map(hue => (
                                 <div
@@ -1174,6 +1180,26 @@ export function HighlightsPanel({ onClose }: HighlightsPanelProps) {
                                     style={{ backgroundColor: `hsla(${hue}, 60%, 90%, 0.5)` }}
                                 />
                             ))}
+                        </div>
+                    </label>
+                    {/* Depth indentation toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                            checked={depthIndentation}
+                            onChange={setDepthIndentation}
+                            size={density.checkboxSize}
+                        />
+                        <div className="flex-1 min-w-0">
+                            <div className={`${density.rowText} text-slate-700 dark:text-slate-200`}>
+                                Show depth indentation
+                            </div>
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                Indent nested operations in title column
+                            </div>
+                        </div>
+                        {/* Visual preview of indentation */}
+                        <div className="flex items-center text-[10px] text-slate-400 font-mono">
+                            <span>└─</span>
                         </div>
                     </label>
                 </div>

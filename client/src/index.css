@@ -917,6 +917,34 @@ svg.vlg-menu-icon {
     background: rgba(59, 130, 246, 0.25) !important;
 }
 
+/* Context fade mode - dims entries that don't match the active context filter */
+.vlg-row.faded {
+    opacity: 0.15;
+}
+
+.vlg-row.faded:hover {
+    opacity: 0.4;
+}
+
+/* Light theme fade */
+.virtual-log-grid.light .vlg-row.faded {
+    opacity: 0.2;
+}
+
+.virtual-log-grid.light .vlg-row.faded:hover {
+    opacity: 0.45;
+}
+
+/* Context ribbon - colored vertical bar on left of row based on context value */
+.vlg-row.has-ribbon {
+    border-left: 4px solid var(--ribbon-color, transparent);
+}
+
+/* Light theme ribbon - slightly more saturated */
+.virtual-log-grid.light .vlg-row.has-ribbon {
+    border-left-width: 4px;
+}
+
 /* Context menu submenu */
 .vlg-submenu-trigger {
     position: relative;
@@ -1283,6 +1311,15 @@ body.light .title-filter-btn-secondary:hover {
 .vlg-binary-data {
     color: #f97316; /* orange-500 */
     font-style: italic;
+}
+
+/* Context tags (v3 protocol) - compact display of key:value pairs */
+.vlg-context-tags {
+    color: var(--vlg-text-secondary);
+    font-size: 0.85em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* "Jump to Bottom" floating button - appears when autoscroll is paused */
