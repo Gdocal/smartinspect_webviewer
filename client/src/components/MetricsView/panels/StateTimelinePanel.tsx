@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { MetricsPanel, StateMapping, STATE_COLORS } from '../../../store/metricsStore';
+import { MetricsPanel, StateMapping, STATE_COLORS, useCursorSync } from '../../../store/metricsStore';
 import { useLogStore } from '../../../store/logStore';
 
 interface StateTimelinePanelProps {
@@ -131,6 +131,9 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
     const { watches, currentRoom } = useLogStore();
     const containerRef = useRef<HTMLDivElement>(null);
 
+    // Cursor sync - subscribe to shared cursor time for cross-panel sync
+    const { cursorTime, setCursorTime, clearCursor } = useCursorSync();
+
     // Tooltip state
     const [tooltip, setTooltip] = useState<{
         show: boolean;
@@ -201,7 +204,9 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                             timestamp: typeof p.timestamp === 'string'
                                 ? new Date(p.timestamp).getTime()
                                 : (p.timestamp || p.t),
-                            value: p.value ?? p.v ?? '',
+                            // For non-numeric values, the actual string is stored in 'label'
+                            // The 'value' field contains a count for non-numeric data
+                            value: p.label ?? p.value ?? p.v ?? '',
                         }));
                         newData.set(watchName, points);
                     }
@@ -334,6 +339,25 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
         return ticks;
     }, [chartWidth, timeDuration, timeRange.from]);
 
+    // Convert x position to timestamp
+    const xToTime = useCallback((x: number) => {
+        const ratio = (x - leftPadding) / chartWidth;
+        return timeRange.from + ratio * timeDuration;
+    }, [leftPadding, chartWidth, timeRange.from, timeDuration]);
+
+    // Handle mouse move on chart area - emit cursor time for cross-panel sync
+    const handleChartMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const x = e.clientX - rect.left;
+        // Only emit if mouse is in the chart area
+        if (x >= leftPadding && x <= leftPadding + chartWidth) {
+            const time = xToTime(x);
+            setCursorTime(time, panel.id);
+        }
+    }, [leftPadding, chartWidth, xToTime, setCursorTime, panel.id]);
+
     // Handle mouse events
     const handleSegmentHover = (e: React.MouseEvent, segment: StateSegment, seriesName: string) => {
         const rect = containerRef.current?.getBoundingClientRect();
@@ -350,6 +374,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
 
     const handleMouseLeave = () => {
         setTooltip(prev => ({ ...prev, show: false }));
+        clearCursor();
     };
 
     if (panel.queries.length === 0) {
@@ -366,9 +391,21 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
         );
     }
 
+    // Calculate cursor X position if cursor time is in range
+    const cursorX = useMemo(() => {
+        if (cursorTime === null) return null;
+        if (cursorTime < timeRange.from || cursorTime > timeRange.to) return null;
+        return timeToX(cursorTime);
+    }, [cursorTime, timeRange.from, timeRange.to, timeToX]);
+
     return (
         <div ref={containerRef} className="w-full h-full relative overflow-hidden" onMouseLeave={handleMouseLeave}>
-            <svg width={width} height={height - legendHeight} className="overflow-visible">
+            <svg
+                width={width}
+                height={height - legendHeight}
+                className="overflow-visible"
+                onMouseMove={handleChartMouseMove}
+            >
                 {/* Timeline rows */}
                 {seriesSegments.map((series, seriesIdx) => {
                     const rowY = topPadding + seriesIdx * rowTotalHeight + rowGap;
@@ -470,6 +507,21 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                         </g>
                     ))}
                 </g>
+
+                {/* Synced cursor line - vertical line showing cursor position from other panels */}
+                {cursorX !== null && (
+                    <line
+                        x1={cursorX}
+                        y1={topPadding}
+                        x2={cursorX}
+                        y2={topPadding + chartHeight}
+                        stroke="#f8fafc"
+                        strokeWidth={1}
+                        strokeDasharray="4 2"
+                        className="pointer-events-none"
+                        style={{ opacity: 0.6 }}
+                    />
+                )}
             </svg>
 
             {/* Legend at bottom */}

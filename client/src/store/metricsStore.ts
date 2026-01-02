@@ -602,3 +602,31 @@ export const useMetricsStore = create<MetricsState>()(
 
 // Export helper for creating default panels
 export { createDefaultPanel };
+
+// ==================== Cursor Sync Store (not persisted) ====================
+// Used to sync cursor position across panels (State Timeline, Time Series, etc.)
+
+interface CursorSyncState {
+    // Cursor timestamp in milliseconds (null = no cursor shown)
+    cursorTime: number | null;
+    // Which panel is currently being hovered (to avoid echo)
+    sourcePanel: string | null;
+    // Actions
+    setCursorTime: (time: number | null, sourcePanelId?: string) => void;
+    clearCursor: () => void;
+}
+
+export const useCursorSync = create<CursorSyncState>()((set) => ({
+    cursorTime: null,
+    sourcePanel: null,
+
+    setCursorTime: (time, sourcePanelId) => set({
+        cursorTime: time,
+        sourcePanel: sourcePanelId ?? null
+    }),
+
+    clearCursor: () => set({
+        cursorTime: null,
+        sourcePanel: null
+    })
+}));

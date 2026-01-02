@@ -7,7 +7,7 @@ import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
 import './uplot-dark.css';
-import { MetricsPanel } from '../../../store/metricsStore';
+import { MetricsPanel, useCursorSync } from '../../../store/metricsStore';
 import { useLogStore } from '../../../store/logStore';
 import { evaluateExpression, TransformContext } from '../hooks/useTransformEngine';
 import { decimateSeriesData } from '../utils/decimation';
@@ -49,6 +49,9 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
     const chartRef = useRef<uPlot | null>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
     const { watches, currentRoom } = useLogStore();
+
+    // Cursor sync - emit cursor time to shared store for cross-panel sync
+    const { setCursorTime, clearCursor } = useCursorSync();
 
     // State for fetched history data
     const [historyData, setHistoryData] = useState<Map<string, HistoryPoint[]>>(new Map());
@@ -318,14 +321,19 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
 
                         if (idx === null || idx === undefined) {
                             setTooltip(prev => ({ ...prev, show: false }));
+                            clearCursor();
                             return;
                         }
 
                         const time = u.data[0][idx];
                         if (time === undefined) {
                             setTooltip(prev => ({ ...prev, show: false }));
+                            clearCursor();
                             return;
                         }
+
+                        // Emit cursor time to shared store (convert from seconds to ms)
+                        setCursorTime(time * 1000, panel.id);
 
                         // Use the focused series tracked by setSeries hook
                         let focusedSeriesIdx = focusedSeriesRef.current;
@@ -444,7 +452,7 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
                 ]
             },
         };
-    }, [width, height, panel.queries, panel.options, isDark, setTooltip]); // Note: displayTimeRange handled separately via setScale
+    }, [width, height, panel.queries, panel.options, panel.id, isDark, setTooltip, setCursorTime, clearCursor]); // Note: displayTimeRange handled separately via setScale
 
     // Build chart data from history data only (no demo data)
     const data = useMemo((): uPlot.AlignedData => {
