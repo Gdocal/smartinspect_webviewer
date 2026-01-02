@@ -6,6 +6,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useLogStore } from '../../store/logStore';
 import { useMetricsStore, MetricsPanel, PanelQuery, Threshold, SERIES_COLORS } from '../../store/metricsStore';
 import { getAvailableFunctions, validateExpression } from './hooks/useTransformEngine';
+import { SearchableSelect } from './SearchableSelect';
 
 interface PanelSettingsDrawerProps {
     panelId: string | null;
@@ -204,16 +205,12 @@ function QueriesTab({ queries, watchNames, onAdd, onUpdate, onRemove }: QueriesT
                         <label className="block text-xs text-slate-500 dark:text-slate-400 mb-1">
                             Watch
                         </label>
-                        <select
+                        <SearchableSelect
+                            options={watchNames}
                             value={query.watchName}
-                            onChange={(e) => onUpdate(query.id, { watchName: e.target.value })}
-                            className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200"
-                        >
-                            <option value="">Select watch...</option>
-                            {watchNames.map(name => (
-                                <option key={name} value={name}>{name}</option>
-                            ))}
-                        </select>
+                            onChange={(value) => onUpdate(query.id, { watchName: value })}
+                            placeholder="Type to search watches..."
+                        />
                     </div>
 
                     {/* Alias */}
