@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { MetricsPanel } from '../../store/metricsStore';
-import { TimeSeriesPanel, StatPanel, GaugePanel, BarPanel, TablePanel } from './panels';
+import { TimeSeriesPanel, StatPanel, GaugePanel, BarPanel, TablePanel, StateTimelinePanel } from './panels';
 
 interface PanelProps {
     panel: MetricsPanel;
@@ -68,6 +68,8 @@ export function Panel({
                 return <BarPanel {...props} />;
             case 'table':
                 return <TablePanel {...props} />;
+            case 'statetimeline':
+                return <StateTimelinePanel {...props} />;
             default:
                 return (
                     <div className="h-full flex items-center justify-center text-slate-400">

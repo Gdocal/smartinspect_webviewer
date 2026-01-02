@@ -158,7 +158,7 @@ export function MetricsView() {
                             <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
                                 Choose a visualization type:
                             </p>
-                            <div className="grid grid-cols-5 gap-3">
+                            <div className="grid grid-cols-3 gap-3">
                                 <PanelTypeButton
                                     type="timeseries"
                                     icon={<TimeSeriesIcon />}
@@ -188,6 +188,12 @@ export function MetricsView() {
                                     icon={<TableIcon />}
                                     label="Table"
                                     onClick={() => handleAddPanel('table')}
+                                />
+                                <PanelTypeButton
+                                    type="statetimeline"
+                                    icon={<StateTimelineIcon />}
+                                    label="State Timeline"
+                                    onClick={() => handleAddPanel('statetimeline')}
                                 />
                             </div>
                         </div>
@@ -304,6 +310,13 @@ export function MetricsView() {
                                 onClick={() => handleAddPanel('table')}
                                 large
                             />
+                            <PanelTypeButton
+                                type="statetimeline"
+                                icon={<StateTimelineIcon />}
+                                label="State Timeline"
+                                onClick={() => handleAddPanel('statetimeline')}
+                                large
+                            />
                         </div>
                     </div>
                 </div>
@@ -377,6 +390,25 @@ function TableIcon() {
     return (
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-full h-full">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+    );
+}
+
+function StateTimelineIcon() {
+    return (
+        <svg fill="none" viewBox="0 0 24 24" className="w-full h-full">
+            {/* Three horizontal bars representing state timeline rows */}
+            <rect x="3" y="5" width="6" height="3" rx="1" fill="currentColor" opacity="0.8" />
+            <rect x="9" y="5" width="4" height="3" rx="1" fill="currentColor" opacity="0.4" />
+            <rect x="13" y="5" width="8" height="3" rx="1" fill="currentColor" opacity="0.6" />
+
+            <rect x="3" y="10" width="8" height="3" rx="1" fill="currentColor" opacity="0.6" />
+            <rect x="11" y="10" width="3" height="3" rx="1" fill="currentColor" opacity="0.8" />
+            <rect x="14" y="10" width="7" height="3" rx="1" fill="currentColor" opacity="0.4" />
+
+            <rect x="3" y="15" width="4" height="3" rx="1" fill="currentColor" opacity="0.4" />
+            <rect x="7" y="15" width="10" height="3" rx="1" fill="currentColor" opacity="0.8" />
+            <rect x="17" y="15" width="4" height="3" rx="1" fill="currentColor" opacity="0.6" />
         </svg>
     );
 }

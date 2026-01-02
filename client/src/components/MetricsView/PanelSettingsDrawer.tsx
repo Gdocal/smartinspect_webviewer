@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useLogStore } from '../../store/logStore';
-import { useMetricsStore, MetricsPanel, PanelQuery, Threshold, SERIES_COLORS } from '../../store/metricsStore';
+import { useMetricsStore, MetricsPanel, PanelQuery, Threshold, SERIES_COLORS, StateMapping, STATE_COLORS } from '../../store/metricsStore';
 import { getAvailableFunctions, validateExpression } from './hooks/useTransformEngine';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -493,6 +493,49 @@ function DisplayTab({ panel, onUpdate }: DisplayTabProps) {
                     </select>
                 </div>
             )}
+
+            {/* State Timeline options */}
+            {panel.type === 'statetimeline' && (
+                <>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600 dark:text-slate-300">Show value text</span>
+                        <input
+                            type="checkbox"
+                            checked={panel.options.showValue ?? true}
+                            onChange={(e) => updateOption('showValue', e.target.checked)}
+                            className="w-4 h-4 accent-emerald-500"
+                        />
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600 dark:text-slate-300">Merge adjacent states</span>
+                        <input
+                            type="checkbox"
+                            checked={panel.options.mergeAdjacentStates ?? true}
+                            onChange={(e) => updateOption('mergeAdjacentStates', e.target.checked)}
+                            className="w-4 h-4 accent-emerald-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                            Row height (px)
+                        </label>
+                        <input
+                            type="number"
+                            min="16"
+                            max="64"
+                            value={panel.options.rowHeight ?? 24}
+                            onChange={(e) => updateOption('rowHeight', parseInt(e.target.value))}
+                            className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200"
+                        />
+                    </div>
+
+                    {/* State Mappings */}
+                    <StateMappingsEditor
+                        mappings={panel.options.stateMappings || []}
+                        onChange={(mappings) => updateOption('stateMappings', mappings)}
+                    />
+                </>
+            )}
         </div>
     );
 }
@@ -573,6 +616,119 @@ function ThresholdsTab({ thresholds, onAdd, onUpdate, onRemove }: ThresholdsTabP
                 className="w-full py-2 text-sm text-emerald-600 dark:text-emerald-400 border border-dashed border-emerald-300 dark:border-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
             >
                 + Add Threshold
+            </button>
+        </div>
+    );
+}
+
+// State Mappings Editor for StateTimeline panel
+interface StateMappingsEditorProps {
+    mappings: StateMapping[];
+    onChange: (mappings: StateMapping[]) => void;
+}
+
+function StateMappingsEditor({ mappings, onChange }: StateMappingsEditorProps) {
+    const addMapping = () => {
+        const newMapping: StateMapping = {
+            value: '',
+            text: '',
+            color: STATE_COLORS[mappings.length % STATE_COLORS.length]
+        };
+        onChange([...mappings, newMapping]);
+    };
+
+    const updateMapping = (index: number, updates: Partial<StateMapping>) => {
+        const newMappings = [...mappings];
+        newMappings[index] = { ...newMappings[index], ...updates };
+        onChange(newMappings);
+    };
+
+    const removeMapping = (index: number) => {
+        onChange(mappings.filter((_, i) => i !== index));
+    };
+
+    return (
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-3">
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">
+                    State Mappings
+                </label>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-3">
+                Map values to colors and display text
+            </p>
+
+            <div className="space-y-2">
+                {mappings.map((mapping, i) => (
+                    <div key={i} className="p-2 bg-slate-50 dark:bg-slate-700/50 rounded space-y-2">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
+                                Mapping {i + 1}
+                            </span>
+                            <button
+                                onClick={() => removeMapping(i)}
+                                className="text-slate-400 hover:text-red-500"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">Value</label>
+                                <input
+                                    type="text"
+                                    value={String(mapping.value)}
+                                    onChange={(e) => updateMapping(i, { value: e.target.value })}
+                                    placeholder="e.g., ok, error, 1"
+                                    className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-slate-400 mb-0.5">Display Text</label>
+                                <input
+                                    type="text"
+                                    value={mapping.text}
+                                    onChange={(e) => updateMapping(i, { text: e.target.value })}
+                                    placeholder="e.g., OK, Error"
+                                    className="w-full px-2 py-1 text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200"
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] text-slate-400 mb-0.5">Color</label>
+                            <div className="flex gap-1 flex-wrap">
+                                {STATE_COLORS.map(color => (
+                                    <button
+                                        key={color}
+                                        onClick={() => updateMapping(i, { color })}
+                                        className={`w-5 h-5 rounded ${
+                                            mapping.color === color ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-800' : ''
+                                        }`}
+                                        style={{ backgroundColor: color }}
+                                    />
+                                ))}
+                                <input
+                                    type="color"
+                                    value={mapping.color}
+                                    onChange={(e) => updateMapping(i, { color: e.target.value })}
+                                    className="w-5 h-5 rounded cursor-pointer"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <button
+                onClick={addMapping}
+                className="w-full mt-2 py-1.5 text-xs text-emerald-600 dark:text-emerald-400 border border-dashed border-emerald-300 dark:border-emerald-600 rounded hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+            >
+                + Add Mapping
             </button>
         </div>
     );

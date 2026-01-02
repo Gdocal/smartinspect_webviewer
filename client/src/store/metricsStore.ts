@@ -29,7 +29,14 @@ export interface PanelQuery {
     expression?: string;         // Transform expression: "rate($value)", "$value / 1000"
 }
 
-export type PanelType = 'timeseries' | 'stat' | 'gauge' | 'bar' | 'table';
+export type PanelType = 'timeseries' | 'stat' | 'gauge' | 'bar' | 'table' | 'statetimeline';
+
+// State mapping for StateTimeline panel
+export interface StateMapping {
+    value: string | number;  // The value to match
+    text: string;            // Display text for this state
+    color: string;           // Color for this state
+}
 
 export interface PanelOptions {
     // Time series options
@@ -54,6 +61,12 @@ export interface PanelOptions {
 
     // Table options
     columns?: string[];  // Which columns to show
+
+    // State Timeline options
+    stateMappings?: StateMapping[];  // Value-to-color/text mappings
+    rowHeight?: number;              // Height of each timeline row in pixels
+    showValue?: boolean;             // Show value text in timeline segments
+    mergeAdjacentStates?: boolean;   // Merge consecutive same-state segments
 
     // Common options
     unit?: string;       // ms, %, bytes, req/s, etc.
@@ -140,9 +153,21 @@ function generateId(): string {
     return Math.random().toString(36).substring(2, 11);
 }
 
+// Default state colors for StateTimeline
+export const STATE_COLORS = [
+    '#22c55e', // green - success/ok
+    '#ef4444', // red - error/fail
+    '#f59e0b', // amber - warning
+    '#3b82f6', // blue - info
+    '#8b5cf6', // violet
+    '#06b6d4', // cyan
+    '#f97316', // orange
+    '#6b7280', // gray - unknown
+];
+
 function createDefaultPanel(type: PanelType): Omit<MetricsPanel, 'id'> {
     return {
-        title: `New ${type.charAt(0).toUpperCase() + type.slice(1)} Panel`,
+        title: `New ${type === 'statetimeline' ? 'State Timeline' : type.charAt(0).toUpperCase() + type.slice(1)} Panel`,
         type,
         queries: [],
         options: {
@@ -156,7 +181,16 @@ function createDefaultPanel(type: PanelType): Omit<MetricsPanel, 'id'> {
             max: 100,
             orientation: 'vertical',
             sortBy: 'value',
-            decimals: 2
+            decimals: 2,
+            // State Timeline defaults
+            stateMappings: type === 'statetimeline' ? [
+                { value: 'ok', text: 'OK', color: STATE_COLORS[0] },
+                { value: 'error', text: 'Error', color: STATE_COLORS[1] },
+                { value: 'warning', text: 'Warning', color: STATE_COLORS[2] },
+            ] : undefined,
+            rowHeight: 24,
+            showValue: true,
+            mergeAdjacentStates: true,
         },
         timeRange: {
             mode: 'relative',
