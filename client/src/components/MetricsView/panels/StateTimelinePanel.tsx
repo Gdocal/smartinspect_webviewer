@@ -1,6 +1,12 @@
 /**
  * StateTimelinePanel - Displays discrete states over time as colored bars
- * Similar to Grafana's State Timeline visualization
+ * Grafana-style State Timeline visualization
+ *
+ * Key features:
+ * - Shared value mappings across all series (panel-level)
+ * - Series names on left, time axis at bottom
+ * - Legend showing value-color mappings
+ * - Configurable row height, fill opacity, line width
  */
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
@@ -28,9 +34,10 @@ interface StateSegment {
 
 // Get color and text for a value based on mappings
 function getStateInfo(value: string | number, mappings: StateMapping[]): { color: string; text: string } {
-    // Find matching mapping
-    const stringValue = String(value);
-    const mapping = mappings.find(m => String(m.value) === stringValue);
+    const stringValue = String(value).toLowerCase();
+
+    // Find matching mapping (case-insensitive)
+    const mapping = mappings.find(m => String(m.value).toLowerCase() === stringValue);
 
     if (mapping) {
         return { color: mapping.color, text: mapping.text };
@@ -40,7 +47,7 @@ function getStateInfo(value: string | number, mappings: StateMapping[]): { color
     const hash = stringValue.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
     return {
         color: STATE_COLORS[hash % STATE_COLORS.length],
-        text: stringValue
+        text: String(value)
     };
 }
 
@@ -68,11 +75,9 @@ function buildSegments(
         const nextPoint = inRange[i + 1];
         const endTime = nextPoint ? nextPoint.timestamp : timeRange.to;
 
-        if (mergeAdjacent && currentSegment && String(currentSegment.value) === String(point.value)) {
-            // Extend current segment
+        if (mergeAdjacent && currentSegment && String(currentSegment.value).toLowerCase() === String(point.value).toLowerCase()) {
             currentSegment.endTime = endTime;
         } else {
-            // Start new segment
             if (currentSegment) {
                 segments.push(currentSegment);
             }
@@ -91,6 +96,16 @@ function buildSegments(
     }
 
     return segments;
+}
+
+// Format time for axis
+function formatAxisTime(timestamp: number): string {
+    const d = new Date(timestamp);
+    return d.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
 }
 
 // Format time for tooltip
@@ -152,7 +167,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
         if (!panel.liveMode) return;
         const ticker = setInterval(() => {
             setDisplayTimeRange(getTimeRange());
-        }, 500);
+        }, 1000);
         return () => clearInterval(ticker);
     }, [panel.liveMode, getTimeRange]);
 
@@ -172,7 +187,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                     const params = new URLSearchParams({
                         from: timeRange.from.toString(),
                         to: timeRange.to.toString(),
-                        resolution: 'raw', // Get raw data for state timeline
+                        resolution: 'raw',
                     });
 
                     const response = await fetch(
@@ -203,7 +218,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
     useEffect(() => {
         fetchHistoryData();
         if (panel.liveMode) {
-            const interval = setInterval(fetchHistoryData, 30000);
+            const interval = setInterval(fetchHistoryData, 10000);
             return () => clearInterval(interval);
         }
     }, [fetchHistoryData, panel.liveMode]);
@@ -232,7 +247,6 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                     const existing = newData.get(watchName) || [];
                     const newPoints = [...existing, { timestamp: watchTime, value: watch.value }];
 
-                    // Trim old points
                     const cutoff = Date.now() - 10 * 60 * 1000;
                     const trimmed = newPoints.filter(p => p.timestamp >= cutoff);
 
@@ -243,34 +257,57 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
         });
     }, [panel.liveMode, panel.queries, watches]);
 
-    // Get mappings with defaults
+    // Get options with defaults
     const mappings = panel.options.stateMappings || [];
-    const rowHeight = panel.options.rowHeight || 24;
+    const rowHeightPercent = panel.options.rowHeight || 0.9; // 0-1, 1 = no gap
     const showValue = panel.options.showValue ?? true;
     const mergeAdjacent = panel.options.mergeAdjacentStates ?? true;
+    const lineWidth = panel.options.lineWidth || 0;
+    const fillOpacity = panel.options.fillOpacity ?? 0.9;
 
     // Build segments for each query
     const seriesSegments = useMemo(() => {
         return panel.queries.map(query => {
             const history = query.watchName ? historyData.get(query.watchName) : null;
-            if (!history) return { name: query.alias || query.watchName || 'Series', segments: [] };
+            const displayName = query.alias || query.watchName || 'Series';
+
+            if (!history) return { name: displayName, segments: [] };
 
             return {
-                name: query.alias || query.watchName || 'Series',
+                name: displayName,
                 segments: buildSegments(history, mappings, mergeAdjacent, displayTimeRange)
             };
         });
     }, [panel.queries, historyData, mappings, mergeAdjacent, displayTimeRange]);
 
-    // Calculate layout
-    const leftPadding = 100; // Space for series names
-    const rightPadding = 16;
-    const topPadding = 20; // Space for time axis
-    const bottomPadding = 4;
+    // Get unique values from all segments for legend
+    const legendItems = useMemo(() => {
+        const valueSet = new Set<string>();
+        seriesSegments.forEach(s => s.segments.forEach(seg => valueSet.add(String(seg.value).toLowerCase())));
+
+        // Also include all mapped values
+        mappings.forEach(m => valueSet.add(String(m.value).toLowerCase()));
+
+        return Array.from(valueSet).map(val => {
+            const info = getStateInfo(val, mappings);
+            return { value: val, ...info };
+        });
+    }, [seriesSegments, mappings]);
+
+    // Layout calculations
+    const leftPadding = 80; // Space for series names
+    const rightPadding = 12;
+    const topPadding = 8;
+    const bottomPadding = 50; // Space for time axis + legend
+    const legendHeight = 24;
 
     const chartWidth = width - leftPadding - rightPadding;
-    const _chartHeight = height - topPadding - bottomPadding; // Used for layout calculations
-    void _chartHeight; // Suppress unused warning - kept for future use
+    const chartHeight = height - topPadding - bottomPadding;
+    const numSeries = seriesSegments.length || 1;
+    const rowTotalHeight = chartHeight / numSeries;
+    const rowHeight = rowTotalHeight * rowHeightPercent;
+    const rowGap = (rowTotalHeight - rowHeight) / 2;
+
     const timeRange = displayTimeRange;
     const timeDuration = timeRange.to - timeRange.from;
 
@@ -283,14 +320,14 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
     // Generate time axis ticks
     const timeAxisTicks = useMemo(() => {
         const ticks: { x: number; label: string }[] = [];
-        const tickCount = Math.min(Math.floor(chartWidth / 80), 10);
+        const tickCount = Math.min(Math.floor(chartWidth / 100), 8);
         const tickInterval = timeDuration / tickCount;
 
         for (let i = 0; i <= tickCount; i++) {
             const timestamp = timeRange.from + i * tickInterval;
             ticks.push({
                 x: timeToX(timestamp),
-                label: formatTime(timestamp)
+                label: formatAxisTime(timestamp)
             });
         }
 
@@ -305,7 +342,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
         setTooltip({
             show: true,
             x: e.clientX - rect.left + 10,
-            y: e.clientY - rect.top - 40,
+            y: e.clientY - rect.top - 60,
             segment,
             seriesName
         });
@@ -330,43 +367,11 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
     }
 
     return (
-        <div ref={containerRef} className="w-full h-full relative" onMouseLeave={handleMouseLeave}>
-            <svg width={width} height={height} className="overflow-visible">
-                {/* Time axis */}
-                <g className="time-axis">
-                    <line
-                        x1={leftPadding}
-                        y1={topPadding - 4}
-                        x2={leftPadding + chartWidth}
-                        y2={topPadding - 4}
-                        stroke="#4b5563"
-                        strokeWidth={1}
-                    />
-                    {timeAxisTicks.map((tick, i) => (
-                        <g key={i}>
-                            <line
-                                x1={tick.x}
-                                y1={topPadding - 8}
-                                x2={tick.x}
-                                y2={topPadding - 4}
-                                stroke="#4b5563"
-                                strokeWidth={1}
-                            />
-                            <text
-                                x={tick.x}
-                                y={topPadding - 10}
-                                textAnchor="middle"
-                                className="fill-slate-400 text-[10px]"
-                            >
-                                {tick.label}
-                            </text>
-                        </g>
-                    ))}
-                </g>
-
+        <div ref={containerRef} className="w-full h-full relative overflow-hidden" onMouseLeave={handleMouseLeave}>
+            <svg width={width} height={height - legendHeight} className="overflow-visible">
                 {/* Timeline rows */}
                 {seriesSegments.map((series, seriesIdx) => {
-                    const rowY = topPadding + seriesIdx * (rowHeight + 4);
+                    const rowY = topPadding + seriesIdx * rowTotalHeight + rowGap;
 
                     return (
                         <g key={seriesIdx}>
@@ -375,9 +380,9 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                                 x={leftPadding - 8}
                                 y={rowY + rowHeight / 2 + 4}
                                 textAnchor="end"
-                                className="fill-slate-300 text-xs"
+                                className="fill-slate-300 text-xs font-medium"
                             >
-                                {series.name.length > 12 ? series.name.slice(0, 12) + '...' : series.name}
+                                {series.name.length > 10 ? series.name.slice(0, 10) + '...' : series.name}
                             </text>
 
                             {/* Background bar */}
@@ -386,7 +391,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                                 y={rowY}
                                 width={chartWidth}
                                 height={rowHeight}
-                                fill="#374151"
+                                fill="#1e293b"
                                 rx={2}
                             />
 
@@ -394,31 +399,37 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                             {series.segments.map((segment, segIdx) => {
                                 const x1 = timeToX(segment.startTime);
                                 const x2 = timeToX(segment.endTime);
-                                const segmentWidth = Math.max(x2 - x1, 2); // Minimum 2px
+                                const segmentWidth = Math.max(x2 - x1, 2);
 
                                 return (
                                     <g key={segIdx}>
                                         <rect
                                             x={x1}
-                                            y={rowY + 1}
+                                            y={rowY}
                                             width={segmentWidth}
-                                            height={rowHeight - 2}
+                                            height={rowHeight}
                                             fill={segment.color}
+                                            fillOpacity={fillOpacity}
+                                            stroke={lineWidth > 0 ? segment.color : 'none'}
+                                            strokeWidth={lineWidth}
                                             rx={2}
-                                            className="cursor-pointer hover:brightness-110 transition-all"
+                                            className="cursor-pointer transition-opacity hover:opacity-100"
+                                            style={{ opacity: fillOpacity }}
                                             onMouseEnter={(e) => handleSegmentHover(e, segment, series.name)}
                                             onMouseMove={(e) => handleSegmentHover(e, segment, series.name)}
                                         />
                                         {/* Value text - only if segment is wide enough */}
-                                        {showValue && segmentWidth > 30 && (
+                                        {showValue && segmentWidth > 40 && (
                                             <text
                                                 x={x1 + segmentWidth / 2}
                                                 y={rowY + rowHeight / 2 + 4}
                                                 textAnchor="middle"
-                                                className="fill-white text-[10px] font-medium pointer-events-none"
-                                                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                                                className="fill-white text-xs font-medium pointer-events-none"
+                                                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}
                                             >
-                                                {segment.text.length > 8 ? segment.text.slice(0, 8) + '...' : segment.text}
+                                                {segment.text.length > Math.floor(segmentWidth / 8)
+                                                    ? segment.text.slice(0, Math.floor(segmentWidth / 8)) + '...'
+                                                    : segment.text}
                                             </text>
                                         )}
                                     </g>
@@ -428,27 +439,62 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                     );
                 })}
 
-                {/* Current time indicator (live mode) */}
-                {panel.liveMode && (
+                {/* Time axis at bottom */}
+                <g className="time-axis">
                     <line
-                        x1={leftPadding + chartWidth}
-                        y1={topPadding}
+                        x1={leftPadding}
+                        y1={topPadding + chartHeight + 4}
                         x2={leftPadding + chartWidth}
-                        y2={topPadding + seriesSegments.length * (rowHeight + 4)}
-                        stroke="#ef4444"
-                        strokeWidth={2}
-                        strokeDasharray="4 2"
+                        y2={topPadding + chartHeight + 4}
+                        stroke="#475569"
+                        strokeWidth={1}
                     />
-                )}
+                    {timeAxisTicks.map((tick, i) => (
+                        <g key={i}>
+                            <line
+                                x1={tick.x}
+                                y1={topPadding + chartHeight + 4}
+                                x2={tick.x}
+                                y2={topPadding + chartHeight + 8}
+                                stroke="#475569"
+                                strokeWidth={1}
+                            />
+                            <text
+                                x={tick.x}
+                                y={topPadding + chartHeight + 20}
+                                textAnchor="middle"
+                                className="fill-slate-400 text-[10px]"
+                            >
+                                {tick.label}
+                            </text>
+                        </g>
+                    ))}
+                </g>
             </svg>
+
+            {/* Legend at bottom */}
+            <div
+                className="absolute left-0 right-0 flex items-center justify-center gap-4 px-4"
+                style={{ bottom: 4, height: legendHeight }}
+            >
+                {legendItems.map((item, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                        <div
+                            className="w-3 h-3 rounded-sm"
+                            style={{ backgroundColor: item.color, opacity: fillOpacity }}
+                        />
+                        <span className="text-xs text-slate-400">{item.text}</span>
+                    </div>
+                ))}
+            </div>
 
             {/* Tooltip */}
             {tooltip.show && tooltip.segment && (
                 <div
                     className="absolute z-50 pointer-events-none bg-slate-900/95 border border-slate-600 rounded-lg shadow-xl px-3 py-2 text-xs"
                     style={{
-                        left: Math.min(tooltip.x, width - 180),
-                        top: Math.max(tooltip.y, 0),
+                        left: Math.min(Math.max(tooltip.x, 10), width - 180),
+                        top: Math.max(tooltip.y, 10),
                         minWidth: 160
                     }}
                 >
@@ -458,7 +504,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
                             <div
-                                className="w-3 h-3 rounded"
+                                className="w-3 h-3 rounded-sm"
                                 style={{ backgroundColor: tooltip.segment.color }}
                             />
                             <span className="text-white font-medium">{tooltip.segment.text}</span>
@@ -472,19 +518,6 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                     </div>
                 </div>
             )}
-
-            {/* Legend */}
-            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-3 py-0.5 text-xs pointer-events-none">
-                {mappings.map((mapping, i) => (
-                    <div key={i} className="flex items-center gap-1.5 bg-slate-900/70 px-1.5 rounded">
-                        <div
-                            className="w-3 h-3 rounded"
-                            style={{ backgroundColor: mapping.color }}
-                        />
-                        <span className="text-slate-400">{mapping.text}</span>
-                    </div>
-                ))}
-            </div>
         </div>
     );
 }

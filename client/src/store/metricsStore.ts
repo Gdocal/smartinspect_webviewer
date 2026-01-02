@@ -64,9 +64,10 @@ export interface PanelOptions {
 
     // State Timeline options
     stateMappings?: StateMapping[];  // Value-to-color/text mappings
-    rowHeight?: number;              // Height of each timeline row in pixels
+    rowHeight?: number;              // Row height as ratio (0-1), 1 = no gap between rows
     showValue?: boolean;             // Show value text in timeline segments
     mergeAdjacentStates?: boolean;   // Merge consecutive same-state segments
+    fillOpacity?: number;            // Fill opacity (0-1)
 
     // Common options
     unit?: string;       // ms, %, bytes, req/s, etc.
@@ -184,13 +185,14 @@ function createDefaultPanel(type: PanelType): Omit<MetricsPanel, 'id'> {
             decimals: 2,
             // State Timeline defaults
             stateMappings: type === 'statetimeline' ? [
-                { value: 'ok', text: 'OK', color: STATE_COLORS[0] },
-                { value: 'error', text: 'Error', color: STATE_COLORS[1] },
+                { value: 'up', text: 'Up', color: STATE_COLORS[0] },
+                { value: 'down', text: 'Down', color: STATE_COLORS[1] },
                 { value: 'warning', text: 'Warning', color: STATE_COLORS[2] },
             ] : undefined,
-            rowHeight: 24,
+            rowHeight: 0.9, // 0-1, ratio of row fill (1 = no gap)
             showValue: true,
             mergeAdjacentStates: true,
+            fillOpacity: 0.9,
         },
         timeRange: {
             mode: 'relative',

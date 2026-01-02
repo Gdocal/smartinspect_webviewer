@@ -517,16 +517,48 @@ function DisplayTab({ panel, onUpdate }: DisplayTabProps) {
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
-                            Row height (px)
+                            Row height (1 = no space, 0.5 = 50% space)
                         </label>
                         <input
-                            type="number"
-                            min="16"
-                            max="64"
-                            value={panel.options.rowHeight ?? 24}
-                            onChange={(e) => updateOption('rowHeight', parseInt(e.target.value))}
-                            className="w-full px-2 py-1.5 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200"
+                            type="range"
+                            min="0.3"
+                            max="1"
+                            step="0.05"
+                            value={panel.options.rowHeight ?? 0.9}
+                            onChange={(e) => updateOption('rowHeight', parseFloat(e.target.value))}
+                            className="w-full"
                         />
+                        <span className="text-xs text-slate-400">{((panel.options.rowHeight ?? 0.9) * 100).toFixed(0)}%</span>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                            Fill opacity
+                        </label>
+                        <input
+                            type="range"
+                            min="0.1"
+                            max="1"
+                            step="0.05"
+                            value={panel.options.fillOpacity ?? 0.9}
+                            onChange={(e) => updateOption('fillOpacity', parseFloat(e.target.value))}
+                            className="w-full"
+                        />
+                        <span className="text-xs text-slate-400">{((panel.options.fillOpacity ?? 0.9) * 100).toFixed(0)}%</span>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                            Line width
+                        </label>
+                        <input
+                            type="range"
+                            min="0"
+                            max="4"
+                            step="1"
+                            value={panel.options.lineWidth ?? 0}
+                            onChange={(e) => updateOption('lineWidth', parseInt(e.target.value))}
+                            className="w-full"
+                        />
+                        <span className="text-xs text-slate-400">{panel.options.lineWidth ?? 0}px</span>
                     </div>
 
                     {/* State Mappings */}
