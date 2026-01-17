@@ -4,7 +4,7 @@
 
 import { useMemo } from 'react';
 import { MetricsPanel, SERIES_COLORS } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useWatchesForQueries } from '../../../store/logStore';
 
 interface BarPanelProps {
     panel: MetricsPanel;
@@ -13,12 +13,13 @@ interface BarPanelProps {
 }
 
 export function BarPanel({ panel, width, height }: BarPanelProps) {
-    const { watches } = useLogStore();
+    // Use selector - only re-renders when the specific watches in queries change
+    const watchesMap = useWatchesForQueries(panel.queries);
 
     // Get values for all queries
     const bars = useMemo(() => {
         return panel.queries.map((query, i) => {
-            const watch = watches[query.watchName];
+            const watch = watchesMap[query.watchName];
             const value = watch ? parseFloat(String(watch.value)) : null;
 
             return {
@@ -27,7 +28,7 @@ export function BarPanel({ panel, width, height }: BarPanelProps) {
                 color: query.color || SERIES_COLORS[i % SERIES_COLORS.length]
             };
         }).filter(b => b.label);
-    }, [panel.queries, watches]);
+    }, [panel.queries, watchesMap]);
 
     // Sort if needed
     const sortedBars = useMemo(() => {

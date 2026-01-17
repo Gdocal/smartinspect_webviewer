@@ -620,26 +620,92 @@ class RingBuffer {
  */
 class WatchStore {
     constructor() {
-        // Current values
-        this.values = new Map();   // name -> { value, timestamp, session, watchType, group }
+        // Current values - keyed by seriesKey (name or name{labels})
+        this.values = new Map();   // seriesKey -> { value, timestamp, session, watchType, labels, metricName }
 
-        // Tiered history with automatic rollup
-        this.raw = new Map();      // name -> RingBuffer(100) - last 100 raw points
-        this.secondly = new Map(); // name -> RingBuffer(3600) - 1 hour of 1s averages
-        this.minutely = new Map(); // name -> RingBuffer(1440) - 24h of 1m averages
-        this.hourly = new Map();   // name -> RingBuffer(168) - 7 days of 1h averages
+        // Tiered history with automatic rollup - keyed by seriesKey
+        this.raw = new Map();      // seriesKey -> RingBuffer(6000) - last 30s at 200/sec
+        this.secondly = new Map(); // seriesKey -> RingBuffer(3600) - 1 hour of 1s averages
+        this.minutely = new Map(); // seriesKey -> RingBuffer(1440) - 24h of 1m averages
+        this.hourly = new Map();   // seriesKey -> RingBuffer(168) - 7 days of 1h averages
 
-        // Aggregation state per watch
-        this.aggregators = new Map(); // name -> { secondBucket, minuteBucket, hourBucket, currentSecond, currentMinute, currentHour }
+        // Aggregation state per series
+        this.aggregators = new Map(); // seriesKey -> { secondBucket, minuteBucket, hourBucket, ... }
 
-        // Non-numeric value counters
-        this.nonNumericCounts = new Map(); // name -> Map<value, count>
+        // Non-numeric value counters per series
+        this.nonNumericCounts = new Map(); // seriesKey -> Map<value, count>
+
+        // Label index for fast lookups and variable dropdowns
+        // Structure: Map<labelName, Set<labelValue>>
+        // Example: { "instance": Set(["BTC_trade", "ETH_trade"]), "env": Set(["prod", "dev"]) }
+        this.labelIndex = new Map();
+
+        // Metric name index - which series belong to each metric
+        // Structure: Map<metricName, Set<seriesKey>>
+        this.metricIndex = new Map();
 
         // Tier sizes
         this.RAW_SIZE = 6000;       // 30 sec at 200/sec (~6MB per 100 watches)
         this.SECONDLY_SIZE = 3600;  // 1 hour of 1s averages
         this.MINUTELY_SIZE = 1440;  // 24 hours of 1m averages
         this.HOURLY_SIZE = 168;     // 7 days of 1h averages
+    }
+
+    /**
+     * Build a series key from metric name and labels
+     * Format: metricName or metricName{label1="value1",label2="value2"}
+     */
+    _buildSeriesKey(metricName, labels = {}) {
+        const labelKeys = Object.keys(labels).filter(k => labels[k]).sort();
+        if (labelKeys.length === 0) {
+            return metricName;
+        }
+        const labelStr = labelKeys.map(k => `${k}="${labels[k]}"`).join(',');
+        return `${metricName}{${labelStr}}`;
+    }
+
+    /**
+     * Parse a series key back to metric name and labels
+     */
+    _parseSeriesKey(seriesKey) {
+        const match = seriesKey.match(/^([^{]+)(?:\{(.+)\})?$/);
+        if (!match) {
+            return { metricName: seriesKey, labels: {} };
+        }
+        const metricName = match[1];
+        const labels = {};
+        if (match[2]) {
+            // Parse label1="value1",label2="value2"
+            const labelPairs = match[2].match(/([^=,]+)="([^"]*)"/g) || [];
+            for (const pair of labelPairs) {
+                const [, key, value] = pair.match(/([^=]+)="([^"]*)"/) || [];
+                if (key) labels[key] = value;
+            }
+        }
+        return { metricName, labels };
+    }
+
+    /**
+     * Update label index when a series is added
+     */
+    _updateLabelIndex(labels) {
+        for (const [key, value] of Object.entries(labels)) {
+            if (!value) continue;
+            if (!this.labelIndex.has(key)) {
+                this.labelIndex.set(key, new Set());
+            }
+            this.labelIndex.get(key).add(value);
+        }
+    }
+
+    /**
+     * Update metric index when a series is added
+     */
+    _updateMetricIndex(metricName, seriesKey) {
+        if (!this.metricIndex.has(metricName)) {
+            this.metricIndex.set(metricName, new Set());
+        }
+        this.metricIndex.get(metricName).add(seriesKey);
     }
 
     /**
@@ -700,24 +766,75 @@ class WatchStore {
     }
 
     /**
-     * Update a watch value
+     * Update a watch value with optional labels
+     * @param {string} metricName - The metric name (e.g., "strategy_exitReason")
+     * @param {*} value - The metric value
+     * @param {Date|string} timestamp - Timestamp
+     * @param {string} session - Session/app name
+     * @param {number} watchType - Watch type code
+     * @param {string} group - Legacy group field (converted to instance label)
+     * @param {Object} labels - Native labels from v3 protocol or passed directly
      */
-    set(name, value, timestamp, session = null, watchType = null, group = '') {
-        const entry = { value, timestamp, session, watchType, group };
-        this.values.set(name, entry);
+    set(metricName, value, timestamp, session = null, watchType = null, group = '', labels = {}) {
+        // Start with provided labels (native v3 labels take priority)
+        const effectiveLabels = { ...labels };
+
+        // Parse group field for backwards compatibility with v2 protocol
+        // v3 protocol sends labels directly, but v2 used group field for:
+        // 1. Simple string: "BTC_trade" -> { instance: "BTC_trade" }
+        // 2. JSON labels: '{"instance":"BTC","env":"prod"}' -> { instance: "BTC", env: "prod" }
+        // Only parse group if no native labels were provided
+        if (group && Object.keys(effectiveLabels).length === 0) {
+            if (group.startsWith('{') && group.endsWith('}')) {
+                // JSON labels format from legacy WatchWithLabels
+                try {
+                    const parsedLabels = JSON.parse(group);
+                    Object.assign(effectiveLabels, parsedLabels);
+                } catch (e) {
+                    // Invalid JSON, treat as simple string
+                    if (!effectiveLabels.instance) {
+                        effectiveLabels.instance = group;
+                    }
+                }
+            } else if (!effectiveLabels.instance) {
+                // Simple string, use as instance label
+                effectiveLabels.instance = group;
+            }
+        }
+
+        // Build series key from metric name and labels
+        const seriesKey = this._buildSeriesKey(metricName, effectiveLabels);
+
+        // Store entry with full metadata
+        const entry = {
+            value,
+            timestamp,
+            session,
+            watchType,
+            labels: effectiveLabels,
+            metricName,
+            seriesKey,
+            // Legacy field for backwards compatibility
+            group: effectiveLabels.instance || ''
+        };
+        this.values.set(seriesKey, entry);
+
+        // Update indexes
+        this._updateLabelIndex(effectiveLabels);
+        this._updateMetricIndex(metricName, seriesKey);
 
         const numValue = parseFloat(value);
         const ts = timestamp instanceof Date ? timestamp : new Date(timestamp);
 
         if (isNaN(numValue)) {
             // Non-numeric: count occurrences
-            this._setNonNumeric(name, value, ts);
+            this._setNonNumeric(seriesKey, value, ts);
         } else {
             // Add to raw ring buffer
-            this._getRaw(name).push({ value: numValue, timestamp: ts });
+            this._getRaw(seriesKey).push({ value: numValue, timestamp: ts });
 
             // Aggregate into time buckets
-            this._aggregateToSecond(name, numValue, ts);
+            this._aggregateToSecond(seriesKey, numValue, ts);
         }
 
         return entry;
@@ -726,17 +843,17 @@ class WatchStore {
     /**
      * Track non-numeric values by counting occurrences
      */
-    _setNonNumeric(name, value, timestamp) {
-        if (!this.nonNumericCounts.has(name)) {
-            this.nonNumericCounts.set(name, new Map());
+    _setNonNumeric(seriesKey, value, timestamp) {
+        if (!this.nonNumericCounts.has(seriesKey)) {
+            this.nonNumericCounts.set(seriesKey, new Map());
         }
-        const counts = this.nonNumericCounts.get(name);
+        const counts = this.nonNumericCounts.get(seriesKey);
         const strValue = String(value);
         counts.set(strValue, (counts.get(strValue) || 0) + 1);
 
         // Also track as count in raw (for charting)
         const currentCount = counts.get(strValue);
-        this._getRaw(name).push({ value: currentCount, timestamp, label: strValue });
+        this._getRaw(seriesKey).push({ value: currentCount, timestamp, label: strValue });
     }
 
     /**
@@ -845,10 +962,21 @@ class WatchStore {
     }
 
     /**
-     * Get current value for a watch
+     * Get current value for a series by its key
+     * @param {string} seriesKey - Full series key (e.g., "metric{instance="foo"}")
      */
-    get(name) {
-        return this.values.get(name);
+    get(seriesKey) {
+        return this.values.get(seriesKey);
+    }
+
+    /**
+     * Get current value by metric name and labels
+     * @param {string} metricName - Metric name
+     * @param {Object} labels - Labels to match
+     */
+    getByLabels(metricName, labels = {}) {
+        const seriesKey = this._buildSeriesKey(metricName, labels);
+        return this.values.get(seriesKey);
     }
 
     /**
@@ -856,21 +984,106 @@ class WatchStore {
      */
     getAll() {
         const result = {};
-        for (const [name, entry] of this.values) {
-            result[name] = entry;
+        for (const [seriesKey, entry] of this.values) {
+            result[seriesKey] = entry;
         }
         return result;
     }
 
     /**
-     * Get history for a watch with resolution selection
-     * @param {string} name - Watch name
+     * Query series by metric name and optional label matchers
+     * Supports exact match and regex patterns
+     * @param {string} metricName - Metric name (or pattern with *)
+     * @param {Object} labelMatchers - Label filters { labelName: value or /regex/ }
+     * @returns {Array<{seriesKey, entry}>} Matching series
+     */
+    query(metricName, labelMatchers = {}) {
+        const results = [];
+
+        // If metric name contains *, treat as pattern
+        const isPattern = metricName.includes('*');
+        const metricRegex = isPattern
+            ? new RegExp('^' + metricName.replace(/\*/g, '.*') + '$')
+            : null;
+
+        // Get candidate series keys
+        let candidateKeys;
+        if (isPattern) {
+            // Check all metrics that match pattern
+            candidateKeys = new Set();
+            for (const [metric, seriesKeys] of this.metricIndex) {
+                if (metricRegex.test(metric)) {
+                    for (const key of seriesKeys) {
+                        candidateKeys.add(key);
+                    }
+                }
+            }
+        } else {
+            // Get series for exact metric name
+            candidateKeys = this.metricIndex.get(metricName) || new Set();
+        }
+
+        // Filter by label matchers
+        for (const seriesKey of candidateKeys) {
+            const entry = this.values.get(seriesKey);
+            if (!entry) continue;
+
+            let matches = true;
+            for (const [labelName, matcher] of Object.entries(labelMatchers)) {
+                const labelValue = entry.labels[labelName] || '';
+
+                if (matcher instanceof RegExp) {
+                    if (!matcher.test(labelValue)) {
+                        matches = false;
+                        break;
+                    }
+                } else if (labelValue !== matcher) {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches) {
+                results.push({ seriesKey, entry });
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Get all available label names
+     */
+    getLabelNames() {
+        return Array.from(this.labelIndex.keys());
+    }
+
+    /**
+     * Get all values for a specific label (for variable dropdowns)
+     * @param {string} labelName - Label name (e.g., "instance")
+     * @returns {string[]} Array of unique values
+     */
+    getLabelValues(labelName) {
+        const values = this.labelIndex.get(labelName);
+        return values ? Array.from(values).sort() : [];
+    }
+
+    /**
+     * Get all unique metric names
+     */
+    getMetricNames() {
+        return Array.from(this.metricIndex.keys()).sort();
+    }
+
+    /**
+     * Get history for a series with resolution selection
+     * @param {string} seriesKey - Series key (e.g., "metric" or "metric{instance="foo"}")
      * @param {Object} options - Query options
      * @param {number} options.from - Start timestamp (ms)
      * @param {number} options.to - End timestamp (ms)
      * @param {string} options.resolution - 'raw', '1s', '1m', '1h', or 'auto'
      */
-    getHistory(name, options = {}) {
+    getHistory(seriesKey, options = {}) {
         const { from, to, resolution = 'auto' } = options;
 
         // Determine resolution
@@ -893,19 +1106,19 @@ class WatchStore {
         let data;
         switch (tier) {
             case 'raw':
-                data = this.raw.has(name) ? this._getRaw(name).getAll() : [];
+                data = this.raw.has(seriesKey) ? this._getRaw(seriesKey).getAll() : [];
                 break;
             case '1s':
-                data = this.secondly.has(name) ? this._getSecondly(name).getAll() : [];
+                data = this.secondly.has(seriesKey) ? this._getSecondly(seriesKey).getAll() : [];
                 break;
             case '1m':
-                data = this.minutely.has(name) ? this._getMinutely(name).getAll() : [];
+                data = this.minutely.has(seriesKey) ? this._getMinutely(seriesKey).getAll() : [];
                 break;
             case '1h':
-                data = this.hourly.has(name) ? this._getHourly(name).getAll() : [];
+                data = this.hourly.has(seriesKey) ? this._getHourly(seriesKey).getAll() : [];
                 break;
             default:
-                data = this.raw.has(name) ? this._getRaw(name).getAll() : [];
+                data = this.raw.has(seriesKey) ? this._getRaw(seriesKey).getAll() : [];
         }
 
         // Filter by time range if specified
@@ -918,36 +1131,64 @@ class WatchStore {
             });
         }
 
+        // Get series metadata
+        const entry = this.values.get(seriesKey);
+        const { metricName, labels } = entry || this._parseSeriesKey(seriesKey);
+
         return {
             data,
             resolution: tier,
-            pointCount: data.length
+            pointCount: data.length,
+            seriesKey,
+            metricName,
+            labels
         };
     }
 
     /**
-     * Get all tiers' stats for a watch (for debugging)
+     * Get history by metric name and labels (convenience method)
      */
-    getTierStats(name) {
+    getHistoryByLabels(metricName, labels = {}, options = {}) {
+        const seriesKey = this._buildSeriesKey(metricName, labels);
+        return this.getHistory(seriesKey, options);
+    }
+
+    /**
+     * Get all tiers' stats for a series (for debugging)
+     */
+    getTierStats(seriesKey) {
         return {
-            raw: this.raw.has(name) ? this._getRaw(name).getSize() : 0,
-            secondly: this.secondly.has(name) ? this._getSecondly(name).getSize() : 0,
-            minutely: this.minutely.has(name) ? this._getMinutely(name).getSize() : 0,
-            hourly: this.hourly.has(name) ? this._getHourly(name).getSize() : 0
+            raw: this.raw.has(seriesKey) ? this._getRaw(seriesKey).getSize() : 0,
+            secondly: this.secondly.has(seriesKey) ? this._getSecondly(seriesKey).getSize() : 0,
+            minutely: this.minutely.has(seriesKey) ? this._getMinutely(seriesKey).getSize() : 0,
+            hourly: this.hourly.has(seriesKey) ? this._getHourly(seriesKey).getSize() : 0
         };
     }
 
     /**
-     * Clear a specific watch
+     * Clear a specific series
      */
-    delete(name) {
-        this.values.delete(name);
-        this.raw.delete(name);
-        this.secondly.delete(name);
-        this.minutely.delete(name);
-        this.hourly.delete(name);
-        this.aggregators.delete(name);
-        this.nonNumericCounts.delete(name);
+    delete(seriesKey) {
+        const entry = this.values.get(seriesKey);
+        if (entry) {
+            // Remove from metric index
+            const metricSeries = this.metricIndex.get(entry.metricName);
+            if (metricSeries) {
+                metricSeries.delete(seriesKey);
+                if (metricSeries.size === 0) {
+                    this.metricIndex.delete(entry.metricName);
+                }
+            }
+            // Note: We don't remove from labelIndex as other series might use same label values
+        }
+
+        this.values.delete(seriesKey);
+        this.raw.delete(seriesKey);
+        this.secondly.delete(seriesKey);
+        this.minutely.delete(seriesKey);
+        this.hourly.delete(seriesKey);
+        this.aggregators.delete(seriesKey);
+        this.nonNumericCounts.delete(seriesKey);
     }
 
     /**
@@ -961,20 +1202,22 @@ class WatchStore {
         this.hourly.clear();
         this.aggregators.clear();
         this.nonNumericCounts.clear();
+        this.labelIndex.clear();
+        this.metricIndex.clear();
     }
 
     /**
      * Clear history only (keep current values)
      */
-    clearHistory(name = null) {
-        if (name) {
-            // Clear history for specific watch
-            if (this.raw.has(name)) this._getRaw(name).clear();
-            if (this.secondly.has(name)) this._getSecondly(name).clear();
-            if (this.minutely.has(name)) this._getMinutely(name).clear();
-            if (this.hourly.has(name)) this._getHourly(name).clear();
-            if (this.aggregators.has(name)) {
-                const agg = this.aggregators.get(name);
+    clearHistory(seriesKey = null) {
+        if (seriesKey) {
+            // Clear history for specific series
+            if (this.raw.has(seriesKey)) this._getRaw(seriesKey).clear();
+            if (this.secondly.has(seriesKey)) this._getSecondly(seriesKey).clear();
+            if (this.minutely.has(seriesKey)) this._getMinutely(seriesKey).clear();
+            if (this.hourly.has(seriesKey)) this._getHourly(seriesKey).clear();
+            if (this.aggregators.has(seriesKey)) {
+                const agg = this.aggregators.get(seriesKey);
                 agg.currentSecond = null;
                 agg.currentMinute = null;
                 agg.currentHour = null;
@@ -984,8 +1227,8 @@ class WatchStore {
             }
         } else {
             // Clear all history
-            for (const name of this.raw.keys()) {
-                this.clearHistory(name);
+            for (const key of this.raw.keys()) {
+                this.clearHistory(key);
             }
         }
     }
@@ -996,11 +1239,11 @@ class WatchStore {
     getHistoryStats() {
         let totalPoints = 0;
         const tiers = { raw: 0, secondly: 0, minutely: 0, hourly: 0 };
-        const watches = {};
+        const series = {};
 
-        for (const [name] of this.values) {
-            const stats = this.getTierStats(name);
-            watches[name] = stats;
+        for (const [seriesKey] of this.values) {
+            const stats = this.getTierStats(seriesKey);
+            series[seriesKey] = stats;
             tiers.raw += stats.raw;
             tiers.secondly += stats.secondly;
             tiers.minutely += stats.minutely;
@@ -1017,9 +1260,11 @@ class WatchStore {
 
         return {
             totalPoints,
-            watchCount: this.values.size,
+            seriesCount: this.values.size,
+            metricCount: this.metricIndex.size,
+            labelNames: this.getLabelNames(),
             tiers,
-            watches,
+            series,
             estimatedMemoryMB: estimatedMemoryBytes / (1024 * 1024)
         };
     }

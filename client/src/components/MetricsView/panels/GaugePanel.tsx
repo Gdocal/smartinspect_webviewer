@@ -4,7 +4,7 @@
 
 import { useMemo } from 'react';
 import { MetricsPanel, SERIES_COLORS } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useWatch } from '../../../store/logStore';
 
 interface GaugePanelProps {
     panel: MetricsPanel;
@@ -13,10 +13,9 @@ interface GaugePanelProps {
 }
 
 export function GaugePanel({ panel, width, height }: GaugePanelProps) {
-    const { watches } = useLogStore();
-
     const query = panel.queries[0];
-    const watch = query ? watches[query.watchName] : null;
+    // Use selector - only re-renders when this specific watch changes
+    const watch = useWatch(query?.watchName ?? '');
 
     const min = panel.options.min ?? 0;
     const max = panel.options.max ?? 100;

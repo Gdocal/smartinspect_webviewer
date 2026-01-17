@@ -4,22 +4,25 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { useLogStore } from '../../store/logStore';
-import { useMetricsStore, createDefaultPanel, PanelType } from '../../store/metricsStore';
+import { useLogStore, useHasWatches } from '../../store/logStore';
+import { useMetricsStore, createDefaultPanel, PanelType, DashboardVariable } from '../../store/metricsStore';
 import { DashboardTabs } from './DashboardTabs';
 import { DashboardToolbar } from './DashboardToolbar';
+import { DashboardVariables } from './DashboardVariables';
 import { PanelGrid } from './PanelGrid';
 import { PanelSettingsDrawer } from './PanelSettingsDrawer';
 import { Panel } from './Panel';
 import { GridTest } from './GridTest';
+import { useLabelNames } from './hooks/useWatchHistory';
 
 export function MetricsView() {
-    const { currentRoom, watches } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
     const {
         getRoomDashboards,
         getActiveDashboard,
         createDashboard,
         addPanel,
+        addVariable,
         fullscreenPanelId,
         setFullscreenPanel
     } = useMetricsStore();
@@ -27,6 +30,7 @@ export function MetricsView() {
     const dashboards = getRoomDashboards(currentRoom);
     const activeDashboard = getActiveDashboard(currentRoom);
     const [showPanelPicker, setShowPanelPicker] = useState(false);
+    const [showVariablePicker, setShowVariablePicker] = useState(false);
     const [settingsPanelId, setSettingsPanelId] = useState<string | null>(null);
     const [showGridTest, setShowGridTest] = useState(false);
 
@@ -48,8 +52,15 @@ export function MetricsView() {
         setShowPanelPicker(false);
     }, [currentRoom, activeDashboard, addPanel]);
 
-    // Check if we have watches
-    const hasWatches = Object.keys(watches).length > 0;
+    // Add variable to current dashboard
+    const handleAddVariable = useCallback((variable: DashboardVariable) => {
+        if (!activeDashboard) return;
+        addVariable(currentRoom, activeDashboard.id, variable);
+        setShowVariablePicker(false);
+    }, [currentRoom, activeDashboard, addVariable]);
+
+    // Check if we have watches - uses selector for minimal re-renders
+    const hasWatches = useHasWatches();
 
     // Keyboard shortcuts for fullscreen and grid test
     useEffect(() => {
@@ -208,6 +219,7 @@ export function MetricsView() {
         <div className="h-full flex flex-col bg-slate-50 dark:bg-slate-900">
             <DashboardTabs />
             <DashboardToolbar onAddPanel={() => setShowPanelPicker(true)} />
+            <DashboardVariables onAddVariable={() => setShowVariablePicker(true)} />
 
             {/* Panel grid with react-grid-layout */}
             <div className="flex-1 overflow-hidden">
@@ -321,6 +333,192 @@ export function MetricsView() {
                     </div>
                 </div>
             )}
+
+            {/* Variable picker modal */}
+            {showVariablePicker && (
+                <VariablePickerModal
+                    onAdd={handleAddVariable}
+                    onClose={() => setShowVariablePicker(false)}
+                />
+            )}
+        </div>
+    );
+}
+
+// Variable picker modal
+
+interface VariablePickerModalProps {
+    onAdd: (variable: DashboardVariable) => void;
+    onClose: () => void;
+}
+
+function VariablePickerModal({ onAdd, onClose }: VariablePickerModalProps) {
+    const { labels: availableLabels } = useLabelNames();
+    const [name, setName] = useState('');
+    const [label, setLabel] = useState('');
+    const [type, setType] = useState<'label' | 'custom'>('label');
+    const [labelName, setLabelName] = useState('');
+    const [includeAll, setIncludeAll] = useState(true);
+    const [multi, setMulti] = useState(false);
+
+    // Auto-fill name based on label selection
+    const handleLabelChange = (labelVal: string) => {
+        setLabelName(labelVal);
+        if (!name) setName(labelVal);
+        if (!label) setLabel(labelVal.charAt(0).toUpperCase() + labelVal.slice(1));
+    };
+
+    const handleSubmit = () => {
+        if (!name || (type === 'label' && !labelName)) return;
+        onAdd({
+            name,
+            label: label || name,
+            type,
+            labelName: type === 'label' ? labelName : undefined,
+            includeAll,
+            multi,
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200">
+                        Add Dashboard Variable
+                    </h3>
+                    <button
+                        onClick={onClose}
+                        className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
+                    >
+                        <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div className="space-y-4">
+                    {/* Variable type */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Variable Type
+                        </label>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setType('label')}
+                                className={`flex-1 py-2 px-3 rounded border text-sm font-medium transition-colors ${
+                                    type === 'label'
+                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400'
+                                }`}
+                            >
+                                Label Values
+                            </button>
+                            <button
+                                onClick={() => setType('custom')}
+                                className={`flex-1 py-2 px-3 rounded border text-sm font-medium transition-colors ${
+                                    type === 'custom'
+                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                        : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400'
+                                }`}
+                            >
+                                Custom
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Label selection (for label type) */}
+                    {type === 'label' && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                Label Name
+                            </label>
+                            <select
+                                value={labelName}
+                                onChange={(e) => handleLabelChange(e.target.value)}
+                                className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-slate-200"
+                            >
+                                <option value="">Select a label...</option>
+                                {availableLabels.map(l => (
+                                    <option key={l} value={l}>{l}</option>
+                                ))}
+                            </select>
+                            <p className="mt-1 text-xs text-slate-500">
+                                Values will be populated from metrics with this label
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Variable name */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Variable Name
+                        </label>
+                        <input
+                            type="text"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="e.g., instance"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-slate-200"
+                        />
+                        <p className="mt-1 text-xs text-slate-500">
+                            Use as $name in queries
+                        </p>
+                    </div>
+
+                    {/* Display label */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Display Label
+                        </label>
+                        <input
+                            type="text"
+                            value={label}
+                            onChange={(e) => setLabel(e.target.value)}
+                            placeholder="e.g., Instance"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-slate-200"
+                        />
+                    </div>
+
+                    {/* Options */}
+                    <div className="flex gap-4">
+                        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                            <input
+                                type="checkbox"
+                                checked={includeAll}
+                                onChange={(e) => setIncludeAll(e.target.checked)}
+                                className="rounded border-slate-300 dark:border-slate-600"
+                            />
+                            Include "All" option
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                            <input
+                                type="checkbox"
+                                checked={multi}
+                                onChange={(e) => setMulti(e.target.checked)}
+                                className="rounded border-slate-300 dark:border-slate-600"
+                            />
+                            Multi-select
+                        </label>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 mt-6">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSubmit}
+                        disabled={!name || (type === 'label' && !labelName)}
+                        className="px-4 py-2 text-sm font-medium text-white bg-emerald-500 hover:bg-emerald-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Add Variable
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

@@ -419,6 +419,7 @@ class PacketParser {
 
     /**
      * Parse Watch packet
+     * Format v3 (with labels): [nameLen(4)] [valueLen(4)] [watchType(4)] [timestamp(8)] [groupLen(4)] [labelsLen(4)] [name] [value] [group] [labelsJson]
      * Format v2 (with group): [nameLen(4)] [valueLen(4)] [watchType(4)] [timestamp(8)] [groupLen(4)] [name] [value] [group]
      * Format v1 (legacy): [nameLen(4)] [valueLen(4)] [watchType(4)] [timestamp(8)] [name] [value]
      */
@@ -432,25 +433,43 @@ class PacketParser {
         const watchType = data.readInt32LE(offset); offset += 4;
         const timestamp = data.readDoubleLE(offset); offset += 8;
 
-        // v1 header size = 20, v2 header size = 24 (adds groupLen)
+        // v1 header size = 20, v2 header size = 24 (adds groupLen), v3 header size = 28 (adds labelsLen)
         const v1HeaderSize = 20;
         const v2HeaderSize = 24;
+        const v3HeaderSize = 28;
 
-        // Detect v2 format: check if there's a groupLen field and packet size matches v2
         let group = '';
         let groupLen = 0;
+        let labels = null;
+        let labelsLen = 0;
 
-        // Check if we have v2 format by looking at packet size
-        const v2ExpectedSize = v2HeaderSize + nameLen + valueLen;
-        if (data.length >= v2ExpectedSize) {
-            // Read potential groupLen
+        // Try to detect format version by checking packet size and field values
+        // Read potential groupLen at offset 20
+        if (data.length >= v2HeaderSize) {
             groupLen = data.readInt32LE(offset);
-            // Validate: v2 format if total size matches
-            const v2TotalExpected = v2HeaderSize + nameLen + valueLen + groupLen;
-            if (data.length >= v2TotalExpected && groupLen >= 0 && groupLen < 1000) {
-                offset += 4; // skip groupLen, it's v2 format
+
+            // Check for v3 format (has labelsLen after groupLen)
+            if (data.length >= v3HeaderSize && groupLen >= 0 && groupLen < 1000) {
+                const potentialLabelsLen = data.readInt32LE(offset + 4);
+                const v3TotalExpected = v3HeaderSize + nameLen + valueLen + groupLen + potentialLabelsLen;
+
+                if (data.length >= v3TotalExpected && potentialLabelsLen >= 0 && potentialLabelsLen < 65536) {
+                    // v3 format with labels
+                    offset += 4; // skip groupLen
+                    labelsLen = potentialLabelsLen;
+                    offset += 4; // skip labelsLen
+                } else {
+                    // v2 format (group but no labels)
+                    const v2TotalExpected = v2HeaderSize + nameLen + valueLen + groupLen;
+                    if (data.length >= v2TotalExpected && groupLen >= 0 && groupLen < 1000) {
+                        offset += 4; // skip groupLen
+                    } else {
+                        // v1 format
+                        groupLen = 0;
+                    }
+                }
             } else {
-                // It's v1 format, no groupLen field
+                // v1 format
                 groupLen = 0;
             }
         }
@@ -463,9 +482,21 @@ class PacketParser {
 
         if (groupLen > 0) {
             group = data.slice(offset, offset + groupLen).toString('utf8');
+            offset += groupLen;
         }
 
-        return {
+        // Parse labels JSON (v3)
+        if (labelsLen > 0) {
+            try {
+                const labelsJson = data.slice(offset, offset + labelsLen).toString('utf8');
+                labels = JSON.parse(labelsJson);
+            } catch (err) {
+                // Invalid JSON, ignore labels
+                labels = null;
+            }
+        }
+
+        const result = {
             packetType: PacketType.Watch,
             type: 'watch',
             name,
@@ -474,6 +505,13 @@ class PacketParser {
             timestamp: timestampToDate(timestamp),
             group
         };
+
+        // Only add labels if present (v3)
+        if (labels && Object.keys(labels).length > 0) {
+            result.labels = labels;
+        }
+
+        return result;
     }
 
     /**

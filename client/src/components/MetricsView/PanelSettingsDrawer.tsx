@@ -2,8 +2,8 @@
  * PanelSettingsDrawer - Right-side drawer for panel configuration
  */
 
-import { useState, useCallback, useMemo } from 'react';
-import { useLogStore } from '../../store/logStore';
+import { useState, useCallback } from 'react';
+import { useLogStore, useWatchNames } from '../../store/logStore';
 import { useMetricsStore, MetricsPanel, PanelQuery, Threshold, SERIES_COLORS, StateMapping, STATE_COLORS } from '../../store/metricsStore';
 import { getAvailableFunctions, validateExpression } from './hooks/useTransformEngine';
 import { SearchableSelect } from './SearchableSelect';
@@ -17,15 +17,14 @@ interface PanelSettingsDrawerProps {
 type TabId = 'queries' | 'display' | 'thresholds';
 
 export function PanelSettingsDrawer({ panelId, dashboardId, onClose }: PanelSettingsDrawerProps) {
-    const { currentRoom, watches } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
+    // Use selector - only re-renders when watches are added/removed
+    const watchNames = useWatchNames();
     const { getDashboard, updatePanel } = useMetricsStore();
     const [activeTab, setActiveTab] = useState<TabId>('queries');
 
     const dashboard = getDashboard(currentRoom, dashboardId);
     const panel = panelId ? dashboard?.panels.find(p => p.id === panelId) : null;
-
-    // All hooks must be called before any early returns
-    const watchNames = useMemo(() => Object.keys(watches), [watches]);
 
     // Update panel helper
     const update = useCallback((updates: Partial<MetricsPanel>) => {

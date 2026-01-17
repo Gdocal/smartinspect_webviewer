@@ -8,7 +8,7 @@ import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
 import './uplot-dark.css';
 import { MetricsPanel, useCursorSync } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useLogStore, useWatchesForQueries } from '../../../store/logStore';
 import { evaluateExpression, TransformContext } from '../hooks/useTransformEngine';
 import { decimateSeriesData } from '../utils/decimation';
 
@@ -48,7 +48,9 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
     const containerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<uPlot | null>(null);
     const tooltipRef = useRef<HTMLDivElement>(null);
-    const { watches, currentRoom } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
+    // Use selector - only re-renders when specific watches in queries change
+    const watchesMap = useWatchesForQueries(panel.queries);
 
     // Cursor sync - emit cursor time to shared store for cross-panel sync
     const { setCursorTime, clearCursor } = useCursorSync();
@@ -170,7 +172,7 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
             const watchName = query.watchName;
             if (!watchName) return;
 
-            const watch = watches[watchName];
+            const watch = watchesMap[watchName];
             if (!watch) return;
 
             const watchTime = new Date(watch.timestamp).getTime();
@@ -199,7 +201,7 @@ export function TimeSeriesPanel({ panel, width, height }: TimeSeriesPanelProps) 
                 });
             }
         });
-    }, [panel.liveMode, panel.queries, watches]); // React to watches changes directly
+    }, [panel.liveMode, panel.queries, watchesMap]); // React to watchesMap changes
 
     // Build uPlot options with Grafana-like dark theme
     const options = useMemo((): uPlot.Options => {

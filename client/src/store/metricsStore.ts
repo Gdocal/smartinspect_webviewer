@@ -23,10 +23,13 @@ export interface Threshold {
 
 export interface PanelQuery {
     id: string;
-    watchName: string;           // Watch name or pattern
+    watchName: string;           // Watch name or pattern (can be metric name or seriesKey)
     alias?: string;              // Display name override
     color?: string;              // Series color
     expression?: string;         // Transform expression: "rate($value)", "$value / 1000"
+    // Label filtering (Prometheus-style)
+    labelFilters?: Record<string, string>;  // Filter by labels: { instance: "BTC_trade" }
+    useVariables?: string[];     // Variable names to apply: ["instance"] - will use dashboard variable values
 }
 
 export type PanelType = 'timeseries' | 'stat' | 'gauge' | 'bar' | 'table' | 'statetimeline';
@@ -93,12 +96,25 @@ export interface GridLayoutItem {
     h: number;        // Height in rows
 }
 
+// Dashboard variable definition (Grafana-style)
+export interface DashboardVariable {
+    name: string;              // Variable name (e.g., "instance")
+    label?: string;            // Display label (e.g., "Instance")
+    type: 'label' | 'custom';  // 'label' = from metric labels, 'custom' = manually defined
+    labelName?: string;        // For type='label': the label name to query
+    options?: string[];        // For type='custom': manual options
+    multi?: boolean;           // Allow multiple selection
+    includeAll?: boolean;      // Include "All" option
+    defaultValue?: string | string[];  // Default selection
+}
+
 export interface MetricsDashboard {
     id: string;
     name: string;
     roomId: string;
     panels: MetricsPanel[];
     layout: GridLayoutItem[];
+    variables?: DashboardVariable[];  // Dashboard-level variables (like Grafana)
     createdAt: string;
     updatedAt: string;
 }
@@ -141,6 +157,11 @@ interface MetricsState {
     // Actions - Import/Export
     exportDashboard: (roomId: string, dashboardId: string) => string | null;
     importDashboard: (roomId: string, json: string) => string | null;
+
+    // Actions - Dashboard Variables
+    addVariable: (roomId: string, dashboardId: string, variable: DashboardVariable) => void;
+    updateVariable: (roomId: string, dashboardId: string, variableName: string, updates: Partial<DashboardVariable>) => void;
+    deleteVariable: (roomId: string, dashboardId: string, variableName: string) => void;
 
     // Helpers
     getDashboard: (roomId: string, dashboardId: string) => MetricsDashboard | null;
@@ -577,6 +598,60 @@ export const useMetricsStore = create<MetricsState>()(
 
             getRoomDashboards: (roomId) => {
                 return get().dashboardsByRoom[roomId] || [];
+            },
+
+            // Variable management
+            addVariable: (roomId, dashboardId, variable) => {
+                set((state) => ({
+                    dashboardsByRoom: {
+                        ...state.dashboardsByRoom,
+                        [roomId]: (state.dashboardsByRoom[roomId] || []).map(d =>
+                            d.id === dashboardId
+                                ? {
+                                    ...d,
+                                    variables: [...(d.variables || []), variable],
+                                    updatedAt: new Date().toISOString()
+                                }
+                                : d
+                        )
+                    }
+                }));
+            },
+
+            updateVariable: (roomId, dashboardId, variableName, updates) => {
+                set((state) => ({
+                    dashboardsByRoom: {
+                        ...state.dashboardsByRoom,
+                        [roomId]: (state.dashboardsByRoom[roomId] || []).map(d =>
+                            d.id === dashboardId
+                                ? {
+                                    ...d,
+                                    variables: (d.variables || []).map(v =>
+                                        v.name === variableName ? { ...v, ...updates } : v
+                                    ),
+                                    updatedAt: new Date().toISOString()
+                                }
+                                : d
+                        )
+                    }
+                }));
+            },
+
+            deleteVariable: (roomId, dashboardId, variableName) => {
+                set((state) => ({
+                    dashboardsByRoom: {
+                        ...state.dashboardsByRoom,
+                        [roomId]: (state.dashboardsByRoom[roomId] || []).map(d =>
+                            d.id === dashboardId
+                                ? {
+                                    ...d,
+                                    variables: (d.variables || []).filter(v => v.name !== variableName),
+                                    updatedAt: new Date().toISOString()
+                                }
+                                : d
+                        )
+                    }
+                }));
             }
         }),
         {
@@ -629,4 +704,79 @@ export const useCursorSync = create<CursorSyncState>()((set) => ({
         cursorTime: null,
         sourcePanel: null
     })
+}));
+
+// ==================== Variable Values Store (not persisted) ====================
+// Runtime state for dashboard variable selections
+
+interface VariableValuesState {
+    // Variable values per dashboard: dashboardId -> variableName -> selected value(s)
+    valuesByDashboard: Record<string, Record<string, string | string[]>>;
+    // Available options per dashboard (fetched from API)
+    optionsByDashboard: Record<string, Record<string, string[]>>;
+    // Actions
+    setVariableValue: (dashboardId: string, variableName: string, value: string | string[]) => void;
+    setVariableOptions: (dashboardId: string, variableName: string, options: string[]) => void;
+    getVariableValue: (dashboardId: string, variableName: string) => string | string[] | undefined;
+    clearDashboardVariables: (dashboardId: string) => void;
+    // Helper to resolve variable references in label filters
+    resolveVariables: (dashboardId: string, filters: Record<string, string>) => Record<string, string | string[]>;
+}
+
+export const useVariableValues = create<VariableValuesState>()((set, get) => ({
+    valuesByDashboard: {},
+    optionsByDashboard: {},
+
+    setVariableValue: (dashboardId, variableName, value) => set((state) => ({
+        valuesByDashboard: {
+            ...state.valuesByDashboard,
+            [dashboardId]: {
+                ...(state.valuesByDashboard[dashboardId] || {}),
+                [variableName]: value
+            }
+        }
+    })),
+
+    setVariableOptions: (dashboardId, variableName, options) => set((state) => ({
+        optionsByDashboard: {
+            ...state.optionsByDashboard,
+            [dashboardId]: {
+                ...(state.optionsByDashboard[dashboardId] || {}),
+                [variableName]: options
+            }
+        }
+    })),
+
+    getVariableValue: (dashboardId, variableName) => {
+        return get().valuesByDashboard[dashboardId]?.[variableName];
+    },
+
+    clearDashboardVariables: (dashboardId) => set((state) => {
+        const newValues = { ...state.valuesByDashboard };
+        const newOptions = { ...state.optionsByDashboard };
+        delete newValues[dashboardId];
+        delete newOptions[dashboardId];
+        return { valuesByDashboard: newValues, optionsByDashboard: newOptions };
+    }),
+
+    // Resolve $variableName references in label filters
+    resolveVariables: (dashboardId, filters) => {
+        const resolved: Record<string, string | string[]> = {};
+        const values = get().valuesByDashboard[dashboardId] || {};
+
+        for (const [key, value] of Object.entries(filters)) {
+            if (value.startsWith('$')) {
+                // Variable reference: $instance -> values.instance
+                const varName = value.slice(1);
+                const varValue = values[varName];
+                if (varValue !== undefined) {
+                    resolved[key] = varValue;
+                }
+            } else {
+                resolved[key] = value;
+            }
+        }
+
+        return resolved;
+    }
 }));

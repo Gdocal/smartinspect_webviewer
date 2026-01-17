@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { MetricsPanel, SERIES_COLORS } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useLogStore, useWatchesForQueries } from '../../../store/logStore';
 
 interface HistoryPoint {
     timestamp: number;
@@ -25,7 +25,9 @@ interface TablePanelProps {
 }
 
 export function TablePanel({ panel }: TablePanelProps) {
-    const { watches, currentRoom } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
+    // Use selector - only re-renders when specific watches in queries change
+    const watchesMap = useWatchesForQueries(panel.queries);
     const [selectedRow, setSelectedRow] = useState<string | null>(null);
     const [statsData, setStatsData] = useState<Map<string, RowStats>>(new Map());
 
@@ -102,7 +104,7 @@ export function TablePanel({ panel }: TablePanelProps) {
             const watchName = query.watchName;
             if (!watchName) return;
 
-            const watch = watches[watchName];
+            const watch = watchesMap[watchName];
             if (!watch) return;
 
             const watchTime = new Date(watch.timestamp).getTime();
@@ -140,12 +142,12 @@ export function TablePanel({ panel }: TablePanelProps) {
                 return newData;
             });
         });
-    }, [panel.queries, watches]); // React to watches changes directly
+    }, [panel.queries, watchesMap]); // React to watchesMap changes
 
     // Build table rows from queries with real stats
     const rows = useMemo(() => {
         return panel.queries.map((query, i) => {
-            const watch = watches[query.watchName];
+            const watch = watchesMap[query.watchName];
             const value = watch ? parseFloat(String(watch.value)) : null;
             const numValue = isNaN(value as number) ? null : value;
 
@@ -164,7 +166,7 @@ export function TablePanel({ panel }: TablePanelProps) {
                 color: query.color || SERIES_COLORS[i % SERIES_COLORS.length]
             };
         }).filter(r => r.watchName);
-    }, [panel.queries, watches, statsData]);
+    }, [panel.queries, watchesMap, statsData]);
 
     // Format value
     const formatValue = (val: number | null) => {

@@ -4,7 +4,9 @@
  */
 
 import { create } from 'zustand';
+import { shallow } from 'zustand/shallow';
 import { ColumnState } from 'ag-grid-community';
+import { useCallback, useMemo } from 'react';
 
 // Counter for unique stream entry IDs (Date.now() alone can produce duplicates within same ms)
 let streamEntryIdCounter = 0;
@@ -86,7 +88,11 @@ export interface WatchValue {
     timestamp: string;
     session?: string;
     watchType?: number;
-    group?: string;  // Optional group for organizing watches
+    group?: string;  // Optional group for organizing watches (legacy, maps to instance label)
+    // Label system (Prometheus-style)
+    labels?: Record<string, string>;  // Labels like { instance: "BTC_trade", env: "prod" }
+    metricName?: string;              // Base metric name without labels
+    seriesKey?: string;               // Full series key: "metricName{label=value}"
 }
 
 export interface Filter {
@@ -1829,4 +1835,70 @@ export function matchesPreviewTitleFilter(entry: LogEntry, filter: PreviewTitleF
         default:
             return false;
     }
+}
+
+// ============================================================================
+// SELECTOR HOOKS - Fine-grained subscriptions to prevent unnecessary re-renders
+// ============================================================================
+
+/**
+ * Select a single watch by name. Only re-renders when that specific watch changes.
+ */
+export function useWatch(watchName: string): WatchValue | undefined {
+    return useLogStore(
+        useCallback((state: LogState) => state.watches[watchName], [watchName])
+    );
+}
+
+/**
+ * Select multiple watches by names. Only re-renders when one of the specified watches changes.
+ * Returns a stable object reference if watch values haven't changed.
+ */
+export function useWatches(watchNames: string[]): Record<string, WatchValue | undefined> {
+    // Create stable selector key
+    const selectorKey = watchNames.join(',');
+
+    const selector = useMemo(() => {
+        const sortedNames = [...watchNames].sort();
+        return (state: LogState) => {
+            const result: Record<string, WatchValue | undefined> = {};
+            for (const name of sortedNames) {
+                result[name] = state.watches[name];
+            }
+            return result;
+        };
+    }, [selectorKey]);
+
+    return useLogStore(selector, shallow);
+}
+
+/**
+ * Returns just the watch names array. Only re-renders when watches are added/removed.
+ */
+export function useWatchNames(): string[] {
+    return useLogStore(
+        useCallback((state: LogState) => Object.keys(state.watches), []),
+        (a, b) => a.length === b.length && a.every((name, i) => name === b[i])
+    );
+}
+
+/**
+ * Returns true if there are any watches. Minimal re-renders.
+ */
+export function useHasWatches(): boolean {
+    return useLogStore(
+        useCallback((state: LogState) => Object.keys(state.watches).length > 0, [])
+    );
+}
+
+/**
+ * Select watches by queries - for panels with multiple queries.
+ * Only re-renders when the specific watches in queries change.
+ */
+export function useWatchesForQueries(queries: Array<{ watchName?: string }>): Record<string, WatchValue | undefined> {
+    const watchNames = useMemo(
+        () => queries.map(q => q.watchName).filter((n): n is string => !!n),
+        [queries.map(q => q.watchName).join(',')]
+    );
+    return useWatches(watchNames);
 }

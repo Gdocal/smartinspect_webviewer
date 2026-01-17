@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { MetricsPanel, SERIES_COLORS } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useLogStore, useWatch } from '../../../store/logStore';
 import { evaluateExpression, TransformContext } from '../hooks/useTransformEngine';
 
 interface HistoryPoint {
@@ -19,12 +19,12 @@ interface StatPanelProps {
 }
 
 export function StatPanel({ panel, width, height }: StatPanelProps) {
-    const { watches, currentRoom } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
     const [historyData, setHistoryData] = useState<HistoryPoint[]>([]);
 
-    // Get the first query's watch value
+    // Get the first query's watch value - uses selector for fine-grained updates
     const query = panel.queries[0];
-    const watch = query ? watches[query.watchName] : null;
+    const watch = useWatch(query?.watchName ?? '');
 
     // Fetch history data for sparkline
     const fetchHistoryData = useCallback(async () => {

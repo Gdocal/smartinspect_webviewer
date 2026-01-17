@@ -736,11 +736,56 @@ app.delete('/api/traces', (req, res) => {
 
 /**
  * GET /api/watches - Get current watch values
+ * Query params:
+ *   - metric: Filter by metric name (optional, supports * wildcard)
+ *   - labels: JSON-encoded label matchers (optional)
  */
 app.get('/api/watches', (req, res) => {
     const roomId = getRoomFromRequest(req);
     const room = getRoomStorage(roomId);
-    res.json({ watches: room.watchStore.getAll(), room: roomId });
+    const { metric, labels } = req.query;
+
+    if (metric) {
+        // Query with filters
+        const labelMatchers = labels ? JSON.parse(labels) : {};
+        const results = room.watchStore.query(metric, labelMatchers);
+        const watches = {};
+        for (const { seriesKey, entry } of results) {
+            watches[seriesKey] = entry;
+        }
+        res.json({ watches, room: roomId, filtered: true });
+    } else {
+        // Return all watches
+        res.json({ watches: room.watchStore.getAll(), room: roomId });
+    }
+});
+
+/**
+ * GET /api/watches/labels - Get available label names
+ */
+app.get('/api/watches/labels', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ labels: room.watchStore.getLabelNames(), room: roomId });
+});
+
+/**
+ * GET /api/watches/labels/:name/values - Get values for a label (for dropdown variables)
+ */
+app.get('/api/watches/labels/:name/values', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    const values = room.watchStore.getLabelValues(req.params.name);
+    res.json({ label: req.params.name, values, room: roomId });
+});
+
+/**
+ * GET /api/watches/metrics - Get unique metric names
+ */
+app.get('/api/watches/metrics', (req, res) => {
+    const roomId = getRoomFromRequest(req);
+    const room = getRoomStorage(roomId);
+    res.json({ metrics: room.watchStore.getMetricNames(), room: roomId });
 });
 
 /**
@@ -1821,13 +1866,16 @@ function handlePacket(packet, clientInfo) {
 
         case 'watch':
             // Update room's watch store (always immediate - data is preserved)
+            // v3 protocol: native labels passed directly
+            // v2 protocol: labels parsed from group field in storage.set()
             room.watchStore.set(
                 packet.name,
                 packet.value,
                 packet.timestamp,
                 clientInfo.appName,
                 packet.watchType,
-                packet.group || ''  // Pass group from packet, default empty
+                packet.group || '',     // Legacy group field for v2 compatibility
+                packet.labels || {}     // Native labels from v3 protocol
             );
             room.touch();
 

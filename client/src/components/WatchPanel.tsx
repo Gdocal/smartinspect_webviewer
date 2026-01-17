@@ -2,12 +2,21 @@
  * WatchPanel - Table-based watch values display with filtering
  * Features flash animation when values change
  * Supports grouping and filtering by group
+ * VIRTUALIZED for performance with large watch lists
  */
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useLogStore } from '../store/logStore';
 import { format } from 'date-fns';
 import { ColumnChooserMenu, type ColumnDef } from './ColumnChooserMenu';
+
+// Row heights for virtualization
+const ROW_HEIGHTS = {
+    compact: 21,
+    default: 30,
+    comfortable: 35,
+};
 
 // Density-based sizing configuration
 // Filter settings match FilterBar for consistency
@@ -27,7 +36,8 @@ const DENSITY_CONFIG = {
         filterIconLeft: 'left-2',
         tableText: 'text-[10px]',
         cellPx: 'px-2',
-        cellPy: 'py-1',
+        cellPy: 'py-0.5',
+        valuePadding: 'px-0.5 py-0', // Tighter padding for value box in compact mode
         footerPx: 'px-2',
         footerPy: 'py-1',
         footerText: 'text-[10px]',
@@ -51,6 +61,7 @@ const DENSITY_CONFIG = {
         tableText: 'text-xs',
         cellPx: 'px-2',
         cellPy: 'py-1.5',
+        valuePadding: 'px-1 py-0.5',
         footerPx: 'px-2',
         footerPy: 'py-1.5',
         footerText: 'text-xs',
@@ -74,6 +85,7 @@ const DENSITY_CONFIG = {
         tableText: 'text-xs',
         cellPx: 'px-3',
         cellPy: 'py-2',
+        valuePadding: 'px-1 py-0.5',
         footerPx: 'px-3',
         footerPy: 'py-2',
         footerText: 'text-xs',
@@ -98,6 +110,94 @@ const WATCH_COLUMNS: { id: string; label: string; field: 'name' | 'group' | 'val
     { id: 'value', label: 'Value', field: 'value' },
     { id: 'updated', label: 'Updated', field: 'timestamp' },
 ];
+
+// Entry type for virtualized list
+interface WatchEntry {
+    name: string;
+    group: string;
+    value: string;
+    timestamp: string;
+    session?: string;
+    watchType?: number;
+}
+
+// Memoized row component for virtualization
+interface VirtualWatchRowProps {
+    watch: WatchEntry;
+    style: React.CSSProperties;
+    isFlashing: boolean;
+    visibleColumns: typeof WATCH_COLUMNS;
+    density: typeof DENSITY_CONFIG[keyof typeof DENSITY_CONFIG];
+    columnWidths: [number, number, number, number];
+}
+
+const VirtualWatchRow = React.memo(function VirtualWatchRow({
+    watch,
+    style,
+    isFlashing,
+    visibleColumns,
+    density,
+    columnWidths,
+}: VirtualWatchRowProps) {
+    return (
+        <div
+            style={style}
+            className="flex hover:bg-blue-50/50 dark:hover:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700"
+        >
+            {visibleColumns.map(col => {
+                const colIdx = WATCH_COLUMNS.findIndex(c => c.id === col.id);
+                const width = `${columnWidths[colIdx]}%`;
+
+                switch (col.id) {
+                    case 'name':
+                        return (
+                            <div key={col.id} className={`${density.cellPx} ${density.cellPy} overflow-hidden`} style={{ width }}>
+                                <span className="font-mono text-blue-600 dark:text-blue-400 font-medium truncate block" title={watch.name}>
+                                    {watch.name}
+                                </span>
+                            </div>
+                        );
+                    case 'group':
+                        return (
+                            <div key={col.id} className={`${density.cellPx} ${density.cellPy} text-slate-500 dark:text-slate-400 overflow-hidden`} style={{ width }}>
+                                <span className="truncate block" title={watch.group || '(no group)'}>
+                                    {watch.group || '-'}
+                                </span>
+                            </div>
+                        );
+                    case 'value':
+                        return (
+                            <div key={col.id} className={`${density.cellPx} ${density.cellPy} overflow-hidden`} style={{ width }}>
+                                <span
+                                    className={`font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 ${density.valuePadding} rounded truncate inline-block max-w-full ${isFlashing ? 'value-flash' : ''}`}
+                                    key={watch.timestamp}
+                                    title={watch.value}
+                                >
+                                    {watch.value}
+                                </span>
+                            </div>
+                        );
+                    case 'updated':
+                        return (
+                            <div key={col.id} className={`${density.cellPx} ${density.cellPy} text-slate-400 tabular-nums overflow-hidden whitespace-nowrap`} style={{ width }}>
+                                {format(new Date(watch.timestamp), 'HH:mm:ss.SSS')}
+                            </div>
+                        );
+                    default:
+                        return null;
+                }
+            })}
+        </div>
+    );
+}, (prev, next) => {
+    // Custom equality check - only re-render when these change
+    return prev.watch.value === next.watch.value &&
+           prev.watch.timestamp === next.watch.timestamp &&
+           prev.isFlashing === next.isFlashing &&
+           prev.style.transform === next.style.transform &&
+           prev.visibleColumns === next.visibleColumns &&
+           prev.columnWidths === next.columnWidths;
+});
 
 export function WatchPanel() {
     const { watches, clearWatches, setShowWatchPanel, rowDensity, backlogged, watchPanelColumnWidths, setWatchPanelColumnWidths, watchPanelHiddenColumns, setWatchPanelHiddenColumns } = useLogStore();
@@ -125,6 +225,10 @@ export function WatchPanel() {
     const startXRef = useRef(0);
     const startWidthsRef = useRef<[number, number, number, number]>([30, 15, 40, 15]);
     const tableRef = useRef<HTMLTableElement>(null);
+
+    // Virtualization scroll container
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const rowHeight = ROW_HEIGHTS[rowDensity];
 
     // Column resize handler
     const startColumnResize = useCallback((colIndex: number, e: React.MouseEvent) => {
@@ -394,6 +498,18 @@ export function WatchPanel() {
         [watchPanelHiddenColumns]
     );
 
+    // Virtualizer for the watch list
+    const virtualizer = useVirtualizer({
+        count: watchEntries.length,
+        getScrollElement: () => scrollContainerRef.current,
+        estimateSize: () => rowHeight,
+        overscan: 20, // Render 20 extra rows above/below viewport
+        getItemKey: (index) => watchEntries[index]?.name ?? index,
+    });
+
+    const virtualItems = virtualizer.getVirtualItems();
+    const totalSize = virtualizer.getTotalSize();
+
     return (
         <div className="h-full flex flex-col bg-white dark:bg-slate-800">
             {/* Flash animation styles - only value cell flashes */}
@@ -452,15 +568,16 @@ export function WatchPanel() {
 
             </div>
 
-            {/* Content - table headers always visible */}
-            <div className="flex-1 overflow-auto flex flex-col">
-                <table ref={tableRef} className={`w-full ${density.tableText}`} style={{ tableLayout: 'fixed' }}>
+            {/* Content - header + virtualized body */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Fixed header table */}
+                <table ref={tableRef} className={`w-full ${density.tableText} flex-shrink-0`} style={{ tableLayout: 'fixed' }}>
                     <colgroup>
                         {visibleColumns.map((col) => (
                             <col key={col.id} style={{ width: `${columnWidths[WATCH_COLUMNS.findIndex(c => c.id === col.id)]}%` }} />
                         ))}
                     </colgroup>
-                    <thead className="bg-slate-100 dark:bg-slate-700 sticky top-0 z-10" onContextMenu={handleHeaderContextMenu}>
+                    <thead className="bg-slate-100 dark:bg-slate-700" onContextMenu={handleHeaderContextMenu}>
                         <tr>
                             {visibleColumns.map((col, idx) => {
                                 const isGroup = col.id === 'group';
@@ -554,59 +671,48 @@ export function WatchPanel() {
                             })}
                         </tr>
                     </thead>
-                    {watchEntries.length > 0 && (
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                            {watchEntries.map((watch) => {
+                </table>
+
+                {/* Virtualized body */}
+                {watchEntries.length > 0 ? (
+                    <div
+                        ref={scrollContainerRef}
+                        className={`flex-1 overflow-auto ${density.tableText}`}
+                    >
+                        <div
+                            style={{
+                                height: totalSize,
+                                width: '100%',
+                                position: 'relative',
+                            }}
+                        >
+                            {virtualItems.map((virtualRow) => {
+                                const watch = watchEntries[virtualRow.index];
+                                if (!watch) return null;
                                 const isFlashing = flashingWatches.has(watch.name);
                                 return (
-                                    <tr
+                                    <VirtualWatchRow
                                         key={watch.name}
-                                        className="hover:bg-blue-50/50 dark:hover:bg-slate-700/50"
-                                    >
-                                        {visibleColumns.map(col => {
-                                            switch (col.id) {
-                                                case 'name':
-                                                    return (
-                                                        <td key={col.id} className={`${density.cellPx} ${density.cellPy} overflow-hidden`}>
-                                                            <span className="font-mono text-blue-600 dark:text-blue-400 font-medium truncate block" title={watch.name}>{watch.name}</span>
-                                                        </td>
-                                                    );
-                                                case 'group':
-                                                    return (
-                                                        <td key={col.id} className={`${density.cellPx} ${density.cellPy} text-slate-500 dark:text-slate-400 overflow-hidden`}>
-                                                            <span className="truncate block" title={watch.group || '(no group)'}>{watch.group || '-'}</span>
-                                                        </td>
-                                                    );
-                                                case 'value':
-                                                    return (
-                                                        <td key={col.id} className={`${density.cellPx} ${density.cellPy} overflow-hidden`}>
-                                                            <span
-                                                                className={`font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded truncate inline-block max-w-full ${isFlashing ? 'value-flash' : ''}`}
-                                                                key={watch.timestamp}
-                                                                title={watch.value}
-                                                            >
-                                                                {watch.value}
-                                                            </span>
-                                                        </td>
-                                                    );
-                                                case 'updated':
-                                                    return (
-                                                        <td key={col.id} className={`${density.cellPx} ${density.cellPy} text-slate-400 tabular-nums overflow-hidden whitespace-nowrap`}>
-                                                            {format(new Date(watch.timestamp), 'HH:mm:ss.SSS')}
-                                                        </td>
-                                                    );
-                                                default:
-                                                    return null;
-                                            }
-                                        })}
-                                    </tr>
+                                        watch={watch}
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            height: virtualRow.size,
+                                            transform: `translateY(${virtualRow.start}px)`,
+                                        }}
+                                        isFlashing={isFlashing}
+                                        visibleColumns={visibleColumns}
+                                        density={density}
+                                        columnWidths={columnWidths}
+                                    />
                                 );
                             })}
-                        </tbody>
-                    )}
-                </table>
-                {/* Nice empty state below headers */}
-                {watchEntries.length === 0 && (
+                        </div>
+                    </div>
+                ) : (
+                    /* Nice empty state below headers */
                     <div className="flex-1 flex items-center justify-center p-6">
                         <div className="text-center">
                             <svg className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

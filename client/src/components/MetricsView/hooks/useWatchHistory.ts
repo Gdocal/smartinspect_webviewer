@@ -226,3 +226,117 @@ export function useMultiWatchHistory(
 
     return results;
 }
+
+/**
+ * Hook to fetch available label names for the current room
+ */
+export function useLabelNames(): { labels: string[]; loading: boolean; error: string | null } {
+    const { currentRoom } = useLogStore();
+    const [labels, setLabels] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchLabels = async () => {
+            setLoading(true);
+            try {
+                const response = await fetch('/api/watches/labels', {
+                    headers: { 'X-Room': currentRoom },
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                setLabels(result.labels || []);
+                setError(null);
+            } catch (err: any) {
+                setError(err.message);
+                setLabels([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchLabels();
+        const interval = setInterval(fetchLabels, 10000); // Refresh every 10s
+        return () => clearInterval(interval);
+    }, [currentRoom]);
+
+    return { labels, loading, error };
+}
+
+/**
+ * Hook to fetch available values for a specific label
+ */
+export function useLabelValues(labelName: string): { values: string[]; loading: boolean; error: string | null } {
+    const { currentRoom } = useLogStore();
+    const [values, setValues] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!labelName) {
+            setValues([]);
+            setLoading(false);
+            return;
+        }
+
+        const fetchValues = async () => {
+            setLoading(true);
+            try {
+                const response = await fetch(`/api/watches/labels/${encodeURIComponent(labelName)}/values`, {
+                    headers: { 'X-Room': currentRoom },
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                setValues(result.values || []);
+                setError(null);
+            } catch (err: any) {
+                setError(err.message);
+                setValues([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchValues();
+        const interval = setInterval(fetchValues, 10000); // Refresh every 10s
+        return () => clearInterval(interval);
+    }, [labelName, currentRoom]);
+
+    return { values, loading, error };
+}
+
+/**
+ * Hook to fetch available metric names
+ */
+export function useMetricNames(): { metrics: string[]; loading: boolean; error: string | null } {
+    const { currentRoom } = useLogStore();
+    const [metrics, setMetrics] = useState<string[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const fetchMetrics = async () => {
+            setLoading(true);
+            try {
+                const response = await fetch('/api/watches/metrics', {
+                    headers: { 'X-Room': currentRoom },
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const result = await response.json();
+                setMetrics(result.metrics || []);
+                setError(null);
+            } catch (err: any) {
+                setError(err.message);
+                setMetrics([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchMetrics();
+        const interval = setInterval(fetchMetrics, 10000); // Refresh every 10s
+        return () => clearInterval(interval);
+    }, [currentRoom]);
+
+    return { metrics, loading, error };
+}

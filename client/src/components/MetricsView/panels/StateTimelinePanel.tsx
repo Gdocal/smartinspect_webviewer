@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { MetricsPanel, StateMapping, STATE_COLORS, useCursorSync } from '../../../store/metricsStore';
-import { useLogStore } from '../../../store/logStore';
+import { useLogStore, useWatchesForQueries } from '../../../store/logStore';
 
 interface StateTimelinePanelProps {
     panel: MetricsPanel;
@@ -128,7 +128,9 @@ function formatDuration(ms: number): string {
 }
 
 export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelProps) {
-    const { watches, currentRoom } = useLogStore();
+    const currentRoom = useLogStore(state => state.currentRoom);
+    // Use selector - only re-renders when specific watches in queries change
+    const watchesMap = useWatchesForQueries(panel.queries);
     const containerRef = useRef<HTMLDivElement>(null);
 
     // Cursor sync - subscribe to shared cursor time for cross-panel sync
@@ -238,7 +240,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
             const watchName = query.watchName;
             if (!watchName) return;
 
-            const watch = watches[watchName];
+            const watch = watchesMap[watchName];
             if (!watch) return;
 
             const watchTime = new Date(watch.timestamp).getTime();
@@ -260,7 +262,7 @@ export function StateTimelinePanel({ panel, width, height }: StateTimelinePanelP
                 });
             }
         });
-    }, [panel.liveMode, panel.queries, watches]);
+    }, [panel.liveMode, panel.queries, watchesMap]);
 
     // Get options with defaults
     const mappings = panel.options.stateMappings || [];
